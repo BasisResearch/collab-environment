@@ -4,7 +4,7 @@
 splitspat
 ========
 
-SplitSplat is a wrapper for [nerfstudio](https://github.com/nerfstudio-project/nerfstudio/) that allows generation of 3D scenes from images/videos using different NeRF and Gaussian Splatting methods. 
+SplitSplat is a wrapper for `nerfstudio <https://github.com/nerfstudio-project/nerfstudio/>`_ that allows generation of 3D scenes from images/videos using different NeRF and Gaussian Splatting methods.
 
 Installation
 ------------
