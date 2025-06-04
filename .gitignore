@@ -1,3 +1,5 @@
+splat/notebooks/
+
 *.py[cod]
 .DS_Store
 # C extensions
