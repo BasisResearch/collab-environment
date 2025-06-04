@@ -1,16 +1,17 @@
 
 .. index-inclusion-marker
 
-Weighted
+splitspat
 ========
 
-Add description here
+SplitSplat is a wrapper for [nerfstudio](https://github.com/nerfstudio-project/nerfstudio/) that allows generation of 3D scenes from images/videos using different NeRF and Gaussian Splatting methods. 
 
 Installation
 ------------
 
-Install From Source
-^^^^^^^^^^^^^^^^^^^^
+We provide a conda env.yml file that can be used to create a conda environment with the necessary dependencies. Run the following command to create the environment:
+
 .. code:: sh
 
-   pip install -e .[dev]
+   conda env create -n splat -f env.yml
+   conda activate splat
