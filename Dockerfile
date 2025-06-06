@@ -26,6 +26,9 @@ RUN echo 'export PATH="/opt/conda/bin:$PATH"' >> ~/.bashrc && \
     echo 'source /opt/conda/etc/profile.d/conda.sh' >> ~/.bashrc && \
     echo 'conda activate base' >> ~/.bashrc
 
+# Install OpenCV using conda
+RUN conda install -c conda-forge opencv
+
 WORKDIR /workspace/
 
 CMD bash -c "\
