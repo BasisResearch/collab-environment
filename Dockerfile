@@ -1,6 +1,11 @@
 #Use Nerfstudio as main base and copy what you need
 FROM ghcr.io/nerfstudio-project/nerfstudio:1.1.5
 
+# Will copy from existing Docker image
+COPY --from=continuumio/miniconda3:4.12.0 /opt/conda /opt/conda
+
+ENV PATH=/opt/conda/bin:$PATH
+
 # Install additional tools useful for RunPod
 RUN apt-get update && apt-get install -y \
     wget \
@@ -14,7 +19,6 @@ RUN apt-get update && apt-get install -y \
     python3 \
     python3-pip \
     && rm -rf /var/lib/apt/lists/*
-
 
 RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config && \
 echo "PermitTTY yes" >> /etc/ssh/sshd_config && \
@@ -33,5 +37,3 @@ echo \"$PUBLIC_KEY\" >> ~/.ssh/authorized_keys && \
 chmod 600 ~/.ssh/authorized_keys && \
 service ssh start && \
 sleep infinity"
-
-# CMD ["/start.sh"]
