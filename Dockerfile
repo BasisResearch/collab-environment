@@ -26,7 +26,7 @@ RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config && \
 
 # Initialize conda and install Python 3.10 + OpenCV in base environment
 RUN conda init bash && \
-    conda install -y python=3.10 && \
+    conda install -y -c conda-forge python=3.10 opencv && \
     conda clean -ya
 
 # pip install git+https://github.com/vuer-ai/feature-splatting
@@ -34,9 +34,6 @@ RUN conda init bash && \
 RUN echo 'export PATH="/opt/conda/bin:$PATH"' >> ~/.bashrc && \
     echo 'source /opt/conda/etc/profile.d/conda.sh' >> ~/.bashrc && \
     echo 'conda activate base' >> ~/.bashrc
-
-# Install OpenCV using conda
-RUN conda install -c conda-forge opencv
 
 WORKDIR /workspace/
 
