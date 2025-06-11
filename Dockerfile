@@ -24,16 +24,19 @@ RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config && \
     echo "PermitTTY yes" >> /etc/ssh/sshd_config && \
     echo "PasswordAuthentication no" >> /etc/ssh/sshd_config
 
-# Initialize conda and install Python 3.10 + OpenCV in base environment
+# Initialize conda and install Python 3.8 + Feature Splatting in base environment
+# Requires upgrade of torchtyping to 0.1.5
 RUN conda init bash && \
-    conda install -y -c conda-forge python=3.10 opencv && \
+    conda create -n splat python=3.8 -y && \
+    conda run -n splat pip install nerfstudio && \
+    conda run -n splat pip install --upgrade --upgrade-strategy only-if-needed git+https://github.com/vuer-ai/feature-splatting && \
+    conda run -n splat pip install torchtyping==0.1.5 --no-deps && \
     conda clean -ya
 
-# pip install git+https://github.com/vuer-ai/feature-splatting
-
+# Add conda initialization and environment activation to bashrc
 RUN echo 'export PATH="/opt/conda/bin:$PATH"' >> ~/.bashrc && \
     echo 'source /opt/conda/etc/profile.d/conda.sh' >> ~/.bashrc && \
-    echo 'conda activate base' >> ~/.bashrc
+    echo 'conda activate splat' >> ~/.bashrc
 
 WORKDIR /workspace/
 

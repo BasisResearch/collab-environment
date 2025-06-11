@@ -15,3 +15,5 @@ We provide a conda env.yml file that can be used to create a conda environment w
 
    conda env create -n splat -f env.yml
    conda activate splat
+
+docker build --platform=linux/amd64,linux/arm64 -t tommybotch/collab-environment .
