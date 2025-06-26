@@ -13,21 +13,25 @@ RUN apt-get update && apt-get install -y \
     openssh-server \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Feature Splatting
-RUN python3 -m pip install git+https://github.com/BasisResearch/feature-splatting.git
-RUN python3 -m pip install pyvista pyntcloud pymeshfix trame trame-vuetify trame-vtk
+# Copy requirements file
+COPY requirements.txt /tmp/requirements.txt
 
-# Install miniconda properly
-RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
-    bash /tmp/miniconda.sh -b -p /opt/conda && \
-    rm /tmp/miniconda.sh
+# Install all Python dependencies in a single layer
+RUN python3 -m pip install -r /tmp/requirements.txt && \
+    rm /tmp/requirements.txt
+    
+# Needs to be run outside the requirements.txt file 
+RUN python3 -m pip install --no-deps timm==1.0.13
+
+# # Install miniconda properly
+# RUN wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O /tmp/miniconda.sh && \
+#     bash /tmp/miniconda.sh -b -p /opt/conda && \
+#     rm /tmp/miniconda.sh
 
 # Set environment variables properly using ENV
-ENV PATH=/opt/conda/bin:$PATH
+# ENV PATH=/opt/conda/bin:$PATH
 ENV TORCH_HOME=/workspace/models
 ENV HF_HOME=/workspace/models
-ENV CURSOR_DATA_DIR=/workspace/.cursor
-ENV CURSOR_USER_DATA_DIR=/workspace/.cursor
 
 RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config && \
     echo "PermitTTY yes" >> /etc/ssh/sshd_config && \
@@ -39,9 +43,7 @@ WORKDIR /workspace/
 RUN echo 'export PATH="/opt/conda/bin:$PATH"' >> ~/.bashrc && \
     echo 'export TORCH_HOME="/workspace/models"' >> ~/.bashrc &&\
     echo 'export HF_HOME="/workspace/models"' >> ~/.bashrc &&\
-    echo 'export CURSOR_DATA_DIR="/workspace/.cursor"' >> ~/.bashrc &&\
-    echo 'export CURSOR_USER_DATA_DIR="/workspace/.cursor"' >> ~/.bashrc &&\
-    echo 'source /opt/conda/etc/profile.d/conda.sh' >> ~/.bashrc &&\
+    # echo 'source /opt/conda/etc/profile.d/conda.sh' >> ~/.bashrc &&\
     echo 'cd /workspace/' >> ~/.bashrc
 
 CMD bash -c "\
