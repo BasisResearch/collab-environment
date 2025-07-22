@@ -33,6 +33,32 @@ dependencies = [
   "dotenv",
 ]
 
+[project.optional-dependencies]
+docs = [
+  "setuptools",
+  "sphinx",
+  "sphinxcontrib-bibtex",
+  "sphinx_rtd_theme",
+  "myst-parser",
+  "nbsphinx",
+]
+dev = [
+  "setuptools",
+  "sphinx",
+  "sphinxcontrib-bibtex",
+  "sphinx_rtd_theme",
+  "myst-parser",
+  "nbsphinx",
+  "pytest",
+  "pytest-cov",
+  "pytest-xdist",
+  "pytest-benchmark",
+  "mypy",
+  "ruff",
+  "nbval",
+  "nbqa",
+]
+
 [build-system]
 requires = ["setuptools<70.0"]
 build-backend = "setuptools.build_meta"
