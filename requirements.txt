@@ -1,6 +1,0 @@
-opencv-python>=4.8.0
-numpy>=1.24.0
-torch>=2.0.0
-segment-anything @ git+https://github.com/facebookresearch/segment-anything.git
-nerfstudio>=1.1.5
-tqdm>=4.65.0 

@@ -1,0 +1,55 @@
+[project]
+name = "module"
+version = "0.0.1"
+description = "Basic scientific computing and deep learning environment with CUDA support"
+readme = "README.rst"
+requires-python = ">=3.8,<=3.11"
+license = { text = "Apache-2.0" }
+keywords = ["scientific computing", "deep learning", "CUDA", "data processing", "plotting"]
+authors = [{ name = "Basis" }]
+classifiers = [
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3.10"
+]
+
+dependencies = [
+  "torch==2.1.2",
+  "torchvision",
+  "pyro-ppl",
+  "numpy",
+  "pandas",
+  "scipy",
+  "scikit-learn",
+  "opencv-python",
+  "tqdm",
+  "pyyaml",
+  "pyexiftool",
+  "matplotlib",
+  "seaborn",
+  "plotly",
+  "ultralytics",
+]
+
+[build-system]
+requires = ["setuptools<70.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.flake8]
+max-line-length = 120
+extend-ignore = ["E203"]
+exclude = [".venv"]
+
+[tool.mypy]
+ignore_missing_imports = true
+warn_unused_ignores = true
+exclude = "build"
+
+[tool.pytest.ini_options]
+addopts = "--doctest-modules"
+testpaths = ["./tests"]
+
+[tool.isort]
+profile = "black"
+skip_gitignore = true
