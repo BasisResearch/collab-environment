@@ -13,6 +13,7 @@ Setup
 * Using pip / uv:
 
 .. code:: sh
+   
    pip install -e ".[dev]"
 
 
