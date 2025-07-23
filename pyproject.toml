@@ -1,5 +1,5 @@
 [project]
-name = "module"
+name = "collab_env"
 version = "0.0.1"
 description = "Basic scientific computing and deep learning environment with CUDA support"
 readme = "README.rst"
@@ -33,7 +33,13 @@ dependencies = [
   "dotenv",
   "jupyterlab", 
   "ipywidgets",
+  "dotenv",
+  "gcsfs",
+  "loguru",
 ]
+
+[tool.setuptools]                         # NEW
+packages = ["collab_env"]  
 
 [project.optional-dependencies]
 docs = [
@@ -59,6 +65,9 @@ dev = [
   "ruff",
   "nbval",
   "nbqa",
+  "black",
+  "isort",
+  "flake8>=6.0",
 ]
 
 [build-system]
@@ -67,8 +76,13 @@ build-backend = "setuptools.build_meta"
 
 [tool.flake8]
 max-line-length = 120
-extend-ignore = ["E203"]
+extend-ignore = ["E203", "E501"]
 exclude = [".venv"]
+
+[tool.nbqa.addopts]
+flake8 = [
+    "--extend-ignore=E203,E501"
+]
 
 [tool.mypy]
 ignore_missing_imports = true
