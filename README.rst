@@ -12,9 +12,9 @@ Setup
 -----
 * Using pip / uv:
 
-.. code:: sh
-   
-   pip install -e ".[dev]"
+   .. code:: sh
+      
+      pip install -e ".[dev]"
 
 
 * Using conda
