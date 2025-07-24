@@ -7,7 +7,7 @@ import cv2
 from PIL import Image
 from io import BytesIO
 from typing import Tuple
-from scripts.CSQ_reader import CSQReader, choose_vmin_vmax 
+from collab_env.tracking.CSQ_reader import CSQReader, choose_vmin_vmax 
 
 
 def render_frame_with_colorbar(frame: np.ndarray, vmin: float, vmax: float, color: str, figsize: Tuple[int, int] = (5, 5)) -> np.ndarray:

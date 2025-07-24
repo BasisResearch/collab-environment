@@ -7,28 +7,31 @@ from libjpeg import decode
 from math import exp, sqrt, log
 import exiftool
 from pathlib import Path
+from typing import Optional
 
 MAGIC_SEQ = re.compile(b"\x46\x46\x46\x00\x52\x54")
-EXIFTOOL_PATH = "/opt/homebrew/bin/exiftool"  # Update this if needed
+DEFAULT_EXIFTOOL_PATH = "/opt/homebrew/bin/exiftool"  # Update this if needed
 
 class CSQReader:
     """
     Reader for FLIR .csq thermal video files.
     Extracts thermal image frames using ExifTool and raw temperature conversion.
     """
-    def __init__(self, filename, blocksize=1_000_000):
+    def __init__(self, filename, blocksize=1_000_000, exiftool_path: Optional[str]=None):
         self.reader = open(filename, "rb")
         self.blocksize = blocksize
         self.leftover = b""
         self.imgs = []
         self.index = 0
         self.nframes = None
+        
+        self.exiftool_path = exiftool_path if exiftool_path is not None else DEFAULT_EXIFTOOL_PATH
 
-        if not os.path.exists(EXIFTOOL_PATH):
-            raise FileNotFoundError(f"ExifTool not found at {EXIFTOOL_PATH}")
+        if not os.path.exists(self.exiftool_path):
+            raise FileNotFoundError(f"ExifTool not found at {self.exiftool_path}. You may provide a custom path to the exiftool binary using the `exiftool_path` argument.")
 
-        self.et = exiftool.ExifTool(executable=EXIFTOOL_PATH)
-        self.etHelper = exiftool.ExifToolHelper(executable=EXIFTOOL_PATH)
+        self.et = exiftool.ExifTool(executable=self.exiftool_path)
+        self.etHelper = exiftool.ExifToolHelper(executable=self.exiftool_path)
         self.et.run()
 
     def _populate_list(self):

@@ -36,6 +36,8 @@ dependencies = [
   "dotenv",
   "gcsfs",
   "loguru",
+  "pylibjpeg-libjpeg",
+
 ]
 
 [tool.setuptools]                         # NEW
