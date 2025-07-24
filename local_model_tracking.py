@@ -1,0 +1,176 @@
+import os
+import cv2
+import json
+import torch
+import pandas as pd
+import numpy as np
+from tqdm import tqdm
+from pathlib import Path
+from bytetracker.byte_tracker import BYTETracker
+import argparse
+
+# Load your model
+MODEL_WEIGHTS_PATH = "pipeline_code_out_of_the_box/model_weights.pt"  # Update with the actual path
+model = torch.load(MODEL_WEIGHTS_PATH)
+model.eval()
+
+def video_to_frames(video_path, out_dir, prefix="frame"):
+    """
+    Extracts frames from a video and saves them as .jpg.
+    """
+    cap = cv2.VideoCapture(video_path)
+    total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    idx = 0
+    with tqdm(total=total, desc="Extracting frames") as pbar:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            fname = f"{prefix}_{idx:06d}.jpg"
+            cv2.imwrite(os.path.join(out_dir, fname), frame)
+            idx += 1
+            pbar.update(1)
+    cap.release()
+    print(f"Saved {idx} frames to {out_dir}")
+
+def track_objects(csv_path: Path) -> dict:
+    df = pd.read_csv(csv_path)
+    def safe_json_loads(x):
+        try:
+            return json.loads(x) if pd.notnull(x) and x.strip() else {"predictions": []}
+        except Exception:
+            return {"predictions": []}
+    df["parsed_predictions"] = df["predictions"].apply(safe_json_loads)
+    all_frames = []
+
+    for _, row in df.iterrows():
+        detections = []
+        for obj in row["parsed_predictions"]["predictions"]:
+            x, y, w, h, conf = obj["x"], obj["y"], obj["width"], obj["height"], obj.get("confidence", 1.0)
+            x1, y1 = x - w / 2, y - h / 2
+            x2, y2 = x + w / 2, y + h / 2
+            detections.append([x1, y1, x2, y2, conf])
+        all_frames.append(detections)
+
+    tracker = BYTETracker()
+    track_history = {}
+
+    for frame_idx, detections in enumerate(all_frames):
+        if not detections:
+            continue
+        dets_np = np.array(detections)
+        if dets_np.ndim != 2 or dets_np.shape[1] < 5:
+            continue
+        class_ids = np.zeros((dets_np.shape[0], 1))
+        formatted_dets = np.hstack((dets_np[:, :5], class_ids))
+        tracked = tracker.update(formatted_dets)
+
+        for det in tracked:
+            x1, y1, x2, y2, track_id, _ = det[:6]
+            cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
+            track_history.setdefault(track_id, []).append((frame_idx, (cx, cy)))
+
+    return track_history
+
+def overlay_tracks_on_video(csv_path: Path, frame_dir: Path, output_video: Path, fps: int = 5):
+    df = pd.read_csv(csv_path)
+    df["track_id"] = df["track_id"].astype(int)
+
+    track_colors = {}
+
+    frame_paths = sorted(frame_dir.glob("*.jpg"))
+    if not frame_paths:
+        raise FileNotFoundError(f"No frames found in {frame_dir}")
+
+    # Get frame size
+    sample_frame = cv2.imread(str(frame_paths[0]))
+    h, w = sample_frame.shape[:2]
+    writer = cv2.VideoWriter(str(output_video), cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+
+    for frame_path in frame_paths:
+        frame_idx = int(frame_path.stem.split("_")[-1])
+        frame = cv2.imread(str(frame_path))
+
+        frame_tracks = df[df["frame"] == frame_idx]
+        for _, row in frame_tracks.iterrows():
+            tid, x, y = int(row["track_id"]), int(row["x"]), int(row["y"])
+            color = track_colors.setdefault(tid, tuple((np.random.rand(3) * 255).astype(int)))
+
+            cv2.circle(frame, (x, y), 5, (255, 255, 0), -1)
+
+        writer.write(frame)
+
+    writer.release()
+    print(f"✅ Saved annotated video to: {output_video}")
+
+def run_tracking(session_path: Path, camera_type: str = "thermal", camera_number: int = 1):
+    """
+    Run tracking on either thermal or RGB videos for a given session.
+    Args:
+        session_path: Path to session directory (e.g., .../2024_05_19-session_0001)
+        camera_type: "thermal" or "rgb"
+        camera_number: 1 or 2
+    """
+    print(f"Running tracking for {camera_type} camera {camera_number} in session: {session_path}")
+    if camera_type == "thermal":
+        subfolder = f"thermal_{camera_number}"
+        frame_dir = session_path /f"thermal_{camera_number}"/ "annotated_frames"
+        csv_pattern = "*.csv"
+        subfolder_path = session_path / f"thermal_{camera_number}"
+    elif camera_type == "rgb":
+        subfolder = f"rgb_{camera_number}"
+        frame_dir = session_path / f"rgb_{camera_number}" / "cropped" / "frames"
+        csv_pattern = "*.csv"
+        subfolder_path = session_path / f"rgb_{camera_number}" 
+    else:
+        print("Invalid camera_type. Use 'thermal' or 'rgb'.")
+        return
+
+    if not subfolder_path.exists():
+        print(f"⚠️ Subfolder not found: {subfolder_path}")
+        return
+
+    try:
+        csv_file = next(subfolder_path.glob(csv_pattern))
+    except StopIteration:
+        print(f"⚠️ No CSV found in {subfolder_path}")
+        return
+
+    if not frame_dir.exists():
+        print(f"⚠️ Missing frames at: {frame_dir}")
+        return
+
+    # Run tracking
+    track_history = track_objects(csv_file)
+
+    # Save tracks
+    output_csv = subfolder_path / f"{camera_type}_{camera_number}_tracks.csv"
+    with open(output_csv, "w") as f:
+        f.write("track_id,frame,x,y\n")
+        for tid, points in track_history.items():
+            for frame_idx, (x, y) in points:
+                f.write(f"{tid},{frame_idx},{x},{y}\n")
+    print(f"✅ Tracking results saved to {output_csv}")
+
+def main():
+    parser = argparse.ArgumentParser(description="Run object tracking on thermal or RGB videos.")
+    parser.add_argument("--target_root_dir", type=str, required=True, help="Path to the root directory containing data.")
+    parser.add_argument("--session_root_dir", type=str, required=True, help="Session directory name (e.g., '2024_02_06-session_0001').")
+    parser.add_argument("--camera_type", type=str, choices=["thermal", "rgb"], required=True, help="Type of camera ('thermal' or 'rgb').")
+    parser.add_argument("--camera_number", type=int, choices=[1, 2], required=True, help="Camera number (1 or 2).")
+    args = parser.parse_args()
+
+    # Parse arguments
+    target_root_dir = Path(args.target_root_dir)
+    session_root_dir = args.session_root_dir
+    camera_type = args.camera_type
+    camera_number = args.camera_number
+
+    # Construct session path
+    session_path = target_root_dir / session_root_dir / 'aligned_videos'
+
+    # Run tracking
+    run_tracking(session_path, camera_type=camera_type, camera_number=camera_number)
+
+if __name__ == "__main__":
+    main()
