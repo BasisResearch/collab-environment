@@ -1,4 +1,5 @@
-data/
+.env
+.envrc
 
 *.py[cod]
 .DS_Store
@@ -90,3 +91,5 @@ site/
 out
 *.matrix.gz
 /docs/source/.ipynb_checkpoints/
+./data/
+config-local/

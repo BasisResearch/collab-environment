@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euxo pipefail
 
-SRC="tests/ splat/"
+SRC="tests/ collab_env/"
 
 mypy $SRC
 ruff check $SRC
