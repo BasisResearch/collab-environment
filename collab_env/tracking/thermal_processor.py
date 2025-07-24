@@ -22,13 +22,13 @@ logger = logging.getLogger(__name__)
 
 # Import from the scripts folder (locally these are all on my desktop lol) 
 
-from scripts.thermal_export import process_directory
-from scripts.timestamps import get_creation_time, extract_timestamps_from_folder
+from collab_env.tracking.thermal_export import process_directory
+from collab_env.tracking.timestamps import get_creation_time, extract_timestamps_from_folder
 from scripts.time_alignment import (
     extract_ffmpeg_timecode, rgb_timecode_to_ms, csq_filename_to_ms, 
     trim_video, trim_video_pair, match_rgb_to_thermal, trim_session)
-from scripts.collect_thermal_mp4s import collect_thermal_mp4s
-from scripts.frame_extraction import extract_frames_from_folder
+from collab_env.tracking.collect_thermal_mp4s import collect_thermal_mp4s
+from collab_env.tracking.frame_extraction import extract_frames_from_folder
 
 
 
