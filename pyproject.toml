@@ -15,10 +15,10 @@ classifiers = [
 ]
 
 dependencies = [
-  "torch==2.1.2",
+  "torch>2.0",
   "torchvision",
   "pyro-ppl",
-  "numpy",
+  "numpy<2",
   "pandas",
   "scipy",
   "scikit-learn",
@@ -37,7 +37,6 @@ dependencies = [
   "gcsfs",
   "loguru",
   "pylibjpeg-libjpeg",
-
 ]
 
 [tool.setuptools]                         # NEW

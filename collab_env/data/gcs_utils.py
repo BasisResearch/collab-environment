@@ -190,3 +190,61 @@ class GCSClient:
 
         self._gcs.rm(gcs_path)
         logger.info(f"Deleted path {gcs_path}.")
+
+    def is_folder(self, path: str) -> bool:
+        """
+        Check if a path represents a folder in GCS.
+        
+        In GCS, folders are logical constructs. This method checks:
+        1. If a folder marker exists (.folder_marker file)
+        2. If any objects exist with the path as a prefix
+        3. If the path itself exists as an object
+        
+        Args:
+            path: The GCS path to check
+            
+        Returns:
+            bool: True if the path represents a folder, False otherwise
+        """
+        assert self.is_initialized, (
+            "GCSClient must be initialized before checking if path is folder"
+        )
+        
+        # Ensure path ends with slash for folder check
+        if not path.endswith("/"):
+            path += "/"
+        
+        # Method 1: Check for folder marker
+        marker_blob = path.rstrip("/") + "/.folder_marker"
+        if self._gcs.exists(marker_blob):
+            return True
+        
+        # Method 2: Check if any objects exist with this path prefix
+        objects = self.glob(f"{path}*")
+        if len(objects) > 0:
+            return True
+        
+        # Method 3: Check if the path itself exists as an object
+        if self._gcs.exists(path.rstrip("/")):
+            return True
+        
+        return False
+
+    def list_folder_contents(self, folder_path: str) -> list[str]:
+        """
+        List contents of a folder in GCS.
+        
+        Args:
+            folder_path: The GCS folder path
+            
+        Returns:
+            list[str]: List of object paths in the folder
+        """
+        assert self.is_initialized, (
+            "GCSClient must be initialized before listing folder contents"
+        )
+        
+        if not folder_path.endswith("/"):
+            folder_path += "/"
+        
+        return self.glob(f"{folder_path}*")

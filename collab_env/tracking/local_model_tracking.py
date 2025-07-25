@@ -6,7 +6,8 @@ import pandas as pd
 import numpy as np
 from tqdm import tqdm
 from pathlib import Path
-from bytetracker.byte_tracker import BYTETracker
+from ultralytics.trackers.byte_tracker import BYTETracker
+# from bytetracker.byte_tracker import BYTETracker
 import argparse
 
 
@@ -30,7 +31,6 @@ def video_to_frames(video_path, out_dir, prefix="frame"):
     cap.release()
     print(f"Saved {idx} frames to {out_dir}")
 
-from bytetracker.byte_tracker import BYTETracker
 
 def track_objects(csv_path: Path) -> dict:
     """
