@@ -9,7 +9,7 @@ def main():
     parser = argparse.ArgumentParser(description="Run object detection using a locally stored model.")
     parser.add_argument("--vid_name", type=str, required=True, help="Name of the video file.")
     parser.add_argument("--root_dir", type=str, required=True, help="Path to the video directory.")
-    parser.add_argument("--model_weights", type=str, default="pipeline_code_out_of_the_box/model_weights.pt", help="Path to the model weights file.")
+    parser.add_argument("--model_weights", type=str, default="scripts/model/weights.pt", help="Path to the model weights file.")
     args = parser.parse_args()
 
     # Update paths based on arguments
