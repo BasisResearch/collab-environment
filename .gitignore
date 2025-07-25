@@ -92,4 +92,4 @@ out
 *.matrix.gz
 /docs/source/.ipynb_checkpoints/
 config-local/
-*preview*.htm*
+
