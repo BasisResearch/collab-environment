@@ -41,6 +41,7 @@ import cv2
 import argparse
 from pathlib import Path
 from tqdm import tqdm
+import numpy as np
 
 # Helper Functions
 def select_crop_on_concat(rgb_frame, thm_frame, frame_size=(640, 480), rotation_angle=None):
@@ -180,21 +181,9 @@ def get_homography_with_translation(
     thermal_video_path,
     frame_size=(640, 480),
     warp_to='rgb',
-    skip_homography=False
+    skip_homography=False,
+    skip_translation=False
 ):
-    """
-    Computes a homography matrix with an optional translation step.
-
-    Args:
-        rgb_video_path (str): Path to the RGB video.
-        thermal_video_path (str): Path to the thermal video.
-        frame_size (tuple): Frame size for processing.
-        warp_to (str): Target space for warping ('rgb' or 'thermal').
-        skip_homography (bool): If True, only use translation (no homography).
-
-    Returns:
-        np.ndarray: Homography matrix.
-    """
     # Load first frames
     rgb_cap = cv2.VideoCapture(str(rgb_video_path))
     thm_cap = cv2.VideoCapture(str(thermal_video_path))
@@ -209,9 +198,20 @@ def get_homography_with_translation(
     if len(frame_thm.shape) == 2 or frame_thm.shape[2] == 1:
         frame_thm = cv2.cvtColor(frame_thm, cv2.COLOR_GRAY2BGR)
 
-    # --- Translation step ---
-    M = get_translation(frame_rgb, frame_thm)
-    translated_rgb = cv2.warpAffine(frame_rgb, M, frame_size)
+    ###--- Translation step ---
+    if skip_translation:
+        print("Skipping translation step.")
+        M = np.eye(2, 3, dtype=np.float32)  # Identity matrix for no translation
+        translated_rgb = frame_rgb
+        translated_thm = frame_thm
+    else:
+        M = get_translation(frame_rgb, frame_thm)
+        if warp_to == 'rgb':
+            translated_thm = cv2.warpAffine(frame_thm, M, frame_size)
+            translated_rgb = frame_rgb
+        else:
+            translated_rgb = cv2.warpAffine(frame_rgb, M, frame_size)
+            translated_thm = frame_thm
 
     if skip_homography:
         # Return translation as a 3x3 homography matrix
@@ -220,9 +220,12 @@ def get_homography_with_translation(
         print("Returning translation-only homography.")
         return H_translation
 
-    # --- Homography step (as before, but use translated_rgb) ---
+    # --- Homography step ---
     alpha = 0.5
-    overlay = cv2.addWeighted(translated_rgb, alpha, frame_thm, 1 - alpha, 0)
+    if warp_to == 'rgb':
+        overlay = cv2.addWeighted(frame_rgb, alpha, translated_thm, 1 - alpha, 0)
+    else:
+        overlay = cv2.addWeighted(translated_rgb, alpha, frame_thm, 1 - alpha, 0)
     window_name = "Overlay after translation: Adjust alpha with [ and ]. Click points, then press any key."
     points = []
 
@@ -242,14 +245,20 @@ def get_homography_with_translation(
         key = cv2.waitKey(0)
         if key == ord('['):
             alpha = max(0.0, alpha - 0.05)
-            overlay = cv2.addWeighted(translated_rgb, alpha, frame_thm, 1 - alpha, 0)
+            if warp_to == 'rgb':
+                overlay = cv2.addWeighted(frame_rgb, alpha, translated_thm, 1 - alpha, 0)
+            else:
+                overlay = cv2.addWeighted(translated_rgb, alpha, frame_thm, 1 - alpha, 0)
             temp = overlay.copy()
             for px, py in points:
                 cv2.circle(temp, (px, py), 5, (0, 255, 0), -1)
             cv2.imshow(window_name, temp)
         elif key == ord(']'):
             alpha = min(1.0, alpha + 0.05)
-            overlay = cv2.addWeighted(translated_rgb, alpha, frame_thm, 1 - alpha, 0)
+            if warp_to == 'rgb':
+                overlay = cv2.addWeighted(frame_rgb, alpha, translated_thm, 1 - alpha, 0)
+            else:
+                overlay = cv2.addWeighted(translated_rgb, alpha, frame_thm, 1 - alpha, 0)
             temp = overlay.copy()
             for px, py in points:
                 cv2.circle(temp, (px, py), 5, (0, 255, 0), -1)
@@ -260,19 +269,21 @@ def get_homography_with_translation(
     cv2.destroyWindow(window_name)
     pts_overlay = np.array(points, dtype=np.float32)
 
-    # Now ask user to select the same points in the other image (Thermal)
-    print(f"Now select the same {len(pts_overlay)} points in the Thermal image, in the same order.")
-    pts_ref = select_points(frame_thm, "Select points in Thermal")
+    # Now ask user to select the same points in the other image
+    print(f"Now select the same {len(pts_overlay)} points in the other image, in the same order.")
+    if warp_to == 'rgb':
+        pts_ref = select_points(frame_rgb, "Select points in RGB")
+    else:
+        pts_ref = select_points(frame_thm, "Select points in Thermal")
 
     if pts_overlay.shape[0] >= 4 and pts_overlay.shape == pts_ref.shape:
         H, _ = cv2.findHomography(pts_overlay, pts_ref, cv2.RANSAC)
         print("Homography computed.")
         # Combine translation and homography
-        H_full = np.dot(H, np.vstack([M, [0,0,1]]))
+        H_full = np.dot(H, np.vstack([M, [0, 0, 1]]))
         return H_full
     else:
         raise RuntimeError("Invalid point selection for homography.")
-    
 
 
 def manual_temporal_alignment(rgb_video_path, thermal_video_path, H=None, frame_size=(640, 480), warp_to='rgb'):
@@ -390,13 +401,14 @@ def step1_crop_and_prepare(rgb_video_path, thermal_video_path, output_dir_rgb, o
     thm_cap.release()
     return cropped_rgb_path
 
-def step2_spatial_alignment(cropped_rgb_path, thermal_video_path, frame_size, warp_to="thermal", skip_homography=False):
+def step2_spatial_alignment(cropped_rgb_path, thermal_video_path, frame_size, warp_to="thermal", skip_homography=False, skip_translation=False):
     H = get_homography_with_translation(
         cropped_rgb_path,
         thermal_video_path,
         frame_size=frame_size,
         warp_to=warp_to,
-        skip_homography=skip_homography
+        skip_homography=skip_homography,
+        skip_translation=skip_translation
     )
     print("✅ Transformation matrix:\n", H)
     return H
@@ -466,11 +478,11 @@ def save_temporally_adjusted_video(input_video_path, output_video_path, frame_of
     print(f"✅ Adjusted RGB video saved to {output_video_path}")
 
 def align_videos(rgb_video_path, thermal_video_path, output_dir_rgb, output_dir_thm,
-                 frame_size=(640, 480), max_frames=None, warp_to="thermal", rotation_angle=0.0, skip_homography=False):
+                 frame_size=(640, 480), max_frames=None, warp_to="thermal", rotation_angle=0.0, skip_homography=False, skip_translation=True):
 
     cropped_rgb_path = step1_crop_and_prepare(rgb_video_path, thermal_video_path, output_dir_rgb, output_dir_thm, frame_size, max_frames)
 
-    H = step2_spatial_alignment(cropped_rgb_path, thermal_video_path, frame_size, warp_to, skip_homography)
+    H = step2_spatial_alignment(cropped_rgb_path, thermal_video_path, frame_size, warp_to, skip_homography, skip_translation=skip_translation)
 
     warped_thermal_path = os.path.join(output_dir_thm, "warped_thermal.mp4")
     save_warped_video(thermal_video_path, warped_thermal_path, H, frame_size, max_frames)
