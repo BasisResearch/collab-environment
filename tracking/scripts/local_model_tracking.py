@@ -9,10 +9,7 @@ from pathlib import Path
 from bytetracker.byte_tracker import BYTETracker
 import argparse
 
-# Load your model
-MODEL_WEIGHTS_PATH = "pipeline_code_out_of_the_box/model_weights.pt"  # Update with the actual path
-model = torch.load(MODEL_WEIGHTS_PATH)
-model.eval()
+
 
 def video_to_frames(video_path, out_dir, prefix="frame"):
     """
@@ -33,13 +30,25 @@ def video_to_frames(video_path, out_dir, prefix="frame"):
     cap.release()
     print(f"Saved {idx} frames to {out_dir}")
 
+from bytetracker.byte_tracker import BYTETracker
+
 def track_objects(csv_path: Path) -> dict:
+    """
+    Use ByteTracker to track objects based on detection results.
+    Args:
+        csv_path: Path to the CSV file containing detection results.
+    Returns:
+        A dictionary with track IDs and their corresponding frame and coordinates.
+    """
     df = pd.read_csv(csv_path)
+
+    # Parse predictions from the CSV
     def safe_json_loads(x):
         try:
             return json.loads(x) if pd.notnull(x) and x.strip() else {"predictions": []}
         except Exception:
             return {"predictions": []}
+
     df["parsed_predictions"] = df["predictions"].apply(safe_json_loads)
     all_frames = []
 
@@ -52,16 +61,18 @@ def track_objects(csv_path: Path) -> dict:
             detections.append([x1, y1, x2, y2, conf])
         all_frames.append(detections)
 
+    # Initialize ByteTracker
     tracker = BYTETracker()
     track_history = {}
 
+    # Perform tracking
     for frame_idx, detections in enumerate(all_frames):
         if not detections:
             continue
         dets_np = np.array(detections)
         if dets_np.ndim != 2 or dets_np.shape[1] < 5:
             continue
-        class_ids = np.zeros((dets_np.shape[0], 1))
+        class_ids = np.zeros((dets_np.shape[0], 1))  # Add dummy class IDs
         formatted_dets = np.hstack((dets_np[:, :5], class_ids))
         tracked = tracker.update(formatted_dets)
 
@@ -71,6 +82,100 @@ def track_objects(csv_path: Path) -> dict:
             track_history.setdefault(track_id, []).append((frame_idx, (cx, cy)))
 
     return track_history
+
+def visualize_detections_from_video(
+    csv_path: Path,
+    video_path: Path,
+    output_video_path: Path,
+    fps: int = None,
+    output_frames_dir: Path = None
+):
+    """
+    Visualize detections from a CSV file on a video and save the annotated video.
+    Optionally, save annotated frames to a directory.
+
+    Args:
+        csv_path (Path): Path to the CSV file containing detections.
+        video_path (Path): Path to the input video.
+        output_video_path (Path): Path to save the annotated video.
+        fps (int, optional): Frames per second for the output video. If None, use the input video's FPS.
+        output_frames_dir (Path, optional): Directory to save annotated frames.
+    """
+
+    # Load detections from CSV
+    df = pd.read_csv(csv_path)
+    df["parsed_predictions"] = df["predictions"].apply(json.loads)
+
+    # Open the video
+    cap = cv2.VideoCapture(str(video_path))
+    if not cap.isOpened():
+        print(f"⚠️ Unable to open video: {video_path}")
+        return
+
+    # Get video properties
+    input_fps = cap.get(cv2.CAP_PROP_FPS)
+    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    # Use input FPS if not provided
+    if fps is None:
+        fps = input_fps
+
+    # Initialize video writer
+    writer = cv2.VideoWriter(
+        str(output_video_path),
+        cv2.VideoWriter_fourcc(*"mp4v"),
+        fps,
+        (width, height)
+    )
+
+    # Create output frames directory if needed
+    if output_frames_dir is not None:
+        output_frames_dir.mkdir(parents=True, exist_ok=True)
+
+    # Process video frame by frame
+    for frame_idx in tqdm(range(total_frames), desc="Processing video"):
+        ret, frame = cap.read()
+        if not ret:
+            print(f"⚠️ Unable to read frame {frame_idx}")
+            break
+
+        # Get predictions for the current frame
+        if frame_idx < len(df):
+            preds = df.iloc[frame_idx]["parsed_predictions"]["predictions"]
+            for obj in preds:
+                x, y, w_box, h_box = obj["x"], obj["y"], obj["width"], obj["height"]
+                conf = obj.get("confidence", None)
+
+                # Calculate bounding box coordinates
+                x1 = int(x - w_box / 2)
+                y1 = int(y - h_box / 2)
+                x2 = int(x + w_box / 2)
+                y2 = int(y + h_box / 2)
+
+                # Draw bounding box and label
+                color = (0, 255, 0)
+                cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
+                label = f"{obj.get('class', 'bird')}: {conf:.2f}" if conf is not None else "bird"
+                cv2.putText(frame, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+        # Write the annotated frame to the video
+        writer.write(frame)
+
+        # Optionally save the annotated frame
+        if output_frames_dir is not None:
+            frame_path = output_frames_dir / f"frame_{frame_idx:06d}.jpg"
+            cv2.imwrite(str(frame_path), frame)
+
+    # Release resources
+    cap.release()
+    writer.release()
+
+    print(f"✅ Annotated video saved to: {output_video_path}")
+    if output_frames_dir is not None:
+        print(f"✅ Annotated frames saved to: {output_frames_dir}")
+
 
 def overlay_tracks_on_video(csv_path: Path, frame_dir: Path, output_video: Path, fps: int = 5):
     df = pd.read_csv(csv_path)
@@ -119,7 +224,8 @@ def run_tracking(session_path: Path, camera_type: str = "thermal", camera_number
         subfolder_path = session_path / f"thermal_{camera_number}"
     elif camera_type == "rgb":
         subfolder = f"rgb_{camera_number}"
-        frame_dir = session_path / f"rgb_{camera_number}" / "cropped" / "frames"
+        print("using detections from thermal camera")
+        frame_dir = session_path / f"thermal_{camera_number}" / "cropped" / "frames"
         csv_pattern = "*.csv"
         subfolder_path = session_path / f"rgb_{camera_number}" 
     else:
@@ -151,6 +257,7 @@ def run_tracking(session_path: Path, camera_type: str = "thermal", camera_number
             for frame_idx, (x, y) in points:
                 f.write(f"{tid},{frame_idx},{x},{y}\n")
     print(f"✅ Tracking results saved to {output_csv}")
+
 
 def main():
     parser = argparse.ArgumentParser(description="Run object tracking on thermal or RGB videos.")
