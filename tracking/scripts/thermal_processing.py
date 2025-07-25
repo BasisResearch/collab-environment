@@ -31,6 +31,7 @@ import seaborn as sns
 from libjpeg.utils import decode 
 from math import exp, sqrt 
 import exiftool
+from typing import List
 
 # Constants
 MAGIC_SEQ = re.compile(b"\x46\x46\x46\x00\x52\x54")
@@ -276,39 +277,118 @@ def export_thermal_video(reader: CSQReader, out_path: Path, vmin: float, vmax: f
     print(f"\n✅ Exported {frame_count} frames to: {out_path}")
     print(f"⏱ Approx. duration: {duration_sec:.2f} seconds at {fps} fps")
 
+# def process_directory(folder_path, out_path, color='binary', preview=True, max_frames=None, fps=30):
+#     """Process a directory of .csq files and export them as MP4 videos."""
+#     folder_path = Path(folder_path)
+#     csq_files = sorted(folder_path.glob("*.csq"))
+#     print(f"Found {len(csq_files)} .csq files in {folder_path}")
+
+#     for idx, file_path in enumerate(csq_files):
+#         print(f"\nProcessing [{idx}]: {file_path.name}")
+
+#         reader = CSQReader(str(file_path))
+
+#         if preview:
+#             frame = reader.next_frame()
+#             if frame is None:
+#                 print(f"⚠️ No frames found in {file_path}")
+#                 continue
+
+#             sns.set_style("ticks")
+#             fig, ax = plt.subplots()
+#             plt.axis("off")
+#             im = ax.imshow(frame, cmap=color)
+#             plt.colorbar(im, ax=ax)
+#             plt.title(f"Preview for {file_path.name}")
+#             plt.show()
+
+#             vmin = float(input("Enter vmin: "))
+#             vmax = float(input("Enter vmax: "))
+#         else:
+#             print("Auto-detecting vmin/vmax...")
+#             vmin, vmax = choose_vmin_vmax(file_path)
+#             print(f"→ Using vmin={vmin}, vmax={vmax}")
+
+#         reader.reset()
+#         out_file = Path(out_path) / f"thermal_{int(vmin)}_{int(vmax)}.mp4"  # Fix: Ensure vmin and vmax are integers
+#         export_thermal_video(reader, out_file, vmin, vmax, color=color, max_frames=max_frames or 0, fps=fps)  # Fix: Handle None for max_frames
+
 def process_directory(folder_path, out_path, color='binary', preview=True, max_frames=None, fps=30):
-    """Process a directory of .csq files and export them as MP4 videos."""
+    """Process the thermal_1 and thermal_2 subfolders in the given folder_path and export their .csq files as MP4 videos."""
     folder_path = Path(folder_path)
-    csq_files = sorted(folder_path.glob("*.csq"))
-    print(f"Found {len(csq_files)} .csq files in {folder_path}")
+    thermal_folders = ['thermal_1', 'thermal_2']
 
-    for idx, file_path in enumerate(csq_files):
-        print(f"\nProcessing [{idx}]: {file_path.name}")
+    for thermal_folder in thermal_folders:
+        thermal_path = folder_path / thermal_folder
+        if not thermal_path.exists():
+            print(f"⚠️ Folder {thermal_folder} does not exist in {folder_path}. Skipping...")
+            continue
 
-        reader = CSQReader(str(file_path))
+        csq_files = sorted(thermal_path.glob("*.csq"))
+        print(f"Found {len(csq_files)} .csq files in {thermal_path}")
 
-        if preview:
-            frame = reader.next_frame()
-            if frame is None:
-                print(f"⚠️ No frames found in {file_path}")
+        for idx, file_path in enumerate(csq_files):
+            print(f"\nProcessing [{idx}] in {thermal_folder}: {file_path.name}")
+
+            reader = CSQReader(str(file_path))
+
+            if preview:
+                frame = reader.next_frame()
+                if frame is None:
+                    print(f"⚠️ No frames found in {file_path}")
+                    continue
+
+                sns.set_style("ticks")
+                fig, ax = plt.subplots()
+                plt.axis("off")
+                im = ax.imshow(frame, cmap=color)
+                plt.colorbar(im, ax=ax)
+                plt.title(f"Preview for {file_path.name}")
+                plt.show()
+
+                vmin = float(input("Enter vmin: "))
+                vmax = float(input("Enter vmax: "))
+            else:
+                print("Auto-detecting vmin/vmax...")
+                vmin, vmax = choose_vmin_vmax(file_path)
+                print(f"→ Using vmin={vmin}, vmax={vmax}")
+
+            reader.reset()
+            out_file = Path(out_path) / thermal_folder / f"thermal_{int(vmin)}_{int(vmax)}.mp4"  # Ensure output is organized by thermal folder
+            out_file.parent.mkdir(parents=True, exist_ok=True)  # Create the output directory if it doesn't exist
+            export_thermal_video(reader, out_file, vmin, vmax, color=color, max_frames=max_frames or 0, fps=fps)  # Handle None for max_frames
+
+def validate_session_structure(session_path: Path) -> List[str]:
+        """Validate that session has expected structure"""
+        issues = []
+        
+        # Check for required thermal directories
+        for thermal_dir in ['thermal_1', 'thermal_2']:
+            thermal_path = session_path / thermal_dir
+            if not thermal_path.exists():
+                issues.append(f"Missing {thermal_dir} directory")
                 continue
-
-            sns.set_style("ticks")
-            fig, ax = plt.subplots()
-            plt.axis("off")
-            im = ax.imshow(frame, cmap=color)
-            plt.colorbar(im, ax=ax)
-            plt.title(f"Preview for {file_path.name}")
-            plt.show()
-
-            vmin = float(input("Enter vmin: "))
-            vmax = float(input("Enter vmax: "))
+                
+            # Check for CSQ files
+            csq_files = list(thermal_path.glob('*.csq'))
+            if not csq_files:
+                issues.append(f"No CSQ files found in {thermal_dir}")
+        
+        # Check for RGB directories
+        for rgb_dir in ['rgb_1', 'rgb_2']:
+            rgb_path = session_path / rgb_dir
+            if not rgb_path.exists():
+                issues.append(f"Missing {rgb_dir} directory")
+                continue
+                
+            # Check for MP4 files
+            mp4_files = list(rgb_path.glob('*.MP4'))
+            if not mp4_files:
+                issues.append(f"No MP4 files found in {rgb_dir}")
+        if not issues:
+            print("Session structure is valid.")
         else:
-            print("Auto-detecting vmin/vmax...")
-            vmin, vmax = choose_vmin_vmax(file_path)
-            print(f"→ Using vmin={vmin}, vmax={vmax}")
-
-        reader.reset()
-        out_file = Path(out_path) / f"thermal_{int(vmin)}_{int(vmax)}.mp4"  # Fix: Ensure vmin and vmax are integers
-        export_thermal_video(reader, out_file, vmin, vmax, color=color, max_frames=max_frames or 0, fps=fps)  # Fix: Handle None for max_frames
-
+            print("Session structure issues found:")
+            for issue in issues:
+                print(f"- {issue}")
+        return issues
