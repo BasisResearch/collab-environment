@@ -252,6 +252,7 @@ def export_thermal_video(reader: CSQReader, out_path: Path, vmin: float, vmax: f
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     frame = reader.next_frame()
+    
     if frame is None:
         print("⚠️ No frames found.")
         return

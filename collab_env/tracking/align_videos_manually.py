@@ -65,6 +65,10 @@ def select_crop_on_concat(rgb_frame, thm_frame, frame_size=(640, 480), rotation_
     print("Draw a rectangle on the LEFT (RGB) image to crop. Press ENTER or SPACE when done.")
     r = cv2.selectROI(window_name, concat, showCrosshair=True, fromCenter=False)
     x, y, w, h = map(int, r)
+    if (w==0 or h==0):
+        print("⚠️ Please select a non-zero crop.")
+        cv2.destroyWindow(window_name)
+        return select_crop_on_concat(rgb_frame, thm_frame, frame_size, rotation_angle)
     if x + w > frame_size[0]:
         print("⚠️ Please select crop only within the left (RGB) image.")
         cv2.destroyWindow(window_name)
