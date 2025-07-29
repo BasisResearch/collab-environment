@@ -251,68 +251,44 @@ def export_thermal_video(reader: CSQReader, out_path: Path, vmin: float, vmax: f
     """Convert thermal frames into an MP4 video with a fixed colormap."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
-    frame = reader.next_frame()
-    
-    if frame is None:
-        print("⚠️ No frames found.")
-        return
+    # Always reset before reading frames
+    reader.reset()
 
-    img = render_frame_with_colorbar(frame, vmin, vmax, color)
-    height, width, _ = img.shape
-    out = cv2.VideoWriter(str(out_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
-    out.write(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+    # Determine total frames to process
+    if max_frames is None or max_frames == 0:
+        total_frames = reader.count_frames()
+        print(f"🖼️ Total frames in video: {total_frames}")
+        reader.reset()
+        if total_frames == 0:
+            print("⚠️ No frames found in CSQ file.")
+            return
+        frames_to_process = total_frames
+    else:
+        frames_to_process = max_frames
 
-    frame_count = 1
-    frame_iterator = tqdm(range(max_frames - 1), desc="🔄 Writing frames", unit="frame") if max_frames else tqdm(iter(int, 1), desc="🔄 Writing frames", unit="frame")
+    frame_iterator = tqdm(range(frames_to_process), desc="🔄 Writing frames", unit="frame", total=frames_to_process)
 
+    frame_count = 0
+    out = None
     for _ in frame_iterator:
         frame = reader.next_frame()
         if frame is None:
             break
         img = render_frame_with_colorbar(frame, vmin, vmax, color)
+        height, width, _ = img.shape
+        if out is None:
+            out = cv2.VideoWriter(str(out_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
         out.write(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
         frame_count += 1
 
-    out.release()
-    duration_sec = frame_count / fps
-    print(f"\n✅ Exported {frame_count} frames to: {out_path}")
-    print(f"⏱ Approx. duration: {duration_sec:.2f} seconds at {fps} fps")
+    if out is not None and frame_count > 0:
+        out.release()
+        duration_sec = frame_count / fps
+        print(f"\n✅ Exported {frame_count} frames to: {out_path}")
+        print(f"⏱ Approx. duration: {duration_sec:.2f} seconds at {fps} fps")
+    else:
+        print("⚠️ No frames written to video.")
 
-# def process_directory(folder_path, out_path, color='binary', preview=True, max_frames=None, fps=30):
-#     """Process a directory of .csq files and export them as MP4 videos."""
-#     folder_path = Path(folder_path)
-#     csq_files = sorted(folder_path.glob("*.csq"))
-#     print(f"Found {len(csq_files)} .csq files in {folder_path}")
-
-#     for idx, file_path in enumerate(csq_files):
-#         print(f"\nProcessing [{idx}]: {file_path.name}")
-
-#         reader = CSQReader(str(file_path))
-
-#         if preview:
-#             frame = reader.next_frame()
-#             if frame is None:
-#                 print(f"⚠️ No frames found in {file_path}")
-#                 continue
-
-#             sns.set_style("ticks")
-#             fig, ax = plt.subplots()
-#             plt.axis("off")
-#             im = ax.imshow(frame, cmap=color)
-#             plt.colorbar(im, ax=ax)
-#             plt.title(f"Preview for {file_path.name}")
-#             plt.show()
-
-#             vmin = float(input("Enter vmin: "))
-#             vmax = float(input("Enter vmax: "))
-#         else:
-#             print("Auto-detecting vmin/vmax...")
-#             vmin, vmax = choose_vmin_vmax(file_path)
-#             print(f"→ Using vmin={vmin}, vmax={vmax}")
-
-#         reader.reset()
-#         out_file = Path(out_path) / f"thermal_{int(vmin)}_{int(vmax)}.mp4"  # Fix: Ensure vmin and vmax are integers
-#         export_thermal_video(reader, out_file, vmin, vmax, color=color, max_frames=max_frames or 0, fps=fps)  # Fix: Handle None for max_frames
 
 def process_directory(folder_path, out_path, color='binary', preview=True, max_frames=None, fps=30):
     """Process the thermal_1 and thermal_2 subfolders in the given folder_path and export their .csq files as MP4 videos."""
