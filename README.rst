@@ -70,12 +70,12 @@ Setup
          pip install ninja git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch
 
 
-Project Structure and Development
--------------------------------
+Contributing
+------------
 
 This is a collaborative project where contributors merge their work via Pull Requests (PRs). The project follows a structured organization to maintain code quality and facilitate collaboration.
 
-**Source Code Organization:**
+**Project Structure:**
 
 * ``collab_env/`` - Main package containing subprojects:
   * ``tracking/`` - Tracking-related functionality
@@ -90,6 +90,14 @@ This is a collaborative project where contributors merge their work via Pull Req
 * ``scripts/`` - Reserved for continuous integration (CI) scripts
   * All auxiliary code for notebooks should live in the appropriate subpackages
   * CI scripts handle testing, linting, and deployment
+
+**Development Setup:**
+
+To install development dependencies:
+
+.. code:: sh
+
+   pip install -e ".[dev]"
 
 **Testing Requirements:**
 
@@ -162,9 +170,23 @@ Linting is a static code analysis tool that checks your code for potential error
 * Ensuring type safety (with mypy)
 * Maintaining consistent code organization
 
+**Submitting Changes:**
+
+For larger changes, please open an issue for discussion before submitting a pull request.
+
+In your PR, please include:
+
+* Changes made
+* Links to related issues/PRs
+* Tests
+* Dependencies
+
+For speculative changes meant for early-stage review, include ``[WIP]`` in the PR's title.
+
 **Best Practices:**
 
 * Keep auxiliary code in subpackages, not in ``scripts/``
 * Write comprehensive tests for new functionality
 * Use notebooks sparingly in the test suite for resource-intensive operations
 * Follow the established folder structure for new features
+* Follow PEP8 style guide and use the established coding style
