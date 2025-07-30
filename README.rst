@@ -201,3 +201,4 @@ For speculative changes meant for early-stage review, include ``[WIP]`` in the P
 * Use notebooks sparingly in the test suite for resource-intensive operations
 * Follow the established folder structure for new features
 * Follow PEP8 style guide and use the established coding style
+* **Avoid adding temporary or large files to git**: Do not commit temporary files, large data files, or generated outputs to the repository. Check the `.gitignore` file for patterns of files that should be excluded, and add new patterns as needed for your subproject.
