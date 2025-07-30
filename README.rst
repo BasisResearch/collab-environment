@@ -78,16 +78,19 @@ This is a collaborative project where contributors merge their work via Pull Req
 **Project Structure:**
 
 * ``collab_env/`` - Main package containing subprojects:
+
   * ``tracking/`` - Tracking-related functionality
   * ``data/`` - Data processing utilities
   * ``gnn/`` - Graph Neural Network components
   * ``sim/`` - Simulation modules
 
 * ``docs/`` - Documentation and notebooks organized by subproject:
+
   * Mirrors the structure of ``collab_env/`` with corresponding subfolders
   * Contains Python notebooks for each subproject
 
-* ``scripts/`` - Reserved for continuous integration (CI) scripts
+* ``scripts/`` - Reserved for continuous integration (CI) scripts:
+
   * All auxiliary code for notebooks should live in the appropriate subpackages
   * CI scripts handle testing, linting, and deployment
 
@@ -104,11 +107,13 @@ To install development dependencies:
 All tests must pass before a PR can be merged. The testing suite includes:
 
 * **Explicit Tests** (``tests/`` directory): Unit and integration tests for code functionality
+
   * Focus on testing code logic, not notebooks
   * More comprehensive test coverage is encouraged
   * Run with: ``make test``
 
 * **Notebook Tests**: Jupyter notebooks are included in the test suite by default
+
   * Use with caution, especially for data-hungry operations
   * Notebooks are validated for execution but not for output correctness
   * Can be excluded from testing if they require heavy computational resources
@@ -130,15 +135,18 @@ Before submitting a PR, you should run the CI checks locally to ensure your code
 **For Code and Tests:**
 
 * ``make format`` - Automatically formats and fixes code style issues
+
   * Runs ``ruff check --fix`` to fix common code issues
   * Runs ``ruff format`` to format code according to project standards
 
 * ``make lint`` - Checks code quality without making changes
+
   * Runs ``mypy`` for static type checking
   * Runs ``ruff check`` to identify code quality issues
   * Runs ``ruff format --diff`` to show formatting differences
 
 * ``make test`` - Runs the test suite
+
   * Executes all tests in the ``tests/`` directory
   * Uses parallel execution for faster test runs
   * Automatically runs linting checks first
@@ -146,16 +154,19 @@ Before submitting a PR, you should run the CI checks locally to ensure your code
 **For Notebooks:**
 
 * ``make format-notebooks`` - Formats Jupyter notebooks
+
   * Runs ``nbqa isort`` to organize imports
   * Runs ``nbqa black`` to format code cells
 
 * ``make lint-notebooks`` - Checks notebook code quality
+
   * Runs ``nbqa mypy`` for type checking in notebooks
   * Runs ``nbqa isort --check`` to verify import organization
   * Runs ``nbqa black --check`` to verify formatting
   * Runs ``nbqa flake8`` for additional code quality checks
 
 * ``make test-notebooks`` - Tests notebook execution
+
   * Validates that notebooks can be executed without errors
   * Uses ``pytest`` with ``nbval-lax`` for notebook testing
   * Excludes resource-intensive notebooks from testing
