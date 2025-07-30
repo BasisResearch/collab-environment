@@ -202,3 +202,4 @@ For speculative changes meant for early-stage review, include ``[WIP]`` in the P
 * Follow the established folder structure for new features
 * Follow PEP8 style guide and use the established coding style
 * **Avoid adding temporary or large files to git**: Do not commit temporary files, large data files, or generated outputs to the repository. Check the `.gitignore` file for patterns of files that should be excluded, and add new patterns as needed for your subproject.
+* **Maintain proper Python package structure**: Ensure all directories that should be Python packages contain an `__init__.py` file (can be empty). This is required for Python to recognize directories as packages and enables proper imports. When adding new subpackages, always include the `__init__.py` file.
