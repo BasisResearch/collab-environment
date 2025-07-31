@@ -1,6 +1,6 @@
 .env
 .envrc
-
+*.ipynb_checkpoints
 *.py[cod]
 .DS_Store
 # C extensions
