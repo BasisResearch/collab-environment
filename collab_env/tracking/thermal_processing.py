@@ -21,7 +21,7 @@ import subprocess
 import numpy as np
 import cv2  
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, List, Optional
 from tqdm import tqdm
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from PIL import Image
@@ -31,7 +31,7 @@ import seaborn as sns
 from libjpeg.utils import decode 
 from math import exp, sqrt 
 import exiftool
-from typing import List
+
 
 # Constants
 MAGIC_SEQ = re.compile(b"\x46\x46\x46\x00\x52\x54")
@@ -247,7 +247,7 @@ def render_frame_with_colorbar(frame: np.ndarray, vmin: float, vmax: float, colo
     plt.close(fig)
     return img_array
 
-def export_thermal_video(reader: CSQReader, out_path: Path, vmin: float, vmax: float, color: str, max_frames: int = None, fps: int = 30):
+def export_thermal_video(reader: CSQReader, out_path: Path, vmin: float, vmax: float, color: str, max_frames: Optional[int] = None, fps: int = 30):
     """Convert thermal frames into an MP4 video with a fixed colormap."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
