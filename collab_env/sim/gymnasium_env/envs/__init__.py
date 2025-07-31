@@ -1,1 +1,1 @@
-from collab_env.sim.gymnasium_env.envs.boidsWorldSimple import BoidsWorldSimpleEnv
+from collab_env.sim.gymnasium_env.envs.boidsWorldSimple import BoidsWorldSimpleEnv  # noqa:F401

@@ -2,15 +2,16 @@ import numpy as np
 
 
 def find_angle(first, second):
-    print('first ', first)
-    print('second ', second)
-    print('dot ', np.dot(first, second))
-    print('norm first ', np.linalg.norm(first))
-    print('norm second ', np.linalg.norm(second))
+    print("first ", first)
+    print("second ", second)
+    print("dot ", np.dot(first, second))
+    print("norm first ", np.linalg.norm(first))
+    print("norm second ", np.linalg.norm(second))
 
     if np.linalg.norm(first) != 0.0 and np.linalg.norm(second) != 0.0:
-        return np.arccos(np.dot(first, second) /
-                         (np.linalg.norm(first) * np.linalg.norm(second)))
+        return np.arccos(
+            np.dot(first, second) / (np.linalg.norm(first) * np.linalg.norm(second))
+        )
     else:
         return 0.0
 
