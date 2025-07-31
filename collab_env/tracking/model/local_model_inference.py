@@ -2,7 +2,7 @@ import os
 import csv
 import cv2
 from PIL import Image
-from rfdetr import RFDETRBase  
+from rfdetr.detr import RFDETRBase  
 import supervision as sv
 from tqdm import tqdm
 
