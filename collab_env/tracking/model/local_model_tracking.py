@@ -5,12 +5,10 @@ import torch
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-from Typing import Optional
+from typing import Optional
 from pathlib import Path
 from ultralytics.trackers.byte_tracker import BYTETracker
-# from bytetracker.byte_tracker import BYTETracker
 import argparse
-
 
 
 def video_to_frames(video_path, out_dir, prefix="frame"):
@@ -123,12 +121,12 @@ def visualize_detections_from_video(
 
     # Use input FPS if not provided
     if fps is None:
-        fps = input_fps
+        fps = int(input_fps)
 
     # Initialize video writer
     writer = cv2.VideoWriter(
         str(output_video_path),
-        cv2.VideoWriter_fourcc(*"mp4v"),
+        cv2.VideoWriter_fourcc(*"mp4v"), 
         fps,
         (width, height)
     )
