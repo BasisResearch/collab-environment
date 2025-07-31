@@ -80,7 +80,7 @@ def track_objects(csv_path: Path) -> dict:
         for det in tracked:
             x1, y1, x2, y2, track_id, _ = det[:6]
             cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
-            track_history.setdefault(track_id, []).append((frame_idx, (cx, cy)))
+            track_history: dict[str, list[tuple[int, tuple[int, int]]]] = {}
 
     return track_history
 
