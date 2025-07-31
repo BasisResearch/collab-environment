@@ -5,6 +5,7 @@ import torch
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
+from Typing import Optional
 from pathlib import Path
 from ultralytics.trackers.byte_tracker import BYTETracker
 # from bytetracker.byte_tracker import BYTETracker
@@ -87,8 +88,8 @@ def visualize_detections_from_video(
     csv_path: Path,
     video_path: Path,
     output_video_path: Path,
-    fps: int = None,
-    output_frames_dir: Path = None
+    fps: Optional[int] = None,
+    output_frames_dir: Optional[Path] = None
 ):
     """
     Visualize detections from a CSV file on a video and save the annotated video.
