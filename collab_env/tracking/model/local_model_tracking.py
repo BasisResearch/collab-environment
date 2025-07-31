@@ -64,7 +64,7 @@ def track_objects(csv_path: Path) -> dict:
 
     # Initialize ByteTracker
     tracker = BYTETracker()
-    track_history = {}
+    track_history: dict[str, list[int]] = {}
 
     # Perform tracking
     for frame_idx, detections in enumerate(all_frames):
@@ -182,7 +182,7 @@ def overlay_tracks_on_video(csv_path: Path, frame_dir: Path, output_video: Path,
     df = pd.read_csv(csv_path)
     df["track_id"] = df["track_id"].astype(int)
 
-    track_colors = {}
+    track_colors: dict[int, tuple[int, int, int]] = {}
 
     frame_paths = sorted(frame_dir.glob("*.jpg"))
     if not frame_paths:
