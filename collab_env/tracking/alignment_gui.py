@@ -622,7 +622,6 @@ def align_videos(
     skip_homography=False,
     skip_translation=True,
 ):
-
     cropped_rgb_path = step1_crop_and_prepare(
         rgb_video_path,
         thermal_video_path,
@@ -802,6 +801,6 @@ if __name__ == "__main__":
         warp_to=args.warp_to,
         rotation_angle=args.rotation_angle,
         skip_homography=args.skip_homography,
-        skip_translation=args.skip_translation
+        skip_translation=args.skip_translation,
     )
     print("✅ Alignment process completed successfully.")
