@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as functional
 import numpy as np
 import matplotlib.pyplot as plt
-from utility import fit_spline_to_data, handle_discrete_data, v_function_2_vminushalf
+from utility import handle_discrete_data, v_function_2_vminushalf
 import gc
 
 def build_edge_index(positions, visual_range):
@@ -46,11 +46,11 @@ def node_feature_vel(past_p,past_v,past_a,species_idx,species_dim):
     """
     init_p = past_p[:,-1,:,:]
     init_v = past_v[:,-1,:,:]
-    S, N, _ = init_p.shape
+    S, N, dim = init_p.shape
 
     # Flatten
-    x_vel = init_v.view(S * N, 2)
-    x_pos = init_p.view(S * N, 2)
+    x_vel = init_v.view(S * N, dim)
+    x_pos = init_p.view(S * N, dim)
     x_pos_boundary = np.maximum( 1 - x_pos, np.ones_like(x_pos) * 0.5 ) #as in Allen et al., CoRL 2022
     x_species = species_idx.view(S * N)
     species_onehot = functional.one_hot(x_species, num_classes=species_dim).float()
@@ -64,11 +64,11 @@ def node_feature_vel_pos(past_p,past_v,past_a,species_idx,species_dim):
     """
     init_p = past_p[:,-1,:,:]
     init_v = past_v[:,-1,:,:]
-    S, N, _ = init_p.shape
+    S, N, dim = init_p.shape
 
     # Flatten
-    x_vel = init_v.view(S * N, 2)
-    x_pos = init_p.view(S * N, 2)
+    x_vel = init_v.view(S * N, dim)
+    x_pos = init_p.view(S * N, dim)
     x_pos_boundary = np.maximum( 1 - x_pos, np.ones_like(x_pos) * 0.5 ) #as in Allen et al., CoRL 2022
     x_species = species_idx.view(S * N)
     species_onehot = functional.one_hot(x_species, num_classes=species_dim).float()
@@ -81,13 +81,13 @@ def node_feature_vel_pos_plus(past_p,past_v,past_a,species_idx,species_dim,past_
     Only has the agent velocities and position as feature.
     """
     init_v = past_v[:,-1,:,:]
-    S, F, N, _ = past_p.shape
+    S, F, N, dim = past_p.shape
     past_p = past_p[:,-past_time:,:,:]
     past_p = torch.permute(past_p, [0, 2, 1, 3])
     
     # Flatten
-    x_vel = init_v.view(S * N, 2)
-    x_pos = past_p.reshape((S * N, past_time * 2))
+    x_vel = init_v.view(S * N, dim)
+    x_pos = past_p.reshape((S * N, past_time * dim))
     x_pos_boundary = np.maximum( 1 - x_pos, np.ones_like(x_pos) * 0.5 ) #as in Allen et al., CoRL 2022
     x_species = species_idx.view(S * N)
     species_onehot = functional.one_hot(x_species, num_classes=species_dim).float()
@@ -106,7 +106,7 @@ def node_feature_vel_plus_pos_plus(past_p,past_v,past_a,
     Only has the agent velocities and position as feature.
     """
 
-    S, F, N, _ = past_p.shape
+    S, F, N, dim = past_p.shape
     past_p = past_p[:,-past_time:,:,:]
     past_p = torch.permute(past_p, [0, 2, 1, 3])
 
@@ -115,10 +115,9 @@ def node_feature_vel_plus_pos_plus(past_p,past_v,past_a,
     past_v = torch.permute(past_v, [0, 2, 1, 3])
 
     # Flatten
-    x_vel = past_v.reshape((S * N, past_time * 2))
-    x_pos = past_p.reshape((S * N, past_time * 2))
+    x_vel = past_v.reshape((S * N, past_time * dim))
+    x_pos = past_p.reshape((S * N, past_time * dim))
     x_pos_boundary = np.maximum( 1 - x_pos, np.ones_like(x_pos) * 0.5 ) #as in Allen et al., CoRL 2022
-    #assert 1 == 0
 
     x_species = species_idx.view(S * N)
     species_onehot = functional.one_hot(x_species, num_classes=species_dim).float()
@@ -210,10 +209,8 @@ def run_gnn_frame(model, edge_index, edge_weight,
     B, F, N, _ = past_p.shape
     node_feature_function = model.node_feature_function
     node_prediction = model.node_prediction
-    input_differentiation = model.input_differentiation
     prediction_integration = model.prediction_integration
 
-    adj = None
     if node_feature_function == "vel":
         node_feature = node_feature_vel
     elif node_feature_function == "vel_pos":
@@ -233,7 +230,6 @@ def run_gnn_frame(model, edge_index, edge_weight,
     pred = pred.to(device)
     init_p = past_p[:,-1,:,:]
     init_v = past_v[:,-1,:,:]
-    init_a = past_a[:,-1,:,:]
 
     pred_pos, pred_vel, pred_vplushalf, pred_acc = None, None, None, None
 
@@ -371,6 +367,7 @@ def run_gnn(model,
         if pred_acc is not None:
             pred_acc_ = pred_acc.detach().clone().to(device)
         loss = functional.mse_loss(pred_acc, target_acc) #+ 0.1 * torch.sum(edge_weight)
+        #loss = functional.mse_loss(pred_pos, target_pos) #+ 0.1 * torch.sum(edge_weight)
 
         if training:
             optimizer.zero_grad()

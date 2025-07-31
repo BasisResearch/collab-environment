@@ -1,6 +1,5 @@
 import torch
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.interpolate import UnivariateSpline
 
 def handle_discrete_data(position, input_differentiation):
@@ -39,7 +38,6 @@ def spline_data(position):
 
 def v_function_2_vminushalf(v_function, frame):
 
-    batch_keys = list(v_function.keys())
     B = len(v_function.keys())
     N = len(v_function[0].keys())
     D = len(v_function[0][0])
@@ -64,7 +62,6 @@ def finite_diff(time, position, query = None):
         query = time
 
     velocity_fit = np.zeros(position.shape)
-    acceleration_fit = torch.zeros_like(position)
 
     velocity_fit[1:] = torch.diff(position).detach().cpu().numpy()
     spline_velocity = UnivariateSpline(time, velocity_fit, s=0)

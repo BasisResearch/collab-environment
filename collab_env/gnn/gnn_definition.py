@@ -1,7 +1,7 @@
 """Defines the GNN architecture."""
 import torch
 import torch.nn.functional as functional
-from torch_geometric.nn import GCNConv, GATConv, GATv2Conv
+from torch_geometric.nn import GCNConv, GATConv
 
 class GNN(torch.nn.Module):
     def __init__(self, model_name, in_node_dim,
@@ -10,7 +10,7 @@ class GNN(torch.nn.Module):
                  input_differentiation = "finite", # or "spline"
                  prediction_integration = "Euler", # or "Leapfrog"
                  start_frame = 0,
-                 heads = 1, hidden_dim=60):
+                 heads = 1, hidden_dim=128, output_dim = 2):
         super().__init__()
         
         self.name = model_name
@@ -28,7 +28,7 @@ class GNN(torch.nn.Module):
         self.gcn1 = GCNConv(in_node_dim, hidden_dim,
                             add_self_loops = False)
         """
-        GAT v2 is supposedly better. Instead of \sigma(AHW), it is A\sigma(HW)
+        GAT v2 is supposedly better. Instead of sigma(AHW), it is Asigma(HW)
         Here we use GAT just because GATv2Conv have not been fully tested out by Shijie.
         However, preliminary testing shows that simply swapping GATConv to GATv2Conv works though!
         """
@@ -40,7 +40,7 @@ class GNN(torch.nn.Module):
                             add_self_loops = False)
      
         # Final linear layer to predict 2D acceleration
-        self.out = torch.nn.Linear(hidden_dim, 2)
+        self.out = torch.nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x, edge_index, edge_weight):
         """
