@@ -64,7 +64,7 @@ def track_objects(csv_path: Path) -> dict:
 
     # Initialize ByteTracker
     tracker = BYTETracker()
-    track_history: dict[str, list[int]] = {}
+    track_history: dict[str, list[tuple[int, tuple[int, int]]]] = {}
 
     # Perform tracking
     for frame_idx, detections in enumerate(all_frames):
@@ -80,7 +80,9 @@ def track_objects(csv_path: Path) -> dict:
         for det in tracked:
             x1, y1, x2, y2, track_id, _ = det[:6]
             cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
-            track_history: dict[str, list[tuple[int, tuple[int, int]]]] = {}
+            if track_id not in track_history:
+                track_history[track_id] = []
+            track_history[track_id].append((frame_idx, (cx, cy)))
 
     return track_history
 
