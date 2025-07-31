@@ -105,6 +105,16 @@ All tests must pass before a PR can be merged. The testing suite includes:
   * Use with caution, especially for data-hungry operations
   * Notebooks are validated for execution but not for output correctness
   * Can be excluded from testing if they require heavy computational resources
+  * **To exclude a notebook from testing**: Add it to the `EXCLUDED_NOTEBOOKS` list in `scripts/test_notebooks.sh`
+  * **To exclude specific cells or code sections**: Use environment-based guards:
+
+    .. code:: python
+
+       smoke_test = "CI" in os.environ
+       if not smoke_test:
+           # Code that should only run locally and be excluded from CI
+           expensive_computation()
+           large_data_processing()
 
 **Development Workflow:**
 
