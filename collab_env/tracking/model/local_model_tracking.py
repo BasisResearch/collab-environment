@@ -1,7 +1,6 @@
 import os
 import cv2
 import json
-import torch
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
@@ -54,7 +53,13 @@ def track_objects(csv_path: Path) -> dict:
     for _, row in df.iterrows():
         detections = []
         for obj in row["parsed_predictions"]["predictions"]:
-            x, y, w, h, conf = obj["x"], obj["y"], obj["width"], obj["height"], obj.get("confidence", 1.0)
+            x, y, w, h, conf = (
+                obj["x"],
+                obj["y"],
+                obj["width"],
+                obj["height"],
+                obj.get("confidence", 1.0),
+            )
             x1, y1 = x - w / 2, y - h / 2
             x2, y2 = x + w / 2, y + h / 2
             detections.append([x1, y1, x2, y2, conf])
@@ -84,12 +89,13 @@ def track_objects(csv_path: Path) -> dict:
 
     return track_history
 
+
 def visualize_detections_from_video(
     csv_path: Path,
     video_path: Path,
     output_video_path: Path,
     fps: Optional[int] = None,
-    output_frames_dir: Optional[Path] = None
+    output_frames_dir: Optional[Path] = None,
 ):
     """
     Visualize detections from a CSV file on a video and save the annotated video.
@@ -126,9 +132,9 @@ def visualize_detections_from_video(
     # Initialize video writer
     writer = cv2.VideoWriter(
         str(output_video_path),
-        cv2.VideoWriter_fourcc(*"mp4v"), 
+        cv2.VideoWriter_fourcc(*"mp4v"),  # type: ignore
         fps,
-        (width, height)
+        (width, height),
     )
 
     # Create output frames directory if needed
@@ -158,8 +164,14 @@ def visualize_detections_from_video(
                 # Draw bounding box and label
                 color = (0, 255, 0)
                 cv2.rectangle(frame, (x1, y1), (x2, y2), color, 2)
-                label = f"{obj.get('class', 'bird')}: {conf:.2f}" if conf is not None else "bird"
-                cv2.putText(frame, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+                label = (
+                    f"{obj.get('class', 'bird')}: {conf:.2f}"
+                    if conf is not None
+                    else "bird"
+                )
+                cv2.putText(
+                    frame, label, (x1, y1 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2
+                )
 
         # Write the annotated frame to the video
         writer.write(frame)
@@ -178,11 +190,11 @@ def visualize_detections_from_video(
         print(f"✅ Annotated frames saved to: {output_frames_dir}")
 
 
-def overlay_tracks_on_video(csv_path: Path, frame_dir: Path, output_video: Path, fps: int = 5):
+def overlay_tracks_on_video(
+    csv_path: Path, frame_dir: Path, output_video: Path, fps: int = 5
+):
     df = pd.read_csv(csv_path)
     df["track_id"] = df["track_id"].astype(int)
-
-    track_colors: dict[int, tuple[int, int, int]] = {}
 
     frame_paths = sorted(frame_dir.glob("*.jpg"))
     if not frame_paths:
@@ -191,7 +203,12 @@ def overlay_tracks_on_video(csv_path: Path, frame_dir: Path, output_video: Path,
     # Get frame size
     sample_frame = cv2.imread(str(frame_paths[0]))
     h, w = sample_frame.shape[:2]
-    writer = cv2.VideoWriter(str(output_video), cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
+    writer = cv2.VideoWriter(
+        str(output_video),
+        cv2.VideoWriter_fourcc(*"mp4v"),  # type: ignore
+        fps,
+        (w, h),
+    )
 
     for frame_path in frame_paths:
         frame_idx = int(frame_path.stem.split("_")[-1])
@@ -199,9 +216,7 @@ def overlay_tracks_on_video(csv_path: Path, frame_dir: Path, output_video: Path,
 
         frame_tracks = df[df["frame"] == frame_idx]
         for _, row in frame_tracks.iterrows():
-            tid, x, y = int(row["track_id"]), int(row["x"]), int(row["y"])
-            color = track_colors.setdefault(tid, tuple((np.random.rand(3) * 255).astype(int)))
-
+            _, x, y = int(row["track_id"]), int(row["x"]), int(row["y"])
             cv2.circle(frame, (x, y), 5, (255, 255, 0), -1)
 
         writer.write(frame)
@@ -209,7 +224,10 @@ def overlay_tracks_on_video(csv_path: Path, frame_dir: Path, output_video: Path,
     writer.release()
     print(f"✅ Saved annotated video to: {output_video}")
 
-def run_tracking(session_path: Path, camera_type: str = "thermal", camera_number: int = 1):
+
+def run_tracking(
+    session_path: Path, camera_type: str = "thermal", camera_number: int = 1
+):
     """
     Run tracking on either thermal or RGB videos for a given session.
     Args:
@@ -217,10 +235,12 @@ def run_tracking(session_path: Path, camera_type: str = "thermal", camera_number
         camera_type: "thermal" or "rgb"
         camera_number: 1 or 2
     """
-    print(f"Running tracking for {camera_type} camera {camera_number} in session: {session_path}")
+    print(
+        f"Running tracking for {camera_type} camera {camera_number} in session: {session_path}"
+    )
     if camera_type == "thermal":
         subfolder = f"thermal_{camera_number}"
-        frame_dir = session_path /f"thermal_{camera_number}"/ "annotated_frames"
+        frame_dir = session_path / f"thermal_{camera_number}" / "annotated_frames"
         csv_pattern = "*.csv"
         subfolder_path = session_path / f"thermal_{camera_number}"
     elif camera_type == "rgb":
@@ -228,7 +248,7 @@ def run_tracking(session_path: Path, camera_type: str = "thermal", camera_number
         print("using detections from thermal camera")
         frame_dir = session_path / f"thermal_{camera_number}" / "cropped" / "frames"
         csv_pattern = "*.csv"
-        subfolder_path = session_path / f"rgb_{camera_number}" 
+        subfolder_path = session_path / subfolder
     else:
         print("Invalid camera_type. Use 'thermal' or 'rgb'.")
         return
@@ -261,11 +281,35 @@ def run_tracking(session_path: Path, camera_type: str = "thermal", camera_number
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Run object tracking on thermal or RGB videos.")
-    parser.add_argument("--target_root_dir", type=str, required=True, help="Path to the root directory containing data.")
-    parser.add_argument("--session_root_dir", type=str, required=True, help="Session directory name (e.g., '2024_02_06-session_0001').")
-    parser.add_argument("--camera_type", type=str, choices=["thermal", "rgb"], required=True, help="Type of camera ('thermal' or 'rgb').")
-    parser.add_argument("--camera_number", type=int, choices=[1, 2], required=True, help="Camera number (1 or 2).")
+    parser = argparse.ArgumentParser(
+        description="Run object tracking on thermal or RGB videos."
+    )
+    parser.add_argument(
+        "--target_root_dir",
+        type=str,
+        required=True,
+        help="Path to the root directory containing data.",
+    )
+    parser.add_argument(
+        "--session_root_dir",
+        type=str,
+        required=True,
+        help="Session directory name (e.g., '2024_02_06-session_0001').",
+    )
+    parser.add_argument(
+        "--camera_type",
+        type=str,
+        choices=["thermal", "rgb"],
+        required=True,
+        help="Type of camera ('thermal' or 'rgb').",
+    )
+    parser.add_argument(
+        "--camera_number",
+        type=int,
+        choices=[1, 2],
+        required=True,
+        help="Camera number (1 or 2).",
+    )
     args = parser.parse_args()
 
     # Parse arguments
@@ -275,10 +319,11 @@ def main():
     camera_number = args.camera_number
 
     # Construct session path
-    session_path = target_root_dir / session_root_dir / 'aligned_videos'
+    session_path = target_root_dir / session_root_dir / "aligned_videos"
 
     # Run tracking
     run_tracking(session_path, camera_type=camera_type, camera_number=camera_number)
+
 
 if __name__ == "__main__":
     main()

@@ -19,7 +19,7 @@ import re
 import tempfile
 import subprocess
 import numpy as np
-import cv2  
+import cv2
 from pathlib import Path
 from typing import Tuple, List, Optional
 from tqdm import tqdm
@@ -28,8 +28,8 @@ from PIL import Image
 from io import BytesIO
 import matplotlib.pyplot as plt
 import seaborn as sns
-from libjpeg.utils import decode 
-from math import exp, sqrt 
+from libjpeg.utils import decode
+from math import exp, sqrt
 import exiftool
 
 
@@ -37,11 +37,13 @@ import exiftool
 MAGIC_SEQ = re.compile(b"\x46\x46\x46\x00\x52\x54")
 EXIFTOOL_PATH = "/opt/homebrew/bin/exiftool"  # Update this if needed
 
+
 class CSQReader:
     """
     Reader for FLIR .csq thermal video files.
     Extracts thermal image frames using ExifTool and raw temperature conversion.
     """
+
     def __init__(self, filename, blocksize=1_000_000):
         self.reader = open(filename, "rb")
         self.blocksize = blocksize
@@ -73,8 +75,8 @@ class CSQReader:
         if len(matches) < 2:
             return
         for m1, m2 in zip(matches, matches[1:]):
-            self.imgs.append(x[m1.start():m2.start()])
-        self.leftover = x[matches[-1].start():]
+            self.imgs.append(x[m1.start() : m2.start()])
+        self.leftover = x[matches[-1].start() :]
 
     def next_frame(self):
         """Retrieve the next thermal frame as a numpy array."""
@@ -133,7 +135,9 @@ def extract_data(bin_data, etHelper):
         fp.write(bin_data)
         fp.flush()
         metadata = etHelper.get_metadata(fp.name)
-        binary = subprocess.check_output([EXIFTOOL_PATH, "-b", "-RawThermalImage", fp.name])
+        binary = subprocess.check_output(
+            [EXIFTOOL_PATH, "-b", "-RawThermalImage", fp.name]
+        )
         raw = decode(binary)
     return raw, metadata
 
@@ -163,9 +167,12 @@ def raw2temp(raw, metadata):
     h2o = (RH / 100) * exp(
         1.5587 + 0.06939 * ATemp - 0.00027816 * ATemp**2 + 0.00000068455 * ATemp**3
     )
-    tau = lambda d: ATX * exp(-sqrt(d) * (ATA1 + ATB1 * sqrt(h2o))) + (1 - ATX) * exp(
-        -sqrt(d) * (ATA2 + ATB2 * sqrt(h2o))
-    )
+
+    def tau(d):
+        return ATX * exp(-sqrt(d) * (ATA1 + ATB1 * sqrt(h2o))) + (1 - ATX) * exp(
+            -sqrt(d) * (ATA2 + ATB2 * sqrt(h2o))
+        )
+
     tau1 = tau(OD / 2)
     tau2 = tau(OD / 2)
 
@@ -184,9 +191,11 @@ def raw2temp(raw, metadata):
 
     return temp_C
 
+
 def process_frame(frame, vmin, vmax):
     frame = np.clip(frame, vmin, vmax)
     return np.uint8((frame - vmin) / (vmax - vmin) * 255)
+
 
 def choose_vmin_vmax(path, default_vmin=-5, default_vmax=37):
     frame_collection = []
@@ -216,6 +225,7 @@ def choose_vmin_vmax(path, default_vmin=-5, default_vmax=37):
     vmax = min(default_vmax, np.round(np.percentile(all_pixels, 99.999)))
     return vmin, vmax
 
+
 def estimate_duration(reader: CSQReader, fps: float = 30.0) -> float:
     """
     Estimates duration in seconds by counting frames and dividing by fps.
@@ -227,27 +237,45 @@ def estimate_duration(reader: CSQReader, fps: float = 30.0) -> float:
     reader.reset()
     return duration
 
-def render_frame_with_colorbar(frame: np.ndarray, vmin: float, vmax: float, color: str, figsize: Tuple[int, int] = (5, 5)) -> np.ndarray:
+
+def render_frame_with_colorbar(
+    frame: np.ndarray,
+    vmin: float,
+    vmax: float,
+    color: str,
+    figsize: Tuple[int, int] = (5, 5),
+) -> np.ndarray:
     """Render a thermal frame with a colorbar and return it as an RGB image."""
     if frame is None:
-        raise ValueError("Frame is None. Cannot render colorbar.")  # Fix: Handle None frame
+        raise ValueError(
+            "Frame is None. Cannot render colorbar."
+        )  # Fix: Handle None frame
 
     sns.set_style("ticks")
     fig, ax = plt.subplots(figsize=figsize)
     plt.axis("off")
-    im = ax.imshow(frame, cmap=color, vmin=vmin, vmax=vmax)
-    divider = make_axes_locatable(ax)
+    ax.imshow(frame, cmap=color, vmin=vmin, vmax=vmax)
+    make_axes_locatable(ax)
     fig.tight_layout(pad=0)
 
     buf = BytesIO()
-    plt.savefig(buf, format='png', bbox_inches='tight', pad_inches=0)
+    plt.savefig(buf, format="png", bbox_inches="tight", pad_inches=0)
     buf.seek(0)
     img = Image.open(buf)
     img_array = np.array(img.convert("RGB"))
     plt.close(fig)
     return img_array
 
-def export_thermal_video(reader: CSQReader, out_path: Path, vmin: float, vmax: float, color: str, max_frames: Optional[int] = None, fps: int = 30):
+
+def export_thermal_video(
+    reader: CSQReader,
+    out_path: Path,
+    vmin: float,
+    vmax: float,
+    color: str,
+    max_frames: Optional[int] = None,
+    fps: int = 30,
+):
     """Convert thermal frames into an MP4 video with a fixed colormap."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -266,7 +294,12 @@ def export_thermal_video(reader: CSQReader, out_path: Path, vmin: float, vmax: f
     else:
         frames_to_process = max_frames
 
-    frame_iterator = tqdm(range(frames_to_process), desc="🔄 Writing frames", unit="frame", total=frames_to_process)
+    frame_iterator = tqdm(
+        range(frames_to_process),
+        desc="🔄 Writing frames",
+        unit="frame",
+        total=frames_to_process,
+    )
 
     frame_count = 0
     out = None
@@ -277,7 +310,12 @@ def export_thermal_video(reader: CSQReader, out_path: Path, vmin: float, vmax: f
         img = render_frame_with_colorbar(frame, vmin, vmax, color)
         height, width, _ = img.shape
         if out is None:
-            out = cv2.VideoWriter(str(out_path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (width, height))
+            out = cv2.VideoWriter(
+                str(out_path),
+                cv2.VideoWriter_fourcc(*"mp4v"),  # type: ignore
+                fps,
+                (width, height),
+            )
         out.write(cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
         frame_count += 1
 
@@ -290,15 +328,19 @@ def export_thermal_video(reader: CSQReader, out_path: Path, vmin: float, vmax: f
         print("⚠️ No frames written to video.")
 
 
-def process_directory(folder_path, out_path, color='binary', preview=True, max_frames=None, fps=30):
+def process_directory(
+    folder_path, out_path, color="binary", preview=True, max_frames=None, fps=30
+):
     """Process the thermal_1 and thermal_2 subfolders in the given folder_path and export their .csq files as MP4 videos."""
     folder_path = Path(folder_path)
-    thermal_folders = ['thermal_1', 'thermal_2']
+    thermal_folders = ["thermal_1", "thermal_2"]
 
     for thermal_folder in thermal_folders:
         thermal_path = folder_path / thermal_folder
         if not thermal_path.exists():
-            print(f"⚠️ Folder {thermal_folder} does not exist in {folder_path}. Skipping...")
+            print(
+                f"⚠️ Folder {thermal_folder} does not exist in {folder_path}. Skipping..."
+            )
             continue
 
         csq_files = sorted(thermal_path.glob("*.csq"))
@@ -331,41 +373,54 @@ def process_directory(folder_path, out_path, color='binary', preview=True, max_f
                 print(f"→ Using vmin={vmin}, vmax={vmax}")
 
             reader.reset()
-            out_file = Path(out_path) / thermal_folder / f"thermal_{int(vmin)}_{int(vmax)}.mp4"  # Ensure output is organized by thermal folder
-            out_file.parent.mkdir(parents=True, exist_ok=True)  # Create the output directory if it doesn't exist
-            export_thermal_video(reader, out_file, vmin, vmax, color=color, max_frames=max_frames or 0, fps=fps)  # Handle None for max_frames
+            out_file = (
+                Path(out_path) / thermal_folder / f"thermal_{int(vmin)}_{int(vmax)}.mp4"
+            )  # Ensure output is organized by thermal folder
+            out_file.parent.mkdir(
+                parents=True, exist_ok=True
+            )  # Create the output directory if it doesn't exist
+            export_thermal_video(
+                reader,
+                out_file,
+                vmin,
+                vmax,
+                color=color,
+                max_frames=max_frames or 0,
+                fps=fps,
+            )  # Handle None for max_frames
+
 
 def validate_session_structure(session_path: Path) -> List[str]:
-        """Validate that session has expected structure"""
-        issues = []
-        
-        # Check for required thermal directories
-        for thermal_dir in ['thermal_1', 'thermal_2']:
-            thermal_path = session_path / thermal_dir
-            if not thermal_path.exists():
-                issues.append(f"Missing {thermal_dir} directory")
-                continue
-                
-            # Check for CSQ files
-            csq_files = list(thermal_path.glob('*.csq'))
-            if not csq_files:
-                issues.append(f"No CSQ files found in {thermal_dir}")
-        
-        # Check for RGB directories
-        for rgb_dir in ['rgb_1', 'rgb_2']:
-            rgb_path = session_path / rgb_dir
-            if not rgb_path.exists():
-                issues.append(f"Missing {rgb_dir} directory")
-                continue
-                
-            # Check for MP4 files
-            mp4_files = list(rgb_path.glob('*.MP4'))
-            if not mp4_files:
-                issues.append(f"No MP4 files found in {rgb_dir}")
-        if not issues:
-            print("Session structure is valid.")
-        else:
-            print("Session structure issues found:")
-            for issue in issues:
-                print(f"- {issue}")
-        return issues
+    """Validate that session has expected structure"""
+    issues = []
+
+    # Check for required thermal directories
+    for thermal_dir in ["thermal_1", "thermal_2"]:
+        thermal_path = session_path / thermal_dir
+        if not thermal_path.exists():
+            issues.append(f"Missing {thermal_dir} directory")
+            continue
+
+        # Check for CSQ files
+        csq_files = list(thermal_path.glob("*.csq"))
+        if not csq_files:
+            issues.append(f"No CSQ files found in {thermal_dir}")
+
+    # Check for RGB directories
+    for rgb_dir in ["rgb_1", "rgb_2"]:
+        rgb_path = session_path / rgb_dir
+        if not rgb_path.exists():
+            issues.append(f"Missing {rgb_dir} directory")
+            continue
+
+        # Check for MP4 files
+        mp4_files = list(rgb_path.glob("*.MP4"))
+        if not mp4_files:
+            issues.append(f"No MP4 files found in {rgb_dir}")
+    if not issues:
+        print("Session structure is valid.")
+    else:
+        print("Session structure issues found:")
+        for issue in issues:
+            print(f"- {issue}")
+    return issues

@@ -4,13 +4,23 @@ import sys
 import csv
 import json
 
+
 def get_creation_time(filepath):
     try:
         result = subprocess.run(
-            ['ffprobe', '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', filepath],
+            [
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_format",
+                "-show_streams",
+                filepath,
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True
+            text=True,
         )
 
         metadata = json.loads(result.stdout)
@@ -45,8 +55,12 @@ def extract_timestamps_from_folder(folder_path, out_path):
         print(f"❌ Provided path is not a folder: {folder_path}")
         return
 
-    video_extensions = {'.mp4', '.mov', '.avi', '.mkv'}
-    video_files = [f for f in os.listdir(folder_path) if os.path.splitext(f)[1].lower() in video_extensions]
+    video_extensions = {".mp4", ".mov", ".avi", ".mkv"}
+    video_files = [
+        f
+        for f in os.listdir(folder_path)
+        if os.path.splitext(f)[1].lower() in video_extensions
+    ]
 
     if not video_files:
         print("🚫 No video files found in the folder.")
@@ -69,10 +83,12 @@ def extract_timestamps_from_folder(folder_path, out_path):
         writer.writerows(output)
 
     print(f"\n✅ Timestamps saved to: {csv_path}")
+
+
 if __name__ == "__main__":
     if len(sys.argv) != 3:
-        print("Usage: python video_timestamps.py /path/to/video_folder /path/to/output_folder")
+        print(
+            "Usage: python video_timestamps.py /path/to/video_folder /path/to/output_folder"
+        )
     else:
         extract_timestamps_from_folder(sys.argv[1], sys.argv[2])
-        
-

@@ -1,12 +1,14 @@
-import os
 import csv
 import cv2
 from PIL import Image
-from rfdetr.detr import RFDETRBase  
+from rfdetr.detr import RFDETRBase
 import supervision as sv
 from tqdm import tqdm
 
-def process_video_with_rfdetr(video_path, output_csv_path, output_video_path, checkpoint_path, confidence=0.5):
+
+def process_video_with_rfdetr(
+    video_path, output_csv_path, output_video_path, checkpoint_path, confidence=0.5
+):
     """
     Process a video using RF-DETR with custom weights and save the results to a CSV file and an annotated video.
     Args:
@@ -29,13 +31,15 @@ def process_video_with_rfdetr(video_path, output_csv_path, output_video_path, ch
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     # Initialize video writer for annotated video
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v") 
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")
     writer = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
 
     # Write header to CSV
     with open(output_csv_path, "w", newline="") as f:
         writer_csv = csv.writer(f)
-        writer_csv.writerow(["frame_index", "class_name", "confidence", "x1", "y1", "x2", "y2"])
+        writer_csv.writerow(
+            ["frame_index", "class_name", "confidence", "x1", "y1", "x2", "y2"]
+        )
 
     # Process each frame
     for frame_idx in tqdm(range(total_frames), desc="Processing video frames"):
@@ -57,7 +61,9 @@ def process_video_with_rfdetr(video_path, output_csv_path, output_video_path, ch
 
         # Annotate the frame
         annotated_frame = sv.BoxAnnotator().annotate(frame, sv_detections)
-        annotated_frame = sv.LabelAnnotator().annotate(annotated_frame, sv_detections, labels)
+        annotated_frame = sv.LabelAnnotator().annotate(
+            annotated_frame, sv_detections, labels
+        )
 
         # Write annotated frame to video
         writer.write(annotated_frame)
@@ -67,8 +73,20 @@ def process_video_with_rfdetr(video_path, output_csv_path, output_video_path, ch
             writer_csv = csv.writer(f)
             for detection in detections.predictions:
                 x1, y1, x2, y2 = detection.bbox
-                writer_csv.writerow([frame_idx, detection.class_name, detection.confidence, x1, y1, x2, y2])
+                writer_csv.writerow(
+                    [
+                        frame_idx,
+                        detection.class_name,
+                        detection.confidence,
+                        x1,
+                        y1,
+                        x2,
+                        y2,
+                    ]
+                )
 
     cap.release()
     writer.release()
-    print(f"Inference completed. Results saved to {output_csv_path} and {output_video_path}")
+    print(
+        f"Inference completed. Results saved to {output_csv_path} and {output_video_path}"
+    )
