@@ -10,6 +10,7 @@ collab-environment
 
 Setup
 -----
+
 * Using pip / uv:
 
    .. code:: sh
@@ -35,6 +36,18 @@ Setup
 
       docker build --platform=linux/amd64  --progress=plain -t tommybotch/collab-environment .
       docker push tommybotch/collab-environment:latest
+
+* Install exiftool
+   .. code:: sh
+
+      # For MacOS
+      brew install exiftool
+
+      # For Linux (Ubuntu/Debian)
+      sudo apt-get install libimage-exiftool-perl
+
+      # For Linux (RHEL/CentOS/Fedora) 
+      sudo yum install perl-Image-ExifTool
 
 * Using gcloud
 
