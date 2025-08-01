@@ -8,8 +8,8 @@ them seem to stop -- not sure why that is happening.
 """
 
 import gymnasium as gym
-from boidsAgents import BoidsWorldAgent
-
+from collab_env.sim.boids.boidsAgents import BoidsWorldAgent
+import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
 from tqdm import tqdm  # Progress bar
 
 # from logger.debug import logger.debug
