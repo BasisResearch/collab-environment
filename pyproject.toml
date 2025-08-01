@@ -37,7 +37,7 @@ dependencies = [
   "gcsfs",
   "loguru",
   "pylibjpeg-libjpeg",
-  "rfdetr"
+  "rfdetr",
   "open3d",
   "gymnasium",
 ]
