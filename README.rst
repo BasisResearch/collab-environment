@@ -23,11 +23,9 @@ Setup
    We also provide a conda `env.yml` file that can be used to create a conda environment with the necessary dependencies. Run the following command to create the environment:
 
    .. code:: sh
-
+   
       conda env create -n collab-env -f env.yml
       conda activate collab-env
-
-* Docker setup
 
    .. code:: sh
 
@@ -55,8 +53,22 @@ Setup
    in the root directory of this repository. See below for an example:
 
    .. code:: sh
-
+   
       COLLAB_DATA_KEY=path/to/api/key.json
+
+Usage
+-----
+
+Running a Simple Boids Simulation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To run a simple boids simulation with 40 agents:
+
+.. code:: sh
+
+   python -m collab_env.sim.boids.runBoidsSimple
+
+This will start a 3D visualization of the boids simulation. To stop the simulation, press ``Ctrl-C`` in the terminal.
 
 Contributing
 ------------
@@ -105,6 +117,16 @@ All tests must pass before a PR can be merged. The testing suite includes:
   * Use with caution, especially for data-hungry operations
   * Notebooks are validated for execution but not for output correctness
   * Can be excluded from testing if they require heavy computational resources
+  * **To exclude a notebook from testing**: Add it to the `EXCLUDED_NOTEBOOKS` list in `scripts/test_notebooks.sh`
+  * **To exclude specific cells or code sections**: Use environment-based guards:
+
+    .. code:: python
+
+       smoke_test = "CI" in os.environ
+       if not smoke_test:
+           # Code that should only run locally and be excluded from CI
+           expensive_computation()
+           large_data_processing()
 
 **Development Workflow:**
 
