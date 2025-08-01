@@ -33,13 +33,14 @@ dependencies = [
   "dotenv",
   "jupyterlab", 
   "ipywidgets",
-  "dotenv",
   "gcsfs",
   "loguru",
   "pylibjpeg-libjpeg",
   "rfdetr",
   "open3d",
   "gymnasium",
+  "torch_geometric",
+  "ipympl",
 ]
 
 [tool.setuptools]                         # NEW
