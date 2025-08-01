@@ -32,10 +32,9 @@ from libjpeg.utils import decode
 from math import exp, sqrt
 import exiftool
 
-
 # Constants
 MAGIC_SEQ = re.compile(b"\x46\x46\x46\x00\x52\x54")
-EXIFTOOL_PATH = subprocess.check_output(['which', 'exiftool']).decode('utf-8').strip()
+EXIFTOOL_PATH = subprocess.check_output(["which", "exiftool"]).decode("utf-8").strip()
 
 class CSQReader:
     """
