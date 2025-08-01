@@ -23,8 +23,8 @@ Setup
 
    .. code:: sh
 
-      conda env create -n collab-environment -f env.yml
-      conda activate collab-environment
+      conda env create -n collab-env -f env.yml
+      conda activate collab-env
 
 * Docker setup
 

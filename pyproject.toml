@@ -37,6 +37,7 @@ dependencies = [
   "gcsfs",
   "loguru",
   "pylibjpeg-libjpeg",
+  "rfdetr"
 ]
 
 [tool.setuptools]                         # NEW

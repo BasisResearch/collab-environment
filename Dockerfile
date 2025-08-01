@@ -61,9 +61,6 @@ COPY --from=conda-source /opt/conda/ /opt/conda
 # Copy env.yml to container
 COPY env.yml /tmp/env.yml
 
-# Copy our package to the container (can be moved once official release?)
-COPY ./ /opt/collab-environment/
-
 # Set CUDA environment variables
 ENV CUDA_HOME=/usr/local/cuda
 ENV CUDA_ROOT=/usr/local/cuda
@@ -77,11 +74,7 @@ ENV HF_HOME="/workspace/models"
 # Build everything in conda environment --> last step is to install buildtools
 RUN /bin/bash -c \
     "source /opt/conda/etc/profile.d/conda.sh && \
-    conda env create -n collab-environment -f /tmp/env.yml && \
-    conda activate collab-environment && \
-    
-    cd /opt/collab-environment && \
-    pip install --no-cache-dir -e ."
+    conda env create -n collab-env -f /tmp/env.yml
 
 # SSH configuration
 RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config && \
@@ -96,7 +89,7 @@ RUN echo 'export PATH="/opt/conda/bin:$PATH"' >> ~/.bashrc && \
     echo 'export CUDA_ROOT=/usr/local/cuda' >> ~/.bashrc && \
     echo 'export PATH="/usr/local/cuda/bin:${PATH}"' >> ~/.bashrc && \
     echo 'source /opt/conda/etc/profile.d/conda.sh' >> ~/.bashrc && \
-    echo 'conda activate collab-environment' >> ~/.bashrc
+    echo 'conda activate collab-env' >> ~/.bashrc
 
 WORKDIR /workspace
 
