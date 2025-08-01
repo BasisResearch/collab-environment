@@ -36,6 +36,15 @@ Setup
       docker build --platform=linux/amd64  --progress=plain -t tommybotch/collab-environment .
       docker push tommybotch/collab-environment:latest
 
+* Using gcloud
+
+   Use of gcloud data access requires API keys stored outside this repository. Please obtain the API keys and create a ```.env``` file
+   in the root directory of this repository. See below for an example:
+
+   .. code:: sh
+
+      COLLAB_DATA_KEY=path/to/api/key.json
+
 Contributing
 ------------
 
