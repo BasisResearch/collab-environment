@@ -15,7 +15,8 @@ classifiers = [
 ]
 
 dependencies = [
-  "torch==2.1.2",
+  "numpy<2",
+  "torch",
   "torchvision",
   "pyro-ppl",
   "numpy",
