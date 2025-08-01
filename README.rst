@@ -23,40 +23,53 @@ Setup
    We also provide a conda `env.yml` file that can be used to create a conda environment with the necessary dependencies. Run the following command to create the environment:
 
    .. code:: sh
-
       conda env create -n collab-env -f env.yml
       conda activate collab-env
 
-* Docker setup
+Usage
+-----
 
-   .. code:: sh
+Docker Setup
+~~~~~~~~~~~
 
-      eval $(ssh-agent)
-      ssh-add ~/.ssh/id_rsa
+.. code:: sh
 
-      docker build --platform=linux/amd64  --progress=plain -t tommybotch/collab-environment .
-      docker push tommybotch/collab-environment:latest
+   docker build --platform=linux/amd64  --progress=plain -t tommybotch/collab-environment .
+   docker push tommybotch/collab-environment:latest
 
-* Install exiftool
-   .. code:: sh
+Install exiftool
+~~~~~~~~~~~~~~~
 
-      # For MacOS
-      brew install exiftool
+.. code:: sh
 
-      # For Linux (Ubuntu/Debian)
-      sudo apt-get install libimage-exiftool-perl
+   # For MacOS
+   brew install exiftool
 
-      # For Linux (RHEL/CentOS/Fedora) 
-      sudo yum install perl-Image-ExifTool
+   # For Linux (Ubuntu/Debian)
+   sudo apt-get install libimage-exiftool-perl
 
-* Using gcloud
+   # For Linux (RHEL/CentOS/Fedora) 
+   sudo yum install perl-Image-ExifTool
 
-   Use of gcloud data access requires API keys stored outside this repository. Please obtain the API keys and create a ```.env``` file
-   in the root directory of this repository. See below for an example:
+Using gcloud
+~~~~~~~~~~~
 
-   .. code:: sh
+Use of gcloud data access requires API keys stored outside this repository. Please obtain the API keys and create a ```.env``` file
+in the root directory of this repository. See below for an example:
 
-      COLLAB_DATA_KEY=path/to/api/key.json
+.. code:: sh
+   COLLAB_DATA_KEY=path/to/api/key.json
+
+Running a Simple Boids Simulation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+To run a simple boids simulation with 40 agents:
+
+.. code:: sh
+
+   python -m collab_env.sim.boids.runBoidsSimple
+
+This will start a 3D visualization of the boids simulation. To stop the simulation, press ``Ctrl-C`` in the terminal.
 
 Contributing
 ------------
