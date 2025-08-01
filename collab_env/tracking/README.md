@@ -1,6 +1,6 @@
 # Tracking scripts usage guide
 
-As part of the 'full_pipeline' notebook, there are 2 key steps: preprocessing (explained here), and inference (explained in the model folder README). If you plan on using already processed data, skip the alignment stage. 
+As part of the 'full_pipeline' notebook, there are 2 key steps: preprocessing (explained here), and inference (weight download and running explained in the model folder README). If you plan on using already processed data, skip the alignment stage. 
 
 For preprocessing, you will use `thermal_processing.py` and the `alignment_gui.py` scripts, both called in the notebook, but also accessible as standalone scripts. *Note* that the GUI works best when run locally. 
 
