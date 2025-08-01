@@ -26,48 +26,21 @@ Setup
       conda env create -n collab-environment -f env.yml
       conda activate collab-environment
 
-* linux/arm64 is not supported by nvidia/label/cuda-11.8.0??
 
-* Docker setup
 
-   .. code:: sh
+Usage
+-----
 
-      eval $(ssh-agent)
-      ssh-add ~/.ssh/id_rsa
+Running a Simple Boids Simulation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-      docker build --platform=linux/arm64  --progress=plain -t tommybotch/collab-environment .
-      docker push tommybotch/collab-environment:latest
+To run a simple boids simulation with 40 agents:
 
-* How to painfully install nerfstudio 
+.. code:: sh
 
-   .. code:: sh
+   python -m collab_env.sim.boids.runBoidsSimple
 
-      conda env create -n nerfstudio -f env.yml
-      conda activate nerfstudio
-
-   * For some reason, this needs to be installed via pip for tiny-cuda-nn to install
-
-      .. code:: sh
-   
-         pip install torch==2.1.2+cu118 torchvision==0.16.2+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
-
-   * Install CUDA toolkit
-
-      .. code:: sh
-
-         conda install -c "nvidia/label/cuda-11.8.0" cuda-toolkit
-
-   * Need to downgrade setuptools 
-
-      .. code:: sh
-
-         pip install setuptools==69.5.1
-
-   * Install tiny-cuda-nn
-
-      .. code:: sh
-   
-         pip install ninja git+https://github.com/NVlabs/tiny-cuda-nn/#subdirectory=bindings/torch
+This will start a 3D visualization of the boids simulation. To stop the simulation, press ``Ctrl-C`` in the terminal.
 
 
 Contributing
@@ -117,6 +90,16 @@ All tests must pass before a PR can be merged. The testing suite includes:
   * Use with caution, especially for data-hungry operations
   * Notebooks are validated for execution but not for output correctness
   * Can be excluded from testing if they require heavy computational resources
+  * **To exclude a notebook from testing**: Add it to the `EXCLUDED_NOTEBOOKS` list in `scripts/test_notebooks.sh`
+  * **To exclude specific cells or code sections**: Use environment-based guards:
+
+    .. code:: python
+
+       smoke_test = "CI" in os.environ
+       if not smoke_test:
+           # Code that should only run locally and be excluded from CI
+           expensive_computation()
+           large_data_processing()
 
 **Development Workflow:**
 
