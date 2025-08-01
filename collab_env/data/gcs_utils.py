@@ -4,19 +4,11 @@ from loguru import logger
 import gcsfs
 import os
 from pathlib import Path
+from dotenv import load_dotenv
 from collab_env.data.file_utils import get_project_root, expand_path
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-    DEFAULT_GCS_CREDENTIALS_PATH = os.environ.get("COLLAB_DATA_KEY")
-except ImportError:
-    DEFAULT_GCS_CREDENTIALS_PATH = None
-    pass
-
-if DEFAULT_GCS_CREDENTIALS_PATH is None:
-    DEFAULT_GCS_CREDENTIALS_PATH = "config-local/collab-data-463313-c340ad86b28e.json"
-    DEFAULT_PROJECT_ID = "collab-data-463313"
+DEFAULT_PROJECT_ID = "collab-data-463313"
+DEFAULT_GCS_CREDENTIALS_PATH = "config-local/collab-data-463313-c340ad86b28e.json"
 
 class GCSClient:
     is_initialized = False

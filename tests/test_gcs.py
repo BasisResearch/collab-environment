@@ -17,6 +17,7 @@ TEST_BUCKET_NAME = f"test-bucket-collab-data_{uuid.uuid4()}"
 def test_bucket_name():
     return TEST_BUCKET_NAME
 
+
 @pytest.fixture(scope="session")
 def setup_and_teardown_module():
     # Setup code
