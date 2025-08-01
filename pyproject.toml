@@ -38,6 +38,9 @@ dependencies = [
   "loguru",
   "open3d",
   "gymnasium",
+  "scipy",
+  "torch_geometric",
+  "ipympl",
 ]
 
 [tool.setuptools]                         # NEW

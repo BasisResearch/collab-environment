@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as functional
 import numpy as np
 import matplotlib.pyplot as plt
-from utility import handle_discrete_data, v_function_2_vminushalf
+from collab_env.gnn.utility import handle_discrete_data, v_function_2_vminushalf
 import gc
 
 def build_edge_index(positions, visual_range):
