@@ -74,7 +74,7 @@ ENV HF_HOME="/workspace/models"
 # Build everything in conda environment --> last step is to install buildtools
 RUN /bin/bash -c \
     "source /opt/conda/etc/profile.d/conda.sh && \
-    conda env create -n collab-env -f /tmp/env.yml
+    conda env create -n collab-env -f /tmp/env.yml"
 
 # SSH configuration
 RUN echo "PermitRootLogin yes" >> /etc/ssh/sshd_config && \
