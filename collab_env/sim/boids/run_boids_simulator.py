@@ -52,6 +52,30 @@ if __name__ == "__main__":
     else:
         render_mode = ""
 
+
+    # TOC -- 080225 9:15AM
+    # Create the output folder
+    new_folder_name = (
+        config["simulator"]["run_main_folder"]
+        + "/"
+        + config["simulator"]["run_sub_folder_prefix"]
+        + "-started-"
+        + datetime.now().strftime("%Y%m%d-%H%M%S")
+    )
+    new_run_folder = expand_path(new_folder_name, get_project_root())
+    os.mkdir(new_run_folder)
+    # TOC -- 080225 9:54AM
+    # Copy the config file into the run folder to record configuration for the run.
+    # There may be a better way to do this to make sure we get all parameters stored
+    # in case there are still hardcoded values in the code -- which should be removed
+    # at some point.
+    copied_config_file_path = expand_path("config.yaml", new_run_folder)
+    shutil.copy(config_filename, copied_config_file_path)
+
+    video_file_path = expand_path('video.mp4', new_run_folder)
+    logger.debug(f'video path {video_file_path}')
+
+
     #
     # Create environment and agent
     #
@@ -61,6 +85,8 @@ if __name__ == "__main__":
         num_agents=config["simulator"]["num_agents"],
         walking=config["simulator"]["walking"],
         show_box=config["simulator"]["show_box"],
+        store_video=config["simulator"]["store_video"],
+        video_file_path=video_file_path,
         box_size=config["environment"]["box_size"],
         scene_scale=config["environment"]["scene_scale"],
         scene_filename=config["files"]["mesh_scene"],
@@ -82,24 +108,6 @@ if __name__ == "__main__":
         max_force=config["agent"]["max_force"],
     )
 
-    # TOC -- 080225 9:15AM
-    # Create the output folder
-    new_folder_name = (
-        config["simulator"]["run_main_folder"]
-        + "/"
-        + config["simulator"]["run_sub_folder_prefix"]
-        + "-started-"
-        + datetime.now().strftime("%Y%m%d-%H%M%S")
-    )
-    new_run_folder = expand_path(new_folder_name, get_project_root())
-    os.mkdir(new_run_folder)
-    # TOC -- 080225 9:54AM
-    # Copy the config file into the run folder to record configuration for the run.
-    # There may be a better way to do this to make sure we get all parameters stored
-    # in case there are still hardcoded values in the code -- which should be removed
-    # at some point.
-    copied_config_file_path = expand_path("config.yaml", new_run_folder)
-    shutil.copy(config_filename, copied_config_file_path)
 
     #
     # Run the episodes

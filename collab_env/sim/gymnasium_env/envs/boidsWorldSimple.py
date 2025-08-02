@@ -3,6 +3,7 @@ import torch
 from gymnasium import spaces
 import numpy as np
 import open3d
+import cv2
 
 # from Boids.sim_utils import calc_angles
 from loguru import logger
@@ -17,18 +18,19 @@ class BoidsWorldSimpleEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
     def __init__(
-            self,
-            render_mode=None,
-            size=5,
-            num_agents=1,
-            walking=False,
-            agent_scale=2.0,
-            box_size=40,
-            show_box=False,
-            scene_scale=100.0,
-            scene_filename="meshes/Open3dTSDFfusion_mesh.ply",
-            show_visualizer=True,
-            store_video=False,
+        self,
+        render_mode=None,
+        size=5,
+        num_agents=1,
+        walking=False,
+        agent_scale=2.0,
+        box_size=40,
+        show_box=False,
+        scene_scale=100.0,
+        scene_filename="meshes/Open3dTSDFfusion_mesh.ply",
+        show_visualizer=True,
+        store_video=False,
+        video_file_path='video.mp4',
     ):
         self.size = size  # The size of the square grid
         self.window_size = 512  # The size of the render window
@@ -48,7 +50,17 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.scene_scale = scene_scale
         self.scene_filename = scene_filename
         self.show_visualizer = show_visualizer
-        self.store_video = False
+        self.store_video = store_video
+        self.video_file_path = video_file_path
+        logger.debug(f'video path is {self.video_file_path}')
+        logger.debug(f'store video is {self.store_video}')
+
+        '''
+        TOC -- 0980225 3:54PM
+        This is just for debugging video problem
+        '''
+        self.video_already_opened = False
+
 
         self.observation_space = spaces.Dict(
             {
@@ -122,9 +134,11 @@ class BoidsWorldSimpleEnv(gym.Env):
         human-mode. They will remain `None` until human-mode is used for the first time.
         """
         self.vis = None
+        self.video_out = None
         self.geometry = None
         self.mesh_sphere_agent = None
         self.mesh_agent = None
+
 
     def get_action_array(self):
         return np.array(self._action_to_direction.values())
@@ -268,13 +282,13 @@ class BoidsWorldSimpleEnv(gym.Env):
         # set the target velocity
         self._target_velocity = self.np_random.normal(0, 0.1, size=3)
         while (
-                np.linalg.norm(self._target_location - np.array([0.0, 0.0, 0.0])) < 0.000001
+            np.linalg.norm(self._target_location - np.array([0.0, 0.0, 0.0])) < 0.000001
         ):
             self._target_velocity = self.np_random.normal(0, 0.1, size=3)
 
         self._ground_target_velocity = self.np_random.normal(0, 0.01, size=3)
         while (
-                np.linalg.norm(self._target_location - np.array([0.0, 0.0, 0.0])) < 0.000001
+            np.linalg.norm(self._target_location - np.array([0.0, 0.0, 0.0])) < 0.000001
         ):
             self._ground_target_velocity = self.np_random.normal(0, 0.1, size=3)
 
@@ -373,17 +387,17 @@ class BoidsWorldSimpleEnv(gym.Env):
         for i in range(self.num_agents):
             for coordinate in range(3):
                 if (
-                        self._agent_location[i][coordinate]
-                        + self._agent_velocity[i][coordinate]
-                        < 0
+                    self._agent_location[i][coordinate]
+                    + self._agent_velocity[i][coordinate]
+                    < 0
                 ) or (
-                        self._agent_location[i][coordinate]
-                        + self._agent_velocity[i][coordinate]
-                        > self.box_size
+                    self._agent_location[i][coordinate]
+                    + self._agent_velocity[i][coordinate]
+                    > self.box_size
                 ):
                     self._agent_velocity[i][coordinate] = (
-                            np.random.normal(-0.8, 0.1, size=1)
-                            * self._agent_velocity[i][coordinate]
+                        np.random.normal(-0.8, 0.1, size=1)
+                        * self._agent_velocity[i][coordinate]
                     )
 
         """
@@ -426,7 +440,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         # update the targets
         self._ground_target_location = (
-                self._ground_target_location + self._ground_target_velocity
+            self._ground_target_location + self._ground_target_velocity
         )
         self._target_location = self._target_location + self._target_velocity
         # logger.debug('step(): new location ' + str(self._agent_location))
@@ -489,7 +503,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         runboids() is just ignoring terminated -- Never mind.  
         """
         terminated = (
-                len(distance[distance < HIT_DISTANCE]) > 0
+            len(distance[distance < HIT_DISTANCE]) > 0
         )  # np.array_equal(self._agent_location, self._target_location)
         # logger.debug('terminated ' + str(terminated))
         reward = 0
@@ -650,7 +664,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             self.vis.update_geometry(self.mesh_agent[i])
 
     def load_rotate_scene(
-            self, filename, position=np.array([0.0, 0.0, 0.0]), angles=(-np.pi / 2, 0, 0)
+        self, filename, position=np.array([0.0, 0.0, 0.0]), angles=(-np.pi / 2, 0, 0)
     ):
         # self.mesh_scene = open3d.io.read_triangle_mesh("example_meshes/example_mesh.ply")
         mesh_scene = open3d.io.read_triangle_mesh(filename)
@@ -721,10 +735,10 @@ class BoidsWorldSimpleEnv(gym.Env):
         return mesh_scene
 
     def initialize_visualizer(self):
-        '''
+        """
         Returns:
-        '''
-        ''' 
+        """
+        """ 
         TOC -- 073125 
         Is this the right way to visualize. Kind of think there may have been a newer way to do this.
 
@@ -733,23 +747,31 @@ class BoidsWorldSimpleEnv(gym.Env):
         our ability to compute things about the scene mesh separately from the 
         visualizer. The simulation seems to run when we don't create the window. Need 
         to check on other used of the visualizer in the code. 
-        '''
+        """
 
         # Initialize Open3D visualizer
         self.vis = open3d.visualization.Visualizer()
         self.vis.create_window(visible=self.show_visualizer)
 
-    def initialize_agent_meshes(self):
+        if self.store_video:
+            # Define the codec and create VideoWriter object
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            self.video_out = cv2.VideoWriter(str(self.video_file_path), fourcc, 30, (1920, 1027))
+            logger.debug(f'video file {self.video_file_path}')
+            assert(not self.video_already_opened)
+            self.video_already_opened = True
 
+
+
+
+    def initialize_agent_meshes(self):
         #
         # TOC -- 072325
         # Move all agents to the closest point on the mesh
         #
         if self.walking:
-            distances, closest_points = (
-                self.compute_distance_and_closest_points(
-                    self.mesh_scene, self._agent_location
-                )
+            distances, closest_points = self.compute_distance_and_closest_points(
+                self.mesh_scene, self._agent_location
             )
             self._agent_location = closest_points.numpy()
 
@@ -763,17 +785,15 @@ class BoidsWorldSimpleEnv(gym.Env):
             # self.mesh_sphere_agent[i].translate(self._agent_location[i])
             # self.vis.update_geometry(self.mesh_sphere_agent[i])
             # self.vis.add_geometry(self.mesh_sphere_agent[i])
-            '''
+            """
             TOC -- 080225 1:57PM 
             Have a config option to make this a sphere instead of a cone. 
-            '''
-            self.mesh_agent[i] = (
-                open3d.geometry.TriangleMesh.create_arrow(
-                    cone_height=0.8,
-                    cone_radius=0.4,
-                    cylinder_radius=0.4,
-                    cylinder_height=1.0,
-                )
+            """
+            self.mesh_agent[i] = open3d.geometry.TriangleMesh.create_arrow(
+                cone_height=0.8,
+                cone_radius=0.4,
+                cylinder_radius=0.4,
+                cylinder_height=1.0,
             )
             # bunny = open3d.data.BunnyMesh()
             # self.mesh_arrow_agent[i] = open3d.io.read_triangle_mesh(bunny.path)
@@ -787,7 +807,6 @@ class BoidsWorldSimpleEnv(gym.Env):
 
             self.vis.add_geometry(self.mesh_agent[i])
             # print('bunny agent ', self.mesh_arrow_agent[i])
-
 
     def initalize_meshes(self):
         """
@@ -807,15 +826,11 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         self.initialize_agent_meshes()
 
-        self.mesh_target = open3d.geometry.TriangleMesh.create_sphere(
-            radius=1.5
-        )
+        self.mesh_target = open3d.geometry.TriangleMesh.create_sphere(radius=1.5)
         self.mesh_target.compute_vertex_normals()
         self.mesh_target.paint_uniform_color([0.1, 0.6, 0.1])
 
-        self.mesh_ground_target = (
-            open3d.geometry.TriangleMesh.create_sphere(radius=0.4)
-        )
+        self.mesh_ground_target = open3d.geometry.TriangleMesh.create_sphere(radius=0.4)
         self.mesh_ground_target.compute_vertex_normals()
         self.mesh_ground_target.paint_uniform_color([0.1, 0.6, 1.0])
         """
@@ -824,10 +839,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         somehow. It must not be drawn to the correct spot. Try not drawing it.   
         """
         if self.walking:
-            distances, closest_points = (
-                self.compute_distance_and_closest_points(
-                    self.mesh_scene, [self._ground_target_location]
-                )
+            distances, closest_points = self.compute_distance_and_closest_points(
+                self.mesh_scene, [self._ground_target_location]
             )
             # self.mesh_sphere_target.translate(closest_points.numpy()[0] - self._target_location)
             self._ground_target_location = closest_points.numpy()[0]
@@ -844,27 +857,24 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.vis.update_geometry(self.mesh_target)
         self.vis.update_geometry(self.mesh_ground_target)
 
-        self.mesh_sphere_world1 = open3d.geometry.TriangleMesh.create_sphere(
-            radius=0.1
-        )
+        '''
+        TOC -- 080225 2:56PM
+        Some of these meshes are not used and need to be removed.
+        '''
+        self.mesh_sphere_world1 = open3d.geometry.TriangleMesh.create_sphere(radius=0.1)
         self.mesh_sphere_world1.compute_vertex_normals()
         self.mesh_sphere_world1.paint_uniform_color([0.0, 0.0, 0.0])
         self.mesh_sphere_world1.translate([0.0, 0.0, self.max_dist_from_center])
 
-        self.mesh_sphere_center = open3d.geometry.TriangleMesh.create_sphere(
-            radius=0.1
-        )
+        self.mesh_sphere_center = open3d.geometry.TriangleMesh.create_sphere(radius=0.1)
         self.mesh_sphere_center.compute_vertex_normals()
         self.mesh_sphere_center.paint_uniform_color([1.0, 0.0, 0.0])
         self.mesh_sphere_center.translate([0.0, 0.0, 0.0])
 
-        self.mesh_sphere_start = open3d.geometry.TriangleMesh.create_sphere(
-            radius=0.1
-        )
+        self.mesh_sphere_start = open3d.geometry.TriangleMesh.create_sphere(radius=0.1)
         self.mesh_sphere_start.compute_vertex_normals()
         self.mesh_sphere_start.paint_uniform_color([0.6, 0.1, 0.1])
         self.mesh_sphere_start.translate(self._target_location + [2, 2, 2])
-
 
         """
         TOC -- 073125 -- 7:22AM
@@ -884,7 +894,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.vis.add_geometry(self.mesh_sphere_center)
         # self.vis.add_geometry(self.mesh_sphere_start)
 
-    # end if self.vis is None
+
 
     def _render_frame(self):
         """
@@ -907,9 +917,6 @@ class BoidsWorldSimpleEnv(gym.Env):
         if self.vis is None:
             self.initialize_visualizer()
             self.initalize_meshes()
-
-        # self.mesh_sphere1.translate([self.x, 1, 10])
-        # self.x += 10
 
         self.move_agent_meshes()
 
@@ -941,6 +948,10 @@ class BoidsWorldSimpleEnv(gym.Env):
         #     Rotation nonsense that doesn't work.
         #     '''
 
+        """
+        TOC -- 080225 2:14PM 
+        Why am I not translating the ground target by the ground target velocity?
+        """
         self.mesh_target.translate(self._target_velocity)
 
         for i in range(self.num_agents):
@@ -953,6 +964,22 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.vis.poll_events()
         self.vis.update_renderer()
 
+        if self.store_video:
+            # Capture video
+            img = self.vis.capture_screen_float_buffer()
+            logger.debug(f'img is {img}')
+            img = (255 * np.asarray(img)).astype(np.uint8)
+            logger.debug(f'after astype {img}')
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            logger.debug(f'after cvtColor {img}')
+
+
+            # Write to video
+            result = self.video_out.write(img)
+            logger.debug(f'video out {self.video_out} result = {result}')
+
+
+
     def close(self):
         """ """
 
@@ -963,3 +990,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
         if self.vis is not None:
             self.vis.destroy_window()
+
+        if self.video_out is not None:
+            self.video_out.release()
+            assert(False)

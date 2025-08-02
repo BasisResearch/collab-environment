@@ -66,7 +66,7 @@ if __name__ == "__main__":
         # logger.debug('starting main loop ')
 
         # while not done:
-        for _ in tqdm(range(25000)):
+        for _ in tqdm(range(250)):
             # Agent chooses action (initially random, gradually more intelligent)
             action = agent.get_action(obs)
             # print('action = ' + str(action))
