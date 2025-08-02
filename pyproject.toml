@@ -42,6 +42,7 @@ dependencies = [
   "scipy",
   "torch_geometric",
   "ipympl",
+  "pyarrow",
 ]
 
 [tool.setuptools]                         # NEW

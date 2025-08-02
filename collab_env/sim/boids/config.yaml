@@ -7,6 +7,8 @@ simulator:
   store_video: False
   show_visualizer: True
   show_box: True
+  run_main_folder: "collab_env/sim/runs"
+  run_sub_folder_prefix: "boids_sim_run"
 
 environment:
   max_dist_from_center: 3

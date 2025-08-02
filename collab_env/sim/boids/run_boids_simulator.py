@@ -8,15 +8,22 @@ them seem to stop -- not sure why that is happening.
 """
 
 import argparse
+import os
+from datetime import datetime
+
 from tqdm import tqdm  # Progress bar
 import gymnasium as gym
 import yaml
 from loguru import logger
 
+import pandas as pd
+import pyarrow.parquet as pq
+import pyarrow as pa
+
 from collab_env.sim.boids.boidsAgents import BoidsWorldAgent
 import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
 from collab_env.data.file_utils import get_project_root, expand_path
-
+from collab_env.sim.boids.sim_utils import add_obs_to_df
 
 # NUM_AGENTS = 40
 # WALKING = False
@@ -43,6 +50,7 @@ if __name__ == "__main__":
         render_mode = "human"
     else:
         render_mode = None
+
     #
     # Create environment and agent
     #
@@ -73,6 +81,15 @@ if __name__ == "__main__":
         max_force=config["agent"]["max_force"],
     )
 
+    # TOC -- 080225 9:15AM
+    # Create the output folder
+    new_folder_name = (config['simulator']['run_main_folder'] + '/'
+                       + config['simulator']['run_sub_folder_prefix']
+                       + '-started-' + datetime.now().strftime("%Y%m%d-%H%M%S"))
+    new_run_folder = expand_path(new_folder_name, get_project_root())
+    os.mkdir(new_run_folder)
+
+
     #
     # Run the episodes
     #
@@ -80,6 +97,11 @@ if __name__ == "__main__":
         # Start a new episode
         # print('main(): starting episode ' + str(episode))
         obs, info = env.reset()
+
+        # TOC -- 080225 8:58AM
+        # create the dataframe for the simulation output
+        df = pd.DataFrame(columns=['id', 'type', 'time', 'x', 'y', 'z'])
+
         # print('main(): obs = ' + str(obs))
         done = False
 
@@ -93,12 +115,16 @@ if __name__ == "__main__":
         # logger.debug('starting main loop ')
 
         # while not done:
-        for _ in tqdm(range(config["simulator"]["num_frames"])):
+        for time_step in tqdm(range(config["simulator"]["num_frames"])):
             # Agent chooses action
             action = agent.get_action(obs)
 
             # Take the action in the environment and observe the result
             next_obs, reward, terminated, truncated, info = env.step(action)
+
+            # TOC -- 080225 8:58AM
+            # Record the observation
+            df = add_obs_to_df(df, next_obs, time_step=(time_step + 1))
 
             # Observe the next state
             obs = next_obs
@@ -106,5 +132,14 @@ if __name__ == "__main__":
             # ignore terminated for now since we are just running for a soecified number of frames
             # done = terminated or truncated
             # done = True
+
+        logger.debug(f'episode {episode}: df = {df}')
+        table = pa.Table.from_pandas(df)
+        logger.debug(f'table \n {table}')
+
+        file_path = expand_path(f'episode-{episode}-completed-{datetime.now().strftime("%Y%m%d-%H%M%S")}.parquet',
+                                new_run_folder)
+        logger.info(f"writing output to {file_path}")
+        pq.write_table(table, file_path)
 
     logger.info("all episodes complete")
