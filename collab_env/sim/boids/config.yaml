@@ -1,0 +1,27 @@
+
+simulator:
+  walking: False
+  num_agents: 20
+  num_episodes: 1
+  num_frames: 10
+
+environment:
+  max_dist_from_center: 3
+  box_size: 300
+  scene_scale: 200.0
+
+agent:
+  min_ground_separation: 3.0
+  min_separation: 4.0
+  neighborhood_dist: 20.0
+  separation_weight: 3.0
+  alignment_weight: 0.5
+  cohesion_weight: 0.1
+  ground_weight: 1.0
+  target_weight: 0.0
+  max_speed: 0.8
+  max_force: 0.1
+
+files:
+    mesh_scene: 'meshes/query-tree.ply'
+    output_folder_prefix: 'boids_sim_runs'

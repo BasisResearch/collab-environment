@@ -16,9 +16,13 @@ SPEED = 0.1
 class BoidsWorldSimpleEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, render_mode=None, size=5, num_agents=1, walking=False):
+    def __init__(self, render_mode=None, size=5,
+                 num_agents=1, walking=False, agent_scale=2.0,
+                 box_size=40,
+                 scene_scale=100.0,
+                 scene_filename="meshes/Open3dTSDFfusion_mesh.ply"):
         self.size = size  # The size of the square grid
-        self.window_size = 512  # The size of the PyGame window -- huh??
+        self.window_size = 512  # The size of the render window
         self.num_agents = num_agents
         self._agent_location = None  # initialized by reset()
         self._agent_velocity = None  # initialized by reset()
@@ -28,17 +32,12 @@ class BoidsWorldSimpleEnv(gym.Env):
         self._ground_target_velocity = None
         self.mesh_scene = None  # initialized by reset()
         self.max_dist_from_center = 3
-        self.box_size = 160
+        self.box_size = box_size # tne size of the cube boundary around the world
         self.walking = walking
+        self.agent_scale=agent_scale
+        self.scene_scale=scene_scale
+        self.scene_filename=scene_filename
 
-        # Observations are dictionaries with the agent's and the target's location.
-        # Each location is encoded as an element of {0, ..., `size`}^2,
-        # i.e. MultiDiscrete([size, size]).
-        """
-        TOC -- 071025 
-        This was original Discrete(3), which doesn't make any sense since they are supposed to be coordinates
-        in Euclidian space, so these need to be Boxes. 
-        """
         self.observation_space = spaces.Dict(
             {
                 "agent_loc": spaces.Tuple(
@@ -160,7 +159,6 @@ class BoidsWorldSimpleEnv(gym.Env):
     def reset(self, seed=None, options=None):
         # We need the following line to seed self.np_random
         super().reset(seed=seed)
-        print("reset super returned")
         """
         TOC -- 071025 
         Switched these to fit the Euclidean space types that they should be 
@@ -207,7 +205,6 @@ class BoidsWorldSimpleEnv(gym.Env):
             distances, closest_points = self.compute_distance_and_closest_points(
                 self.mesh_scene
             )
-            # print('reset(): closest points ', closest_points)
             self._agent_location = closest_points.numpy()
 
         """
@@ -588,9 +585,9 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         closest_points_dict = scene.compute_closest_points(query_points)
 
-        print("unsigned distance", unsigned_distance.numpy())
-        print("signed_distance", signed_distance.numpy())
-        print("occupancy", occupancy.numpy())
+        logger.debug(f"unsigned distance {unsigned_distance.numpy()}")
+        logger.debug(f"signed_distance {signed_distance.numpy()}")
+        logger.debug(f"occupancy {occupancy.numpy()}")
         return unsigned_distance.numpy(), closest_points_dict["points"]
 
     def move_agent_meshes(self):
@@ -659,7 +656,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                 [self.box_size / 2.0 + 0.25, self.box_size / 2.0 - 1, self.box_size / 2]
             )
         )
-        mesh_scene.scale(scale=100.0, center=self._target_location)
+        mesh_scene.scale(scale=self.scene_scale, center=self._target_location)
 
         """
         TOC -- 072725 -- 11:37AM
@@ -722,7 +719,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                 """
                 # self.mesh_scene = self.load_rotate_scene("example_meshes/example_mesh.ply", position=np.array([self.box_size/2.0, 0.0, self.box_size/2.0]), angles=(-np.pi / 18, 0, -np.pi / 1.6)
                 filename = expand_path(
-                    "meshes/Open3dTSDFfusion_mesh.ply", get_project_root()
+                    self.scene_filename, get_project_root()
                 )
                 self.mesh_scene = self.load_rotate_scene(
                     filename,
@@ -768,7 +765,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                     self.mesh_arrow_agent[i].paint_uniform_color([1, 0, 0])
                     self.mesh_arrow_agent[i].translate(self._agent_location[i])
                     self.mesh_arrow_agent[i].scale(
-                        scale=2, center=self._agent_location[i]
+                        scale=self.agent_scale, center=self._agent_location[i]
                     )
                     self.vis.update_geometry(self.mesh_arrow_agent[i])
 
@@ -909,8 +906,9 @@ class BoidsWorldSimpleEnv(gym.Env):
         """ """
 
         """
-        TOC -- 073125 
-        Why is this here? 
+        TOC6 -- 080125 
+        Added this as part of Issue #13 to clean up the simulator. The 
+        visualization window should close properly with this fix. 
         """
         if self.vis is not None:
-            pass
+            self.vis.destroy_window()

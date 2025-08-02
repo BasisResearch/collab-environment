@@ -16,12 +16,6 @@ class BoidsWorldAgent:
     def __init__(
         self,
         env: gym.Env,
-        action_to_direction,
-        learning_rate: float,
-        initial_epsilon: float,
-        epsilon_decay: float,
-        final_epsilon: float,
-        discount_factor: float = 0.95,
         num_agents=1,
         min_ground_separation=3.0,
         min_separation=4.0,
@@ -46,7 +40,6 @@ class BoidsWorldAgent:
             discount_factor: How much to value future rewards (0-1)
         """
         self.env = env
-        self.action_to_direction = action_to_direction
         self.num_agents = num_agents
         self.min_ground_separation = min_ground_separation
         self.min_separation = min_separation
@@ -66,14 +59,6 @@ class BoidsWorldAgent:
             defaultdict(lambda: np.zeros(env.action_space.n))  # type:ignore
             for _ in range(num_agents)
         ]
-
-        self.lr = learning_rate
-        self.discount_factor = discount_factor  # How much we care about future rewards
-
-        # Exploration parameters
-        self.epsilon = initial_epsilon
-        self.epsilon_decay = epsilon_decay
-        self.final_epsilon = final_epsilon
 
         # Track learning progress
         self.training_error = []  # type:ignore
@@ -96,7 +81,7 @@ class BoidsWorldAgent:
     """
 
     def simpleBoidsAction(self, obs):
-        # print('called with obs: ' + str(obs), level=3)
+        logger.debug(f'called with obs: {obs}')
         velocity = np.array(obs["agent_vel"])  # using ADP style
         location = np.array(obs["agent_loc"])
         for i in range(self.num_agents):
@@ -134,6 +119,7 @@ class BoidsWorldAgent:
 
                         # align and cohesion
                         # TODO: Do this with numpy array condition and np.sum instead
+                        logger.debug(f'neighborhood dist: {self.neighborhood_dist}')
                         if dist < self.neighborhood_dist:
                             # need velocities in the observation
                             sum_align_vector += velocity[other]
@@ -141,12 +127,7 @@ class BoidsWorldAgent:
                             num_neighbors += 1
 
                 if num_close > 0:
-                    print(
-                        "simpleBoidsAction(): num close to "
-                        + str(i)
-                        + " is "
-                        + str(num_close)
-                    )
+                    logger.debug(f'simpleBoidsAction(): num close to {i} is {num_close}')
                     avg_sep_vector = sum_separation_vector / num_close
                     # avg_sep_vector = avg_sep_vector / np.linalg.norm(avg_sep_vector) * self.max_speed
                 else:
@@ -188,7 +169,7 @@ class BoidsWorldAgent:
                     steer = avg_align_vector - velocity[i]
                     # align_force = steer / np.linalg.norm(steer) * self.max_force
                     align_force = steer
-                    print("SBA(): alignment force " + str(align_force))
+                    logger.debug(f"SBA(): alignment force {align_force}")
 
                 # cohesion
                 if (num_neighbors > 0) and (self.cohesion_weight > 0.0):
@@ -201,12 +182,12 @@ class BoidsWorldAgent:
                     steer = avg_cohesion_vector - obs["agent_loc"][i]
                     # cohesion_force = steer / np.linalg.norm(steer) * self.max_force
                     cohesion_force = steer
-                    print("SBA(): cohesion force " + str(cohesion_force))
+                    logger.debug(f"cohesion force {cohesion_force}")
 
                 # separation
                 if (num_close > 0) and (self.separation_weight > 0.0):
                     separation_force = self.separation_weight * avg_sep_vector
-                    print("SBA(): separation " + str(avg_sep_vector))
+                    logger.debug(f"separation {avg_sep_vector}")
 
                 # target
                 if self.target_weight > 0.0:
@@ -229,14 +210,14 @@ class BoidsWorldAgent:
                     """
                     # target_force = steer / np.linalg.norm(steer) * self.max_speed
                     target_force = steer
-                    print("SBA(): target force " + str(target_force))
+                    logger.debug(f"target force {target_force}")
 
                 # ground
                 if (
                     not self.walking
                     and obs["mesh_distance"][i] < self.min_ground_separation
                 ):
-                    print("SBA(): mesh distance ", obs["mesh_distance"][i])
+                    logger.debug(f"mesh distance {obs['mesh_distance'][i]}")
 
                     ground_diff_vector = location[i] - obs["mesh_closest_points"][i]
                     # if np.linalg.norm(ground_diff_vector) < 0.00001:
@@ -253,8 +234,9 @@ class BoidsWorldAgent:
                     ground_force = ground_diff_vector / (
                         np.linalg.norm(ground_diff_vector) ** 2
                     )
-                    print("SBA(): ground_diff_vector ", ground_diff_vector)
-                    print("SBA(): ground force " + str(ground_force))
+                    logger.debug(f"ground_diff_vector {ground_diff_vector}")
+                    logger.debug(f"ground force {ground_force}")
+
                     # sum_separation_vector += diff_vector/(dist**2)
 
                 total_force += (
