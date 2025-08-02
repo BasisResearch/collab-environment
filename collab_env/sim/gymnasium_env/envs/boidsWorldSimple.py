@@ -31,6 +31,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         show_visualizer=True,
         store_video=False,
         video_file_path='video.mp4',
+        vis_width=1920,
+        vis_height=1027,
     ):
         self.size = size  # The size of the square grid
         self.window_size = 512  # The size of the render window
@@ -52,14 +54,11 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.show_visualizer = show_visualizer
         self.store_video = store_video
         self.video_file_path = video_file_path
+        self.vis_width = vis_width
+        self.vis_height = vis_height
         logger.debug(f'video path is {self.video_file_path}')
         logger.debug(f'store video is {self.store_video}')
 
-        '''
-        TOC -- 0980225 3:54PM
-        This is just for debugging video problem
-        '''
-        self.video_already_opened = False
 
 
         self.observation_space = spaces.Dict(
@@ -125,7 +124,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         What is this? This must be from the original gymnasium example.
         Maybe this is standard Gymnasium stuff that we should stick to.  
         """
-        assert render_mode is None or render_mode in self.metadata["render_modes"]
+        # assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
 
         """
@@ -325,8 +324,11 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.geometry = None
         self.mesh_sphere_agent = None
 
-        if self.render_mode == "human":
-            self._render_frame()
+        # TOC -- 080225 4:40PM
+        # Always need to call _render_frame from reset because we rely on the meshes
+        # for the simulation.
+        #if self.render_mode == "human":
+        self._render_frame()
 
         return observation, info
 
@@ -517,8 +519,10 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
         info = self._get_info()
 
-        if self.render_mode == "human":
-            self._render_frame()
+        # TOC -- 080225 4:41PM
+        # always want to call _render_frame because we rely on the meshes for the simulation
+        #if self.render_mode == "human":
+        self._render_frame()
 
         # logger.debug('step(): observation: ' + str(observation), level=1)
         # logger.debug('step(): reward: ' + str(reward), level=3)
@@ -751,15 +755,14 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         # Initialize Open3D visualizer
         self.vis = open3d.visualization.Visualizer()
-        self.vis.create_window(visible=self.show_visualizer)
+        self.vis.create_window(width=self.vis_width, height=self.vis_height, visible=self.show_visualizer)
 
         if self.store_video:
             # Define the codec and create VideoWriter object
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            self.video_out = cv2.VideoWriter(str(self.video_file_path), fourcc, 30, (1920, 1027))
+            self.video_out = cv2.VideoWriter(str(self.video_file_path), fourcc, 30, (self.vis_width, self.vis_height))
             logger.debug(f'video file {self.video_file_path}')
-            assert(not self.video_already_opened)
-            self.video_already_opened = True
+
 
 
 

@@ -2,13 +2,17 @@
 simulator:
   walking: False
   num_agents: 20
-  num_episodes: 1
-  num_frames: 900
-  store_video: True
-  show_visualizer: True
+  num_episodes: 2
+  num_frames: 20
   show_box: True
   run_main_folder: "collab_env/sim/runs"
   run_sub_folder_prefix: "boids_sim_run"
+
+visuals:
+  store_video: True
+  show_visualizer: False
+  width: 1920
+  height: 1027
 
 environment:
   max_dist_from_center: 3

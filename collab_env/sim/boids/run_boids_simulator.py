@@ -47,7 +47,7 @@ if __name__ == "__main__":
         )
 
     config = yaml.safe_load(open(config_filename))
-    if config["simulator"]["show_visualizer"]:
+    if config["visuals"]["show_visualizer"]:
         render_mode = "human"
     else:
         render_mode = ""
@@ -85,7 +85,10 @@ if __name__ == "__main__":
         num_agents=config["simulator"]["num_agents"],
         walking=config["simulator"]["walking"],
         show_box=config["simulator"]["show_box"],
-        store_video=config["simulator"]["store_video"],
+        store_video=config["visuals"]["store_video"],
+        show_visualizer=config['visuals']['show_visualizer'],
+        vis_width=config['visuals']['width'],
+        vis_height=config['visuals']['height'],
         video_file_path=video_file_path,
         box_size=config["environment"]["box_size"],
         scene_scale=config["environment"]["scene_scale"],
@@ -115,6 +118,8 @@ if __name__ == "__main__":
     for episode in tqdm(range(config["simulator"]["num_episodes"])):
         # Start a new episode
         # print('main(): starting episode ' + str(episode))
+
+
         obs, info = env.reset()
 
         # TOC -- 080225 8:58AM
@@ -162,5 +167,11 @@ if __name__ == "__main__":
         )
         logger.info(f"writing output to {file_path}")
         pq.write_table(table, file_path)
+        if config['visuals']['store_video']:
+            # change the name of the video file to include the episode
+            episode_video_file_path = expand_path(f'episode-{episode}-video.mp4', new_run_folder)
+            logger.debug(f'episode video path {episode_video_file_path}')
+            shutil.move(video_file_path, episode_video_file_path)
+
 
     logger.info("all episodes complete")

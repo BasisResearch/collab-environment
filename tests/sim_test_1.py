@@ -40,3 +40,13 @@ assert df.max(axis=0)["time"] == 5
 # Test to see the proper number of agents were recorded for the first episode.
 # Should be 20 agents over 5 agents, so agent should appear 50 times.
 assert df["type"].value_counts().get("agent", 0) == 5 * 20
+
+# Test to see that a video is stored in the run folder for each episode
+result_file_list = glob(f"{folder_list[0]}/*.mp4")
+assert len(result_file_list) == 3
+
+# Check the size of the video to make sure the file is not empty
+# This number may need to change. This number is based on the
+# number of frames being 5 and the particular image size
+# when I was running this initially.
+assert os.path.getsize(result_file_list[0]) == 101786
