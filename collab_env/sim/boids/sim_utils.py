@@ -1,15 +1,32 @@
 import numpy as np
 import pandas as pd
 
-def add_obs_to_df(df:pd.DataFrame, obs, time_step=0):
-    num_agents = len(obs['agent_loc'])
-    agent_rows = [{'id': i, 'type': 'agent', 'time': time_step, 'x': location[0],
-                   'y': location[1], 'z': location[1]}
-                  for i, location in zip(range(1, num_agents + 1), obs['agent_loc'])]
+
+def add_obs_to_df(df: pd.DataFrame, obs, time_step=0):
+    num_agents = len(obs["agent_loc"])
+    agent_rows = [
+        {
+            "id": i,
+            "type": "agent",
+            "time": time_step,
+            "x": location[0],
+            "y": location[1],
+            "z": location[1],
+        }
+        for i, location in zip(range(1, num_agents + 1), obs["agent_loc"])
+    ]
     # currently only one environmental object really -- not sure the scene really counts yet
-    target_location = obs['target_loc']
-    env_rows = [{'id': 1, 'type': 'env', 'time': time_step, 'x': target_location[0],
-                 'y': target_location[1], 'z': target_location[1]}]
+    target_location = obs["target_loc"]
+    env_rows = [
+        {
+            "id": 1,
+            "type": "env",
+            "time": time_step,
+            "x": target_location[0],
+            "y": target_location[1],
+            "z": target_location[1],
+        }
+    ]
     df = pd.concat([df, pd.DataFrame(agent_rows + env_rows)]).reset_index(drop=True)
     return df
 

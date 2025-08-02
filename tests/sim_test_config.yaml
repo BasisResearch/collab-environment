@@ -9,6 +9,7 @@ simulator:
   show_box: True
   run_main_folder: "tests/sim-runs"
   run_sub_folder_prefix: "boids_sim_run"
+  log_level: "error"
 
 environment:
   max_dist_from_center: 3

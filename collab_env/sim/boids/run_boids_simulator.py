@@ -50,7 +50,7 @@ if __name__ == "__main__":
     if config["simulator"]["show_visualizer"]:
         render_mode = "human"
     else:
-        render_mode = None
+        render_mode = ""
 
     #
     # Create environment and agent
@@ -84,9 +84,13 @@ if __name__ == "__main__":
 
     # TOC -- 080225 9:15AM
     # Create the output folder
-    new_folder_name = (config['simulator']['run_main_folder'] + '/'
-                       + config['simulator']['run_sub_folder_prefix']
-                       + '-started-' + datetime.now().strftime("%Y%m%d-%H%M%S"))
+    new_folder_name = (
+        config["simulator"]["run_main_folder"]
+        + "/"
+        + config["simulator"]["run_sub_folder_prefix"]
+        + "-started-"
+        + datetime.now().strftime("%Y%m%d-%H%M%S")
+    )
     new_run_folder = expand_path(new_folder_name, get_project_root())
     os.mkdir(new_run_folder)
     # TOC -- 080225 9:54AM
@@ -94,9 +98,8 @@ if __name__ == "__main__":
     # There may be a better way to do this to make sure we get all parameters stored
     # in case there are still hardcoded values in the code -- which should be removed
     # at some point.
-    copied_config_file_path = expand_path('config.yaml', new_run_folder)
-    shutil.copy(config_filename,copied_config_file_path)
-
+    copied_config_file_path = expand_path("config.yaml", new_run_folder)
+    shutil.copy(config_filename, copied_config_file_path)
 
     #
     # Run the episodes
@@ -108,7 +111,7 @@ if __name__ == "__main__":
 
         # TOC -- 080225 8:58AM
         # create the dataframe for the simulation output
-        df = pd.DataFrame(columns=['id', 'type', 'time', 'x', 'y', 'z'])
+        df = pd.DataFrame(columns=["id", "type", "time", "x", "y", "z"])
 
         # print('main(): obs = ' + str(obs))
         done = False
@@ -141,12 +144,14 @@ if __name__ == "__main__":
             # done = terminated or truncated
             # done = True
 
-        logger.debug(f'episode {episode}: df = {df}')
+        logger.debug(f"episode {episode}: df = {df}")
         table = pa.Table.from_pandas(df)
-        logger.debug(f'table \n {table}')
+        logger.debug(f"table \n {table}")
 
-        file_path = expand_path(f'episode-{episode}-completed-{datetime.now().strftime("%Y%m%d-%H%M%S")}.parquet',
-                                new_run_folder)
+        file_path = expand_path(
+            f"episode-{episode}-completed-{datetime.now().strftime('%Y%m%d-%H%M%S')}.parquet",
+            new_run_folder,
+        )
         logger.info(f"writing output to {file_path}")
         pq.write_table(table, file_path)
 
