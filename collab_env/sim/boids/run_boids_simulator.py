@@ -19,6 +19,7 @@ from loguru import logger
 import pandas as pd
 import pyarrow.parquet as pq
 import pyarrow as pa
+import shutil
 
 from collab_env.sim.boids.boidsAgents import BoidsWorldAgent
 import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
@@ -88,6 +89,13 @@ if __name__ == "__main__":
                        + '-started-' + datetime.now().strftime("%Y%m%d-%H%M%S"))
     new_run_folder = expand_path(new_folder_name, get_project_root())
     os.mkdir(new_run_folder)
+    # TOC -- 080225 9:54AM
+    # Copy the config file into the run folder to record configuration for the run.
+    # There may be a better way to do this to make sure we get all parameters stored
+    # in case there are still hardcoded values in the code -- which should be removed
+    # at some point.
+    copied_config_file_path = expand_path('config.yaml', new_run_folder)
+    shutil.copy(config_filename,copied_config_file_path)
 
 
     #
