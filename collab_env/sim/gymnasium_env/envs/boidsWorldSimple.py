@@ -16,11 +16,20 @@ SPEED = 0.1
 class BoidsWorldSimpleEnv(gym.Env):
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 4}
 
-    def __init__(self, render_mode=None, size=5,
-                 num_agents=1, walking=False, agent_scale=2.0,
-                 box_size=40,
-                 scene_scale=100.0,
-                 scene_filename="meshes/Open3dTSDFfusion_mesh.ply"):
+    def __init__(
+        self,
+        render_mode=None,
+        size=5,
+        num_agents=1,
+        walking=False,
+        agent_scale=2.0,
+        box_size=40,
+        show_box=False,
+        scene_scale=100.0,
+        scene_filename="meshes/Open3dTSDFfusion_mesh.ply",
+        show_visualizer=True,
+        store_video=False,
+    ):
         self.size = size  # The size of the square grid
         self.window_size = 512  # The size of the render window
         self.num_agents = num_agents
@@ -32,11 +41,14 @@ class BoidsWorldSimpleEnv(gym.Env):
         self._ground_target_velocity = None
         self.mesh_scene = None  # initialized by reset()
         self.max_dist_from_center = 3
-        self.box_size = box_size # tne size of the cube boundary around the world
+        self.box_size = box_size  # tne size of the cube boundary around the world
+        self.show_box = show_box
         self.walking = walking
-        self.agent_scale=agent_scale
-        self.scene_scale=scene_scale
-        self.scene_filename=scene_filename
+        self.agent_scale = agent_scale
+        self.scene_scale = scene_scale
+        self.scene_filename = scene_filename
+        self.show_visualizer = show_visualizer
+        self.store_video = False
 
         self.observation_space = spaces.Dict(
             {
@@ -96,6 +108,11 @@ class BoidsWorldSimpleEnv(gym.Env):
             ]
         )
 
+        """
+        TOC -- 080125 1154PM 
+        What is this? This must be from the original gymnasium example.
+        Maybe this is standard Gymnasium stuff that we should stick to.  
+        """
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
 
@@ -106,7 +123,6 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
         self.vis = None
         self.geometry = None
-        self.x = 1
         self.mesh_sphere_agent = None
         self.mesh_arrow_agent = None
 
@@ -286,13 +302,17 @@ class BoidsWorldSimpleEnv(gym.Env):
         observation = self._get_obs()
         info = self._get_info()
 
-        if self.render_mode == "human":
-            self._render_frame()
-
+        """
+        TOC -- 080225 8:08AM
+        Why am I setting these to None after I called render_frame() above? 
+        These need to be moved -- moved and it still works. 
+        """
         self.vis = None
         self.geometry = None
-        self.x = 1
         self.mesh_sphere_agent = None
+
+        if self.render_mode == "human":
+            self._render_frame()
 
         return observation, info
 
@@ -361,8 +381,9 @@ class BoidsWorldSimpleEnv(gym.Env):
                     + self._agent_velocity[i][coordinate]
                     > self.box_size
                 ):
-                    self._agent_velocity[i][coordinate] *= np.random.normal(
-                        -0.8, 0.1, size=1
+                    self._agent_velocity[i][coordinate] = (
+                        np.random.normal(-0.8, 0.1, size=1)
+                        * self._agent_velocity[i][coordinate]
                     )
 
         """
@@ -506,6 +527,9 @@ class BoidsWorldSimpleEnv(gym.Env):
         # self.rat.translate([-10, 1, 10])
         # self.vis.add_geometry(self.rat)
 
+        #
+        # Create all binary arrays of length 3 to represent the vertices on a cube.
+        #
         bit_string_list = ["{0:03b}".format(n) for n in range(8)]
         logger.debug("bit_string: " + str(bit_string_list))
         bit_array = [list(b) for b in bit_string_list]
@@ -606,7 +630,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             rotate to the new velocity from [0,0,1], which is apparently the default direction. So I don't
             know why this is here or if we need it.   
             """
-            self.mesh_arrow_agent[i].transform(np.eye(4))
+            # self.mesh_arrow_agent[i].transform(np.eye(4))
 
             """
             TOC -- 072725 -- 11:28AM
@@ -630,8 +654,8 @@ class BoidsWorldSimpleEnv(gym.Env):
     ):
         # self.mesh_scene = open3d.io.read_triangle_mesh("example_meshes/example_mesh.ply")
         mesh_scene = open3d.io.read_triangle_mesh(filename)
-        print("tommy's mesh " + str(mesh_scene))
-        print(f"Center of mesh: {mesh_scene.get_center()}")
+        logger.debug(f"tommy's mesh {mesh_scene}")
+        logger.debug(f"Center of mesh: {mesh_scene.get_center()}")
 
         """
         TOC -- 072325 
@@ -648,7 +672,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         TOC -- 073025 -- 8:21PM
         Not sure why this is translating to this particular position -- needed that for first
         splat but I need to generalize. 
-        Why am I scaling this centered at the target location instead of the center of the scene? 
+        Why am I scaling this centered at the target location instead of the center of the scene?
+        This is a bug.  
         """
 
         mesh_scene.translate(
@@ -656,7 +681,12 @@ class BoidsWorldSimpleEnv(gym.Env):
                 [self.box_size / 2.0 + 0.25, self.box_size / 2.0 - 1, self.box_size / 2]
             )
         )
-        mesh_scene.scale(scale=self.scene_scale, center=self._target_location)
+        # TOC -- 080225 8:30AM
+        # This scaling should be happening centered at the center of the mesh_scene
+        # rather than the target location. Seems to work.
+        #
+        # mesh_scene.scale(scale=self.scene_scale, center=self._target_location)
+        mesh_scene.scale(scale=self.scene_scale, center=mesh_scene.get_center())
 
         """
         TOC -- 072725 -- 11:37AM
@@ -701,37 +731,44 @@ class BoidsWorldSimpleEnv(gym.Env):
         least needs to be initialized regardless of whether the render mode is human or not. So this code needs to 
         change. Perhaps the scene should be initialized in reset() or init() instead. reset() makes sense if the 
         scene could change based on some user defined configuration between trials. 
+        
+        TOC -- 080225 8:35AM
+        Lots of work needs to be done here to deal with render mode. We need to make sure we 
+        can calculate the distances to the mesh when we are not using the viewer and that 
+        everything gets initalized correctly. There is lots of garbage code in here. 
         """
         if self.render_mode == "human":
             if self.vis is None:
                 """
                 TOC -- 073125 
-                Is this the right way to visualize. Kind of think there may have been a newer way to do this. 
+                Is this the right way to visualize. Kind of think there may have been a newer way to do this.
+                
+                TOC -- 080125 10:59PM
+                Do we need to create the window if we aren't visualizing? Need to investigate
+                our ability to compute things about the scene mesh separately from the 
+                visualizer. The simulation seems to run when we don't create the window. Need 
+                to check on other used of the visualizer in the code. 
                 """
                 # Initialize Open3D visualizer
                 self.vis = open3d.visualization.Visualizer()
                 self.vis.create_window()
 
                 """
-                TOC -- 073125 
-                File names and positions should be in a config file or something. 
+                TOC -- 073125  
                 Scene may need to be read in reset() since it is needed even if not rendering. 
                 """
                 # self.mesh_scene = self.load_rotate_scene("example_meshes/example_mesh.ply", position=np.array([self.box_size/2.0, 0.0, self.box_size/2.0]), angles=(-np.pi / 18, 0, -np.pi / 1.6)
-                filename = expand_path(
-                    self.scene_filename, get_project_root()
-                )
+                filename = expand_path(self.scene_filename, get_project_root())
                 self.mesh_scene = self.load_rotate_scene(
                     filename,
-                    # self.mesh_scene = self.load_rotate_scene("mesh/query-tree.ply",
                     position=np.array([self.box_size / 2.0, -self.box_size / 2.0, 8.0]),
                     angles=(-np.pi / 2, 0, 0),
                 )
 
-                """
-                TOC -- 072325 
-                Move all agents to the closest point on the mesh 
-                """
+                #
+                # TOC -- 072325
+                # Move all agents to the closest point on the mesh
+                #
                 if self.walking:
                     distances, closest_points = (
                         self.compute_distance_and_closest_points(
@@ -835,7 +872,8 @@ class BoidsWorldSimpleEnv(gym.Env):
                 self.mesh_sphere_start.paint_uniform_color([0.6, 0.1, 0.1])
                 self.mesh_sphere_start.translate(self._target_location + [2, 2, 2])
 
-                self.add_box()
+                if self.show_box:
+                    self.add_box()
 
                 """
                 TOC -- 073125 -- 7:22AM

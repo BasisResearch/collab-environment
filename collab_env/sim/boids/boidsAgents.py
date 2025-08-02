@@ -81,7 +81,7 @@ class BoidsWorldAgent:
     """
 
     def simpleBoidsAction(self, obs):
-        logger.debug(f'called with obs: {obs}')
+        logger.debug(f"called with obs: {obs}")
         velocity = np.array(obs["agent_vel"])  # using ADP style
         location = np.array(obs["agent_loc"])
         for i in range(self.num_agents):
@@ -119,7 +119,7 @@ class BoidsWorldAgent:
 
                         # align and cohesion
                         # TODO: Do this with numpy array condition and np.sum instead
-                        logger.debug(f'neighborhood dist: {self.neighborhood_dist}')
+                        logger.debug(f"neighborhood dist: {self.neighborhood_dist}")
                         if dist < self.neighborhood_dist:
                             # need velocities in the observation
                             sum_align_vector += velocity[other]
@@ -127,7 +127,9 @@ class BoidsWorldAgent:
                             num_neighbors += 1
 
                 if num_close > 0:
-                    logger.debug(f'simpleBoidsAction(): num close to {i} is {num_close}')
+                    logger.debug(
+                        f"simpleBoidsAction(): num close to {i} is {num_close}"
+                    )
                     avg_sep_vector = sum_separation_vector / num_close
                     # avg_sep_vector = avg_sep_vector / np.linalg.norm(avg_sep_vector) * self.max_speed
                 else:

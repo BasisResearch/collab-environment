@@ -45,11 +45,6 @@ if __name__ == "__main__":
 
     agent = BoidsWorldAgent(
         env=env,
-        action_to_direction=None,
-        learning_rate=learning_rate,
-        initial_epsilon=start_epsilon,
-        epsilon_decay=epsilon_decay,
-        final_epsilon=final_epsilon,
         num_agents=NUM_AGENTS,
         walking=WALKING,
     )

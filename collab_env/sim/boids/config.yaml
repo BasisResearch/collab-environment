@@ -4,11 +4,15 @@ simulator:
   num_agents: 20
   num_episodes: 1
   num_frames: 10
+  store_video: False
+  show_visualizer: True
+  show_box: True
 
 environment:
   max_dist_from_center: 3
   box_size: 300
   scene_scale: 200.0
+  target_speed: 0.1
 
 agent:
   min_ground_separation: 3.0
