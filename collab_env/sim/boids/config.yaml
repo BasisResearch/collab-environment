@@ -3,7 +3,7 @@ simulator:
   walking: True
   num_agents: 20
   num_episodes: 1
-  num_frames: 20
+  num_frames: 2500
   show_box: True
   run_main_folder: "collab_env/sim/runs"
   run_sub_folder_prefix: "boids_sim_run"
@@ -12,17 +12,20 @@ simulator:
   logging: False
 
 visuals:
-  store_video: True
-  show_visualizer: False
+  store_video: False
+  show_visualizer: True
   width: 1920
   height: 1027
   video_codec: '*mpv4'
   video_file_extension: 'mp4'
+  agent_color: [0, 1, 0]
+  agent_scale: 4.0
 
 environment:
   max_dist_from_center: 3
-  box_size: 300
+  box_size: 350
   scene_scale: 200.0
+  scene_position: [175, 20, 175]
   target_speed: 0.1
 
 agent:
@@ -33,10 +36,12 @@ agent:
   alignment_weight: 0.5
   cohesion_weight: 0.1
   ground_weight: 1.0
-  target_weight: 0.0
+  target_weight: 0.0001
   max_speed: 0.8
   max_force: 0.1
+  mean_init_velocity: 1.0
+  variance_init_velocity: 0.2
 
 files:
-    mesh_scene: 'meshes/query-tree.ply'
+    mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
     output_folder_prefix: 'boids_sim_runs'

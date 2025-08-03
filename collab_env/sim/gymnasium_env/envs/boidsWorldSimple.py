@@ -24,10 +24,14 @@ class BoidsWorldSimpleEnv(gym.Env):
         num_agents=1,
         walking=False,
         agent_scale=2.0,
+        agent_color=[1,0,0],
+        agent_mean_init_velocity=0.0,
+        agent_variance_init_velocity = 0.2,
         box_size=40,
         show_box=False,
         scene_scale=100.0,
         scene_filename="meshes/Open3dTSDFfusion_mesh.ply",
+        scene_position=[20, 20, 20],
         show_visualizer=True,
         store_video=False,
         video_file_path="video.mp4",
@@ -46,12 +50,17 @@ class BoidsWorldSimpleEnv(gym.Env):
         self._ground_target_velocity = None
         self.mesh_scene = None  # initialized by reset()
         self.max_dist_from_center = 3
+        self.agent_color = agent_color
+        self.action_scale = agent_scale
+        self.agent_mean_init_velocity = agent_mean_init_velocity
+        self.agent_variance_init_velocity = agent_variance_init_velocity
         self.box_size = box_size  # tne size of the cube boundary around the world
         self.show_box = show_box
         self.walking = walking
         self.agent_scale = agent_scale
         self.scene_scale = scene_scale
         self.scene_filename = scene_filename
+        self.scene_position=scene_position
         self.show_visualizer = show_visualizer
         self.store_video = store_video
         self.video_file_path = video_file_path
@@ -240,7 +249,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         Need to replace hard coded numbers. 
         """
         self._agent_velocity = [
-            self.np_random.normal(0, 0.2, size=3) for _ in range(self.num_agents)
+            self.np_random.normal(self.agent_mean_init_velocity, self.agent_variance_init_velocity, size=3) for _ in range(self.num_agents)
         ]
         """
         TOC -- 072125
@@ -692,12 +701,20 @@ class BoidsWorldSimpleEnv(gym.Env):
         Why am I scaling this centered at the target location instead of the center of the scene?
         This is a bug.  
         """
+        #
+        # TOC -- 080325 1:19PM
+        # The new meshes seem to come in centered at about the origin once they are rotated 90
+        # degrees, but the mesh ground is a little below the bottom of the box. We could
+        # translate the box, but I sort of like having the box bottom and sides to be 0 -- though
+        # I guess we could translate the box to match the mesh rather than the other way around
+        # and then use the box positions in the bounce off the wall conditions. Maybe let's just
+        # make the mesh position configurable. I presume different meshes that people load may
+        # have different properties, and it would be nice to allow the position of the mesh to
+        # be configurable. We should translate and rotate it once though. Not sure what was up
+        # with the double translation I had in here.
 
-        mesh_scene.translate(
-            np.array(
-                [self.box_size / 2.0 + 0.25, self.box_size / 2.0 - 1, self.box_size / 2]
-            )
-        )
+
+        mesh_scene.translate(position)
         # TOC -- 080225 8:30AM
         # This scaling should be happening centered at the center of the mesh_scene
         # rather than the target location. Seems to work.
@@ -720,7 +737,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
         # mesh_scene.translate(-mesh_scene.get_center() + np.array([self.box_size / 2.0, 0.0, self.box_size / 2.0]))
         # mesh_scene.translate(-mesh_scene.get_center() + np.array([self.box_size / 2.0, -self.box_size / 2.0, 0.0]))
-        mesh_scene.translate(position - mesh_scene.get_center())
+        # mesh_scene.translate(position - mesh_scene.get_center())
         #    np.array([self.box_size / 2.0 + 0.25, self.box_size / 2.0 - 1, self.box_size / 2]))
 
         # R = mesh_scene.get_rotation_matrix_from_xyz((-np.pi / 18, 0, -np.pi / 1.6))
@@ -732,7 +749,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         Need to make sure this is the correct center for rotation. Seems like it should 
         be the center of the mesh scene after it has been translated. 
         """
-        mesh_scene.rotate(R, center=(self.box_size / 2.0, 0, 0))
+        # mesh_scene.rotate(R, center=(self.box_size / 2.0, 0, 0))
+        mesh_scene.rotate(R, center=mesh_scene.get_center())
         # R = np.array([ [0.1, 0, 0], [0,0,0], [0,0,0] ])
         # self.mesh_scene.rotate(R, center=self._target_location)
         return mesh_scene
@@ -805,7 +823,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             # bunny = open3d.data.BunnyMesh()
             # self.mesh_arrow_agent[i] = open3d.io.read_triangle_mesh(bunny.path)
             self.mesh_agent[i].compute_vertex_normals()
-            self.mesh_agent[i].paint_uniform_color([1, 0, 0])
+            self.mesh_agent[i].paint_uniform_color(self.agent_color)
             self.mesh_agent[i].translate(self._agent_location[i])
             self.mesh_agent[i].scale(
                 scale=self.agent_scale, center=self._agent_location[i]
@@ -824,7 +842,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         filename = expand_path(self.scene_filename, get_project_root())
         self.mesh_scene = self.load_rotate_scene(
             filename,
-            position=np.array([self.box_size / 2.0, -self.box_size / 2.0, 8.0]),
+            # position=np.array([self.box_size / 2.0, -self.box_size / 2.0, 8.0]),
+            position=self.scene_position,
             angles=(-np.pi / 2, 0, 0),
         )
 

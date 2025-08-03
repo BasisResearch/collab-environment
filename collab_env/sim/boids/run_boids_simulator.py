@@ -108,9 +108,14 @@ if __name__ == "__main__":
         vis_height=config["visuals"]["height"],
         video_file_path=video_file_path,
         video_codec=config["visuals"]["video_codec"],
+        agent_color=config["visuals"]["agent_color"],
+        agent_scale=config["visuals"]["agent_scale"],
+        agent_mean_init_velocity=config["agent"]["mean_init_velocity"],
+        agent_variance_init_velocity=config["agent"]["variance_init_velocity"],
         box_size=config["environment"]["box_size"],
         scene_scale=config["environment"]["scene_scale"],
         scene_filename=config["files"]["mesh_scene"],
+        scene_position=config["environment"]["scene_position"],
     )
 
     agent = BoidsWorldAgent(
