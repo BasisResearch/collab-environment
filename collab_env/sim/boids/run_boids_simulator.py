@@ -11,6 +11,8 @@ import argparse
 import os
 from datetime import datetime
 
+import numpy as np
+
 from tqdm import tqdm  # Progress bar
 import gymnasium as gym
 import yaml
@@ -20,6 +22,7 @@ import pandas as pd
 import pyarrow.parquet as pq
 import pyarrow as pa
 import shutil
+
 
 from collab_env.sim.boids.boidsAgents import BoidsWorldAgent
 import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
@@ -114,8 +117,10 @@ if __name__ == "__main__":
         agent_variance_init_velocity=config["agent"]["variance_init_velocity"],
         box_size=config["environment"]["box_size"],
         scene_scale=config["environment"]["scene_scale"],
-        scene_filename=config["files"]["mesh_scene"],
+        scene_filename=config["meshes"]["mesh_scene"],
         scene_position=config["environment"]["scene_position"],
+        scene_angle=np.pi * np.array(config["meshes"]["scene_angle"])/180.0,
+
     )
 
     agent = BoidsWorldAgent(

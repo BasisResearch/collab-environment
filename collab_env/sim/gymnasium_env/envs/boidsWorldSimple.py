@@ -32,6 +32,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         scene_scale=100.0,
         scene_filename="meshes/Open3dTSDFfusion_mesh.ply",
         scene_position=[20, 20, 20],
+        scene_angle=[np.pi/2.0,0,0],
         show_visualizer=True,
         store_video=False,
         video_file_path="video.mp4",
@@ -60,7 +61,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.agent_scale = agent_scale
         self.scene_scale = scene_scale
         self.scene_filename = scene_filename
-        self.scene_position=scene_position
+        self.scene_position=np.array(scene_position)
+        self.scene_angle=np.array(scene_angle)
         self.show_visualizer = show_visualizer
         self.store_video = store_video
         self.video_file_path = video_file_path
@@ -844,7 +846,8 @@ class BoidsWorldSimpleEnv(gym.Env):
             filename,
             # position=np.array([self.box_size / 2.0, -self.box_size / 2.0, 8.0]),
             position=self.scene_position,
-            angles=(-np.pi / 2, 0, 0),
+            # angles=(-np.pi / 2, 0, 0),
+            angles=self.scene_angle,
         )
 
         if self.show_box:

@@ -42,6 +42,12 @@ agent:
   mean_init_velocity: 1.0
   variance_init_velocity: 0.2
 
+meshes:
+    # mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
+    mesh_scene: 'meshes/query-tree.ply'
+    scene_angle: [-90.0, 0.0, 0.0]
+    # mesh_scene: 'meshes/example_mesh.ply'
+    #scene_angle: [-10.0, 0.0, -115.0]
+
 files:
-    mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
     output_folder_prefix: 'boids_sim_runs'
