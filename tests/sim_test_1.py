@@ -4,17 +4,16 @@ from glob import glob
 
 # import pandas as pd
 import pyarrow.parquet as pq
+from loguru import logger
 # import pyarrow as pa
 
 from collab_env.data.file_utils import get_project_root, expand_path
 
-os.environ["LOGURU_LEVEL"] = "ERROR"
-
 # clear the sim-runs folder from previous tests -- a little dicey
 sim_runs_path = expand_path("tests/sim-runs", get_project_root())
-print(f"removing path {sim_runs_path}")
+logger.info(f"removing path {sim_runs_path}")
 shutil.rmtree(sim_runs_path)
-print(f"making directory {sim_runs_path}")
+logger.info(f"making directory {sim_runs_path}")
 os.mkdir(f"{sim_runs_path}")
 
 program_path = expand_path(
@@ -57,4 +56,3 @@ assert os.path.getsize(result_file_list[0]) > 75000
 # Check to see that the log file was created correctly
 result_file_list = glob(f"{folder_list[0]}/*.log")
 assert len(result_file_list) == 1
-

@@ -30,7 +30,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         scene_filename="meshes/Open3dTSDFfusion_mesh.ply",
         show_visualizer=True,
         store_video=False,
-        video_file_path='video.mp4',
+        video_file_path="video.mp4",
+        video_codec="*mpv4",
         vis_width=1920,
         vis_height=1027,
     ):
@@ -54,12 +55,11 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.show_visualizer = show_visualizer
         self.store_video = store_video
         self.video_file_path = video_file_path
+        self.video_codec = video_codec
         self.vis_width = vis_width
         self.vis_height = vis_height
-        logger.debug(f'video path is {self.video_file_path}')
-        logger.debug(f'store video is {self.store_video}')
-
-
+        logger.debug(f"video path is {self.video_file_path}")
+        logger.debug(f"store video is {self.store_video}")
 
         self.observation_space = spaces.Dict(
             {
@@ -138,7 +138,6 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.mesh_sphere_agent = None
         self.mesh_agent = None
 
-
     def get_action_array(self):
         return np.array(self._action_to_direction.values())
 
@@ -181,9 +180,9 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
 
         # norms = [np.linalg.norm(a - self._target_location) for a in self._agent_location]
-        norms = self.compute_distances()
+        # norms = self.compute_distances()
 
-        return {"distance": norms}
+        return {"distance": None}
 
     def reset(self, seed=None, options=None):
         # We need the following line to seed self.np_random
@@ -327,7 +326,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         # TOC -- 080225 4:40PM
         # Always need to call _render_frame from reset because we rely on the meshes
         # for the simulation.
-        #if self.render_mode == "human":
+        # if self.render_mode == "human":
         self._render_frame()
 
         return observation, info
@@ -521,7 +520,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         # TOC -- 080225 4:41PM
         # always want to call _render_frame because we rely on the meshes for the simulation
-        #if self.render_mode == "human":
+        # if self.render_mode == "human":
         self._render_frame()
 
         # logger.debug('step(): observation: ' + str(observation), level=1)
@@ -755,17 +754,22 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         # Initialize Open3D visualizer
         self.vis = open3d.visualization.Visualizer()
-        self.vis.create_window(width=self.vis_width, height=self.vis_height, visible=self.show_visualizer)
+        self.vis.create_window(
+            width=self.vis_width, height=self.vis_height, visible=self.show_visualizer
+        )
 
         if self.store_video:
-            # Define the codec and create VideoWriter object
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            self.video_out = cv2.VideoWriter(str(self.video_file_path), fourcc, 30, (self.vis_width, self.vis_height))
-            logger.debug(f'video file {self.video_file_path}')
-
-
-
-
+            #
+            # Create VideoWriter object.
+            #
+            # TOC -- 080325 12:13PM
+            # This file type shou be configurable.
+            #
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+            self.video_out = cv2.VideoWriter(
+                str(self.video_file_path), fourcc, 30, (self.vis_width, self.vis_height)
+            )
+            logger.debug(f"video file {self.video_file_path}")
 
     def initialize_agent_meshes(self):
         #
@@ -860,10 +864,10 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.vis.update_geometry(self.mesh_target)
         self.vis.update_geometry(self.mesh_ground_target)
 
-        '''
+        """
         TOC -- 080225 2:56PM
         Some of these meshes are not used and need to be removed.
-        '''
+        """
         self.mesh_sphere_world1 = open3d.geometry.TriangleMesh.create_sphere(radius=0.1)
         self.mesh_sphere_world1.compute_vertex_normals()
         self.mesh_sphere_world1.paint_uniform_color([0.0, 0.0, 0.0])
@@ -896,8 +900,6 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.vis.add_geometry(self.mesh_sphere_world1)
         self.vis.add_geometry(self.mesh_sphere_center)
         # self.vis.add_geometry(self.mesh_sphere_start)
-
-
 
     def _render_frame(self):
         """
@@ -976,12 +978,9 @@ class BoidsWorldSimpleEnv(gym.Env):
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
             # logger.debug(f'after cvtColor {img}')
 
-
             # Write to video
             self.video_out.write(img)
             # logger.debug(f'video out {self.video_out} result = {result}')
-
-
 
     def close(self):
         """ """
@@ -996,4 +995,4 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         if self.video_out is not None:
             self.video_out.release()
-            assert(False)
+            assert False

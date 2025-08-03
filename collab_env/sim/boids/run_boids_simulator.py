@@ -53,7 +53,6 @@ if __name__ == "__main__":
     else:
         render_mode = ""
 
-
     # TOC -- 080225 9:15AM
     # Create the output folder
     new_folder_name = (
@@ -66,7 +65,7 @@ if __name__ == "__main__":
     new_run_folder = expand_path(new_folder_name, get_project_root())
     os.mkdir(new_run_folder)
 
-    if not config['simulator']['logging']:
+    if not config["simulator"]["logging"]:
         logger.disable("")
     else:
         # TOC -- 080325 11:19AM
@@ -74,8 +73,10 @@ if __name__ == "__main__":
         # log file in the run folder and with the prefix specified in the config
         # file.
         logger.remove()
-        logger.add(expand_path(f"{config['simulator']['logfile_prefix']}.log", new_run_folder),
-                   level=config['simulator']['log_level'])
+        logger.add(
+            expand_path(f"{config['simulator']['logfile_prefix']}.log", new_run_folder),
+            level=config["simulator"]["log_level"],
+        )
 
     # TOC -- 080225 9:54AM
     # Copy the config file into the run folder to record configuration for the run.
@@ -87,9 +88,10 @@ if __name__ == "__main__":
 
     # TOC -- 080225
     # Find the part for the video in the run folder.
-    video_file_path = expand_path('video.mp4', new_run_folder)
-    logger.debug(f'video path {video_file_path}')
-
+    video_file_path = expand_path(
+        f"video.{config['visuals']['video_file_extension']}", new_run_folder
+    )
+    logger.debug(f"video path {video_file_path}")
 
     #
     # Create environment and agent
@@ -101,10 +103,11 @@ if __name__ == "__main__":
         walking=config["simulator"]["walking"],
         show_box=config["simulator"]["show_box"],
         store_video=config["visuals"]["store_video"],
-        show_visualizer=config['visuals']['show_visualizer'],
-        vis_width=config['visuals']['width'],
-        vis_height=config['visuals']['height'],
+        show_visualizer=config["visuals"]["show_visualizer"],
+        vis_width=config["visuals"]["width"],
+        vis_height=config["visuals"]["height"],
         video_file_path=video_file_path,
+        video_codec=config["visuals"]["video_codec"],
         box_size=config["environment"]["box_size"],
         scene_scale=config["environment"]["scene_scale"],
         scene_filename=config["files"]["mesh_scene"],
@@ -126,13 +129,12 @@ if __name__ == "__main__":
         max_force=config["agent"]["max_force"],
     )
 
-
     #
     # Run the episodes
     #
     for episode in tqdm(range(config["simulator"]["num_episodes"])):
         # Start a new episode
-        logger.debug(f'main(): starting episode {episode}')
+        logger.debug(f"main(): starting episode {episode}")
 
         # Reset the environment
         obs, info = env.reset()
@@ -182,11 +184,12 @@ if __name__ == "__main__":
         logger.info(f"writing output to {file_path}")
         pq.write_table(table, file_path)
 
-        if config['visuals']['store_video']:
+        if config["visuals"]["store_video"]:
             # change the name of the video file to include the episode
-            episode_video_file_path = expand_path(f'episode-{episode}-video.mp4', new_run_folder)
-            logger.debug(f'episode video path {episode_video_file_path}')
+            episode_video_file_path = expand_path(
+                f"episode-{episode}-video.mp4", new_run_folder
+            )
+            logger.debug(f"episode video path {episode_video_file_path}")
             shutil.move(video_file_path, episode_video_file_path)
-
 
     logger.info("all episodes complete")

@@ -3,7 +3,7 @@ simulator:
   walking: True
   num_agents: 20
   num_episodes: 1
-  num_frames: 25000
+  num_frames: 20
   show_box: True
   run_main_folder: "collab_env/sim/runs"
   run_sub_folder_prefix: "boids_sim_run"
@@ -16,6 +16,8 @@ visuals:
   show_visualizer: False
   width: 1920
   height: 1027
+  video_codec: '*mpv4'
+  video_file_extension: 'mp4'
 
 environment:
   max_dist_from_center: 3

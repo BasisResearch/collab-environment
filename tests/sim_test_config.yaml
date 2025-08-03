@@ -16,6 +16,9 @@ visuals:
   show_visualizer: False
   width: 1920
   height: 1027
+  video_codec: '*mpv4'
+  video_file_extension: 'mp4'
+
 
 environment:
   max_dist_from_center: 3
