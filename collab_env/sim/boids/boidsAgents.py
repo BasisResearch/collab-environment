@@ -119,7 +119,7 @@ class BoidsWorldAgent:
 
                         # align and cohesion
                         # TODO: Do this with numpy array condition and np.sum instead
-                        logger.debug(f"neighborhood dist: {self.neighborhood_dist}")
+                        # logger.debug(f"neighborhood dist: {self.neighborhood_dist}")
                         if dist < self.neighborhood_dist:
                             # need velocities in the observation
                             sum_align_vector += velocity[other]
@@ -127,9 +127,9 @@ class BoidsWorldAgent:
                             num_neighbors += 1
 
                 if num_close > 0:
-                    logger.debug(
-                        f"simpleBoidsAction(): num close to {i} is {num_close}"
-                    )
+                    # logger.debug(
+                    #     f"simpleBoidsAction(): num close to {i} is {num_close}"
+                    # )
                     avg_sep_vector = sum_separation_vector / num_close
                     # avg_sep_vector = avg_sep_vector / np.linalg.norm(avg_sep_vector) * self.max_speed
                 else:
@@ -171,7 +171,7 @@ class BoidsWorldAgent:
                     steer = avg_align_vector - velocity[i]
                     # align_force = steer / np.linalg.norm(steer) * self.max_force
                     align_force = steer
-                    logger.debug(f"SBA(): alignment force {align_force}")
+                    logger.debug(f"alignment force {align_force}")
 
                 # cohesion
                 if (num_neighbors > 0) and (self.cohesion_weight > 0.0):
@@ -194,9 +194,9 @@ class BoidsWorldAgent:
                 # target
                 if self.target_weight > 0.0:
                     steer = obs["target_loc"] - obs["agent_loc"][i]
-                    logger.debug("SBA(): target_loc = " + str(obs["target_loc"]))
-                    logger.debug("SBA(): velocity " + str(velocity[i]))
-                    logger.debug("SBA(): steer " + str(steer))
+                    logger.debug("target_loc = " + str(obs["target_loc"]))
+                    logger.debug("velocity " + str(velocity[i]))
+                    logger.debug("steer " + str(steer))
 
                     """
                     TOC -- 072925 10:10AM
@@ -281,7 +281,7 @@ class BoidsWorldAgent:
                         velocity[i] / np.linalg.norm(velocity[i]) * self.max_speed
                     )
 
-        logger.debug("simpleBoidsAction(): returning velocity: " + str(velocity))
+        logger.debug("returning velocity: " + str(velocity))
         return velocity
 
     """

@@ -970,16 +970,16 @@ class BoidsWorldSimpleEnv(gym.Env):
         if self.store_video:
             # Capture video
             img = self.vis.capture_screen_float_buffer()
-            logger.debug(f'img is {img}')
+            # logger.debug(f'img is {img}')
             img = (255 * np.asarray(img)).astype(np.uint8)
-            logger.debug(f'after astype {img}')
+            # logger.debug(f'after astype {img}')
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-            logger.debug(f'after cvtColor {img}')
+            # logger.debug(f'after cvtColor {img}')
 
 
             # Write to video
-            result = self.video_out.write(img)
-            logger.debug(f'video out {self.video_out} result = {result}')
+            self.video_out.write(img)
+            # logger.debug(f'video out {self.video_out} result = {result}')
 
 
 

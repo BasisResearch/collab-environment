@@ -47,6 +47,7 @@ if __name__ == "__main__":
         )
 
     config = yaml.safe_load(open(config_filename))
+
     if config["visuals"]["show_visualizer"]:
         render_mode = "human"
     else:
@@ -64,6 +65,18 @@ if __name__ == "__main__":
     )
     new_run_folder = expand_path(new_folder_name, get_project_root())
     os.mkdir(new_run_folder)
+
+    if not config['simulator']['logging']:
+        logger.disable("")
+    else:
+        # TOC -- 080325 11:19AM
+        # Remove the existing handlers and add a new one attached to the
+        # log file in the run folder and with the prefix specified in the config
+        # file.
+        logger.remove()
+        logger.add(expand_path(f"{config['simulator']['logfile_prefix']}.log", new_run_folder),
+                   level=config['simulator']['log_level'])
+
     # TOC -- 080225 9:54AM
     # Copy the config file into the run folder to record configuration for the run.
     # There may be a better way to do this to make sure we get all parameters stored
@@ -72,6 +85,8 @@ if __name__ == "__main__":
     copied_config_file_path = expand_path("config.yaml", new_run_folder)
     shutil.copy(config_filename, copied_config_file_path)
 
+    # TOC -- 080225
+    # Find the part for the video in the run folder.
     video_file_path = expand_path('video.mp4', new_run_folder)
     logger.debug(f'video path {video_file_path}')
 
@@ -117,16 +132,15 @@ if __name__ == "__main__":
     #
     for episode in tqdm(range(config["simulator"]["num_episodes"])):
         # Start a new episode
-        # print('main(): starting episode ' + str(episode))
+        logger.debug(f'main(): starting episode {episode}')
 
-
+        # Reset the environment
         obs, info = env.reset()
 
         # TOC -- 080225 8:58AM
         # create the dataframe for the simulation output
         df = pd.DataFrame(columns=["id", "type", "time", "x", "y", "z"])
 
-        # print('main(): obs = ' + str(obs))
         done = False
 
         """
@@ -153,7 +167,7 @@ if __name__ == "__main__":
             # Observe the next state
             obs = next_obs
 
-            # ignore terminated for now since we are just running for a soecified number of frames
+            # ignore terminated for now since we are just running for a specified number of frames
             # done = terminated or truncated
             # done = True
 
@@ -167,6 +181,7 @@ if __name__ == "__main__":
         )
         logger.info(f"writing output to {file_path}")
         pq.write_table(table, file_path)
+
         if config['visuals']['store_video']:
             # change the name of the video file to include the episode
             episode_video_file_path = expand_path(f'episode-{episode}-video.mp4', new_run_folder)

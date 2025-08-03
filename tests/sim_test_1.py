@@ -48,5 +48,13 @@ assert len(result_file_list) == 3
 # Check the size of the video to make sure the file is not empty
 # This number may need to change. This number is based on the
 # number of frames being 5 and the particular image size
-# when I was running this initially.
-assert os.path.getsize(result_file_list[0]) == 101786
+# when I was running this initially. The number is not fixed. It
+# apparently is different for different runs, so just check
+# that it is not empty, so let's just go with 75000. When the
+# frames are not written at all, the file it is about 257 bytes.
+assert os.path.getsize(result_file_list[0]) > 75000
+
+# Check to see that the log file was created correctly
+result_file_list = glob(f"{folder_list[0]}/*.log")
+assert len(result_file_list) == 1
+
