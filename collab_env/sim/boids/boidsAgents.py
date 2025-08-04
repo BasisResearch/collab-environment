@@ -24,7 +24,7 @@ class BoidsWorldAgent:
         separation_weight=3.0,
         alignment_weight=0.5,
         cohesion_weight=0.1,
-        target_weight=0.001,
+        target_weight=0.0,
         max_speed=0.8,
         max_force=0.1,  # maximum steering force
         walking=True,
@@ -63,6 +63,9 @@ class BoidsWorldAgent:
         # Track learning progress
         self.training_error = []  # type:ignore
 
+    def set_target_weight(self, new_weight):
+        self.target_weight = new_weight
+
     """
     Based on Dan Shiffman's Nature of Code. This needs to be optimized for use with torch.
     
@@ -78,6 +81,8 @@ class BoidsWorldAgent:
     
     Other pages of interest:
     https://vanhunteradams.com/Pico/Animal_Movement/Boids-algorithm.html 
+    
+    This function is way too long. 
     """
 
     def simpleBoidsAction(self, obs):

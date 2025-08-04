@@ -117,6 +117,7 @@ if __name__ == "__main__":
         agent_shape=config["visuals"]["agent_shape"],
         agent_color=config["visuals"]["agent_color"],
         agent_scale=config["visuals"]["agent_scale"],
+        target_scale=config["visuals"]["target_scale"],
         agent_mean_init_velocity=config["agent"]["mean_init_velocity"],
         agent_variance_init_velocity=config["agent"]["variance_init_velocity"],
         box_size=config["environment"]["box_size"],
@@ -124,6 +125,8 @@ if __name__ == "__main__":
         scene_filename=config["meshes"]["mesh_scene"],
         scene_position=config["environment"]["scene_position"],
         scene_angle=np.pi * np.array(config["meshes"]["scene_angle"]) / 180.0,
+        target_creation_time = config['environment']['target_creation_time'],
+
     )
 
     agent = BoidsWorldAgent(
@@ -137,7 +140,7 @@ if __name__ == "__main__":
         separation_weight=config["agent"]["separation_weight"],
         alignment_weight=config["agent"]["alignment_weight"],
         cohesion_weight=config["agent"]["cohesion_weight"],
-        target_weight=config["agent"]["target_weight"],
+        target_weight=0.0,
         max_speed=config["agent"]["max_speed"],
         max_force=config["agent"]["max_force"],
     )
@@ -147,6 +150,8 @@ if __name__ == "__main__":
     #
     for episode in tqdm(range(config["simulator"]["num_episodes"])):
         # Start a new episode
+
+
         logger.debug(f"main(): starting episode {episode}")
 
         # Reset the environment
@@ -169,6 +174,15 @@ if __name__ == "__main__":
 
         # while not done:
         for time_step in tqdm(range(config["simulator"]["num_frames"])):
+            if time_step == config['environment']['target_creation_time']:
+                agent.set_target_weight(config["agent"]["target_weight"])
+                '''
+                TOC -- 080425 2:40PM
+                I can't call this method since the environment is in a wrapper. 
+                I need to understand wrappers better.
+                '''
+                # env.create_target()
+
             # Agent chooses action
             action = agent.get_action(obs)
 

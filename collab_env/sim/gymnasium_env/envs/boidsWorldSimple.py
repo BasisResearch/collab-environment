@@ -23,6 +23,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         size=5,
         num_agents=1,
         walking=False,
+        target_scale=1.0,
         agent_shape="CONE",
         agent_scale=2.0,
         agent_color=[1, 0, 0],
@@ -41,6 +42,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         video_fps=30,
         vis_width=1920,
         vis_height=1027,
+        target_creation_time=0,
     ):
         self.size = size  # The size of the square grid
         self.window_size = 512  # The size of the render window
@@ -55,12 +57,14 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.max_dist_from_center = 3
         self.agent_shape = agent_shape.upper()
         self.agent_color = agent_color
+        self.target_scale = target_scale
         self.action_scale = agent_scale
         self.agent_mean_init_velocity = agent_mean_init_velocity
         self.agent_variance_init_velocity = agent_variance_init_velocity
         self.box_size = box_size  # tne size of the cube boundary around the world
         self.show_box = show_box
         self.walking = walking
+        self.target_creation_time=target_creation_time
         self.agent_scale = agent_scale
         self.scene_scale = scene_scale
         self.scene_filename = scene_filename
@@ -76,6 +80,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         logger.debug(f"video path is {self.video_file_path}")
         logger.debug(f"store video is {self.store_video}")
 
+        self.time_step = 0
         self.observation_space = spaces.Dict(
             {
                 "agent_loc": spaces.Tuple(
@@ -163,8 +168,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         return {
             "agent_loc": tuple(self._agent_location),
             "agent_vel": tuple(self._agent_velocity),
-            "target_loc": self._target_location,
-            # "target_loc": self._ground_target_location,
+            "target_loc": (self._ground_target_location if self.walking else self._target_location),
+            # "target_loc":
             "norms": self.compute_distances(),
             "mesh_distance": distances,
             "mesh_closest_points": closest_points,
@@ -378,6 +383,9 @@ class BoidsWorldSimpleEnv(gym.Env):
         return velocity
 
     def step(self, action):
+        self.time_step += 1
+        if self.time_step == self.target_creation_time:
+            self.create_target()
         """
         Some of this code, like the wall avoidance, should be in action
         selection of the agent.
@@ -454,10 +462,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             # new_locations = closest_points.numpy()
             # self._agent_velocity = new_locations - self._agent_location
 
-        self._ground_target_velocity = self.convert_to_velocity_along_mesh(
-            np.array([self._ground_target_location]),
-            np.array([self._ground_target_velocity]),
-        )[0]
+
 
         # update the agent's position based on its velocity
         self._agent_location = np.array(self._agent_location) + np.array(
@@ -475,6 +480,15 @@ class BoidsWorldSimpleEnv(gym.Env):
         # distances, closest_points = self.compute_distance_and_closest_points(self.mesh_scene, self._agent_location)
 
         # update the targets
+        self._ground_target_velocity = self.convert_to_velocity_along_mesh(
+            np.array([self._ground_target_location]),
+            np.array([self._ground_target_velocity]),
+        )[0]
+
+        '''
+        TOC -- 080425 2:33PM
+        Need not do to this until the targets are created. Also need one target or a list instead of using ground. 
+        '''
         self._ground_target_location = (
             self._ground_target_location + self._ground_target_velocity
         )
@@ -874,6 +888,18 @@ class BoidsWorldSimpleEnv(gym.Env):
 
             self.vis.add_geometry(self.mesh_agent[i])
 
+    def create_target(self):
+        '''
+        This method simply adds the target meshes that were already created to the visualizer.
+        Returns:
+
+        '''
+        if self.walking:
+            self.vis.add_geometry(self.mesh_ground_target)
+        else:
+            self.vis.add_geometry(self.mesh_target)
+
+
     def initalize_meshes(self):
         """
         TOC -- 073125
@@ -894,13 +920,15 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         self.initialize_agent_meshes()
 
-        self.mesh_target = open3d.geometry.TriangleMesh.create_sphere(radius=1.5)
+        self.mesh_target = open3d.geometry.TriangleMesh.create_sphere(radius=1.0)
         self.mesh_target.compute_vertex_normals()
         self.mesh_target.paint_uniform_color([0.1, 0.6, 0.1])
+        self.mesh_target.scale(scale=self.target_scale, center=self.mesh_target.get_center())
 
-        self.mesh_ground_target = open3d.geometry.TriangleMesh.create_sphere(radius=0.4)
+        self.mesh_ground_target = open3d.geometry.TriangleMesh.create_sphere(radius=1.0)
         self.mesh_ground_target.compute_vertex_normals()
         self.mesh_ground_target.paint_uniform_color([0.1, 0.6, 1.0])
+        self.mesh_ground_target.scale(scale=self.target_scale, center=self.mesh_ground_target.get_center())
         """
         TOC -- 072325 
         If agents are walking, put the target on the mesh scene. Screws up the scale 
@@ -955,8 +983,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.vis.add_geometry(self.mesh_scene)
 
         # self.vis.add_geometry(self.mesh_top_corner)
-        self.vis.add_geometry(self.mesh_target)
-        self.vis.add_geometry(self.mesh_ground_target)
+
 
         self.vis.add_geometry(self.mesh_sphere_world1)
         self.vis.add_geometry(self.mesh_sphere_center)

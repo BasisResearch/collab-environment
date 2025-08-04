@@ -1,9 +1,9 @@
 
 simulator:
   walking: True
-  num_agents: 20
+  num_agents: 40
   num_episodes: 1
-  num_frames: 1200
+  num_frames: 2000
   show_box: True
   run_main_folder: "collab_env/sim/runs"
   run_sub_folder_prefix: "boids_sim_run"
@@ -20,33 +20,35 @@ visuals:
   video_fps: 30
   video_file_extension: 'mp4'
   agent_shape: 'sphere'
-  agent_color: [0, 1, 0]
-  agent_scale: 20.0
+  agent_color: [1, 0, 0]
+  agent_scale: 5.0
+  target_scale: 2.0
 
 environment:
   max_dist_from_center: 3
-  box_size: 350
-  scene_scale: 200.0
-  scene_position: [175, 20, 175]
-  target_speed: 0.1
+  box_size: 500
+  scene_scale: 300.0
+  scene_position: [250, 20, 250]
+  target_speed: 0.0
+  target_creation_time: 1000
 
 agent:
   min_ground_separation: 3.0
   min_separation: 4.0
-  neighborhood_dist: 20.0
+  neighborhood_dist: 80.0
   separation_weight: 3.0
   alignment_weight: 0.5
   cohesion_weight: 0.1
   ground_weight: 1.0
-  target_weight: 0.0001
+  target_weight: 0.3
   max_speed: 0.8
   max_force: 0.1
-  mean_init_velocity: 1.0
-  variance_init_velocity: 0.2
+  mean_init_velocity: 0.0
+  variance_init_velocity: 0.5
 
 meshes:
-    # mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
-    mesh_scene: 'meshes/query-tree.ply'
+    mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
+    # mesh_scene: 'meshes/query-tree.ply'
     scene_angle: [-90.0, 0.0, 0.0]
     # mesh_scene: 'meshes/example_mesh.ply'
     #scene_angle: [-10.0, 0.0, -115.0]
