@@ -91,10 +91,6 @@ site/
 out
 *.matrix.gz
 /docs/source/.ipynb_checkpoints/
-<<<<<<< HEAD
-./data/
-config-local/
-=======
 data/
 config-local/
->>>>>>> c02af65 (wip)
+*preview*.htm*
