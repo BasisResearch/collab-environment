@@ -5,11 +5,13 @@ from glob import glob
 # import pandas as pd
 import pyarrow.parquet as pq
 from loguru import logger
+
 # import pyarrow as pa
-
-config_file='tests/sim_test_2_config.yaml'
-
 from collab_env.data.file_utils import get_project_root, expand_path
+
+
+config_file = "tests/sim_test_2_config.yaml"
+
 
 # clear the sim-runs folder from previous tests -- a little dicey
 sim_runs_path = expand_path("tests/sim-runs", get_project_root())

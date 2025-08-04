@@ -9,6 +9,8 @@ them seem to stop -- not sure why that is happening.
 
 import argparse
 import os
+import threading
+
 from datetime import datetime
 
 import numpy as np
@@ -58,13 +60,13 @@ if __name__ == "__main__":
 
     # TOC -- 080225 9:15AM
     # Create the output folder
-    new_folder_name = (
-        config["simulator"]["run_main_folder"]
-        + "/"
-        + config["simulator"]["run_sub_folder_prefix"]
-        + "-started-"
-        + datetime.now().strftime("%Y%m%d-%H%M%S")
-    )
+    '''
+    # TOC -- 080425 1:49PM
+    # Using the time in the folder name seems to be causing a problem for the pytest runs. Furthermore, we could have
+    # multiple runs happening at the same time, so let's try using the process and thread ids to distinguish.  
+    '''
+    new_folder_name = (f'{config["simulator"]["run_main_folder"]}/{config["simulator"]["run_sub_folder_prefix"]}-started-{datetime.now().strftime("%Y%m%d-%H%M%S")}')
+
     new_run_folder = expand_path(new_folder_name, get_project_root())
     os.mkdir(new_run_folder)
 
@@ -121,8 +123,7 @@ if __name__ == "__main__":
         scene_scale=config["environment"]["scene_scale"],
         scene_filename=config["meshes"]["mesh_scene"],
         scene_position=config["environment"]["scene_position"],
-        scene_angle=np.pi * np.array(config["meshes"]["scene_angle"])/180.0,
-
+        scene_angle=np.pi * np.array(config["meshes"]["scene_angle"]) / 180.0,
     )
 
     agent = BoidsWorldAgent(
@@ -191,6 +192,7 @@ if __name__ == "__main__":
 
         file_path = expand_path(
             f"episode-{episode}-completed-{datetime.now().strftime('%Y%m%d-%H%M%S')}.parquet",
+            #f"episode-{episode}.parquet",
             new_run_folder,
         )
         logger.info(f"writing output to {file_path}")

@@ -23,17 +23,17 @@ class BoidsWorldSimpleEnv(gym.Env):
         size=5,
         num_agents=1,
         walking=False,
-        agent_shape='CONE',
+        agent_shape="CONE",
         agent_scale=2.0,
-        agent_color=[1,0,0],
+        agent_color=[1, 0, 0],
         agent_mean_init_velocity=0.0,
-        agent_variance_init_velocity = 0.2,
+        agent_variance_init_velocity=0.2,
         box_size=40,
         show_box=False,
         scene_scale=100.0,
         scene_filename="meshes/Open3dTSDFfusion_mesh.ply",
         scene_position=[20, 20, 20],
-        scene_angle=[np.pi/2.0,0,0],
+        scene_angle=[np.pi / 2.0, 0, 0],
         show_visualizer=True,
         store_video=False,
         video_file_path="video.mp4",
@@ -41,7 +41,6 @@ class BoidsWorldSimpleEnv(gym.Env):
         video_fps=30,
         vis_width=1920,
         vis_height=1027,
-
     ):
         self.size = size  # The size of the square grid
         self.window_size = 512  # The size of the render window
@@ -65,8 +64,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.agent_scale = agent_scale
         self.scene_scale = scene_scale
         self.scene_filename = scene_filename
-        self.scene_position=np.array(scene_position)
-        self.scene_angle=np.array(scene_angle)
+        self.scene_position = np.array(scene_position)
+        self.scene_angle = np.array(scene_angle)
         self.show_visualizer = show_visualizer
         self.store_video = store_video
         self.video_file_path = video_file_path
@@ -262,7 +261,10 @@ class BoidsWorldSimpleEnv(gym.Env):
         Replaced
         """
         self._agent_velocity = [
-            self.np_random.normal(self.agent_mean_init_velocity, self.agent_variance_init_velocity, size=3) for _ in range(self.num_agents)
+            self.np_random.normal(
+                self.agent_mean_init_velocity, self.agent_variance_init_velocity, size=3
+            )
+            for _ in range(self.num_agents)
         ]
         """
         TOC -- 072125
@@ -303,10 +305,10 @@ class BoidsWorldSimpleEnv(gym.Env):
         # while np.linalg.norm(self._target_location - self._agent_location) < 1:
         #    self._target_location = self.np_random.normal(0, self.size, size=3)
 
-        '''
+        """
         TOC -- 080325 
         This need to be configurable. No idea what I did with these while loops. 
-        '''
+        """
         # set the target velocity
         self._target_velocity = self.np_random.normal(0, 0.1, size=3)
         while (
@@ -536,10 +538,10 @@ class BoidsWorldSimpleEnv(gym.Env):
         set this to false here if that is what I want. Terminated should be controlled here and nowhere else. 
         runboids() is just ignoring terminated -- Never mind.  
         """
-        '''
+        """
         TOC -- 080325
         Hit distance should be configurable
-        '''
+        """
         terminated = (
             len(distance[distance < HIT_DISTANCE]) > 0
         )  # np.array_equal(self._agent_location, self._target_location)
@@ -610,10 +612,10 @@ class BoidsWorldSimpleEnv(gym.Env):
             [3, 7],
         ]
 
-        '''
+        """
         TOC -- 080325
         This color should be configurable.
-        '''
+        """
 
         colors = [[1, 0, 0] for i in range(len(lines))]
         self.line_set = open3d.geometry.LineSet(
@@ -750,7 +752,6 @@ class BoidsWorldSimpleEnv(gym.Env):
         # be configurable. We should translate and rotate it once though. Not sure what was up
         # with the double translation I had in here.
 
-
         mesh_scene.translate(position)
         # TOC -- 080225 8:30AM
         # This scaling should be happening centered at the center of the mesh_scene
@@ -822,7 +823,10 @@ class BoidsWorldSimpleEnv(gym.Env):
             #
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
             self.video_out = cv2.VideoWriter(
-                str(self.video_file_path), fourcc, self.video_fps, (self.vis_width, self.vis_height)
+                str(self.video_file_path),
+                fourcc,
+                self.video_fps,
+                (self.vis_width, self.vis_height),
             )
             logger.debug(f"video file {self.video_file_path}")
 
@@ -844,13 +848,15 @@ class BoidsWorldSimpleEnv(gym.Env):
             TOC -- 080225 1:57PM 
             Have a config option to make this a sphere instead of a cone. 
             """
-            if self.agent_shape == 'SPHERE':
-                self.mesh_agent[i] = open3d.geometry.TriangleMesh.create_sphere(radius=0.4)
+            if self.agent_shape == "SPHERE":
+                self.mesh_agent[i] = open3d.geometry.TriangleMesh.create_sphere(
+                    radius=0.4
+                )
 
-            elif self.agent_shape == 'BUNNY':
+            elif self.agent_shape == "BUNNY":
                 bunny = open3d.data.BunnyMesh()
                 self.mesh_agent[i] = open3d.io.read_triangle_mesh(bunny.path)
-            else: # default to cone
+            else:  # default to cone
                 self.mesh_agent[i] = open3d.geometry.TriangleMesh.create_arrow(
                     cone_height=0.8,
                     cone_radius=0.4,

@@ -7,6 +7,12 @@ import pyarrow.parquet as pq
 from loguru import logger
 # import pyarrow as pa
 
+
+# TODO: I have a problem running these tests using the make test since that runs multiple tests
+# in parallel and these tests remove the directory and when they run at the same time they
+# create files with the same names. That isn't going to work here. I guess I could get the process
+# id or thread id if they are running this multithreaded and append that. Need to find out how
+# this test process runs.
 from collab_env.data.file_utils import get_project_root, expand_path
 
 # clear the sim-runs folder from previous tests -- a little dicey

@@ -6,7 +6,7 @@ simulator:
   num_frames: 5
   show_box: True
   run_main_folder: "tests/sim-runs"
-  run_sub_folder_prefix: "boids_sim_run"
+  run_sub_folder_prefix: "boids_sim_run-2"
   logfile_prefix: 'logfile'
   log_level: 'ERROR'
   logging: False
