@@ -26,6 +26,7 @@ class BoidsWorldAgent:
         cohesion_weight=0.1,
         target_weight=0.0,
         max_speed=0.8,
+        min_speed=0.1,
         max_force=0.1,  # maximum steering force
         walking=True,
     ):
@@ -50,6 +51,7 @@ class BoidsWorldAgent:
         self.cohesion_weight = cohesion_weight
         self.target_weight = target_weight
         self.max_speed = max_speed
+        self.min_speed=min_speed
         self.max_force = max_force
         self.walking = walking
 
@@ -102,8 +104,8 @@ class BoidsWorldAgent:
                 obs["mesh_distance"][i] < self.min_ground_separation
             ):
                 # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
-                # velocity[i] = velocity[i] + np.array([0.1, 0.1, 0.1])
-                velocity[i] = velocity[i] + np.random.normal(1, 0.01, 3) * 0.1
+                velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
+                # velocity[i] = velocity[i] + np.random.normal(1, 0.01, 3) * 0.1
             else:
                 # velocity[i] = vel # not sure which is faster, getting the whole thing before or walking through
                 sum_separation_vector = np.zeros(3)
@@ -281,10 +283,11 @@ class BoidsWorldAgent:
                     # if np.linalg.norm(velocity[i]) > self.max_speed:
                     #    velocity[i] = velocity[i] / np.linalg.norm(velocity[i]) * self.max_speed
 
-                if np.linalg.norm(velocity[i]) > self.max_speed:
-                    velocity[i] = (
-                        velocity[i] / np.linalg.norm(velocity[i]) * self.max_speed
-                    )
+                norm_velocity = np.linalg.norm(velocity[i])
+                if norm_velocity > self.max_speed:
+                    velocity[i] = velocity[i] / norm_velocity * self.max_speed
+                elif norm_velocity < self.min_speed:
+                    velocity[i] = velocity[i] / norm_velocity * self.min_speed
 
         logger.debug("returning velocity: " + str(velocity))
         return velocity

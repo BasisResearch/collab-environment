@@ -1,6 +1,6 @@
 
 simulator:
-  walking: True
+  walking: False
   num_agents: 40
   num_episodes: 1
   num_frames: 2000
@@ -30,7 +30,7 @@ environment:
   scene_scale: 300.0
   scene_position: [250, 20, 250]
   target_speed: 0.0
-  target_creation_time: 1000
+  target_creation_time: 3000
 
 agent:
   min_ground_separation: 3.0
@@ -39,9 +39,10 @@ agent:
   separation_weight: 3.0
   alignment_weight: 0.5
   cohesion_weight: 0.1
-  ground_weight: 1.0
+  ground_weight: 0.0
   target_weight: 0.3
-  max_speed: 0.8
+  max_speed: 5.0
+  min_speed: 1.0
   max_force: 0.1
   mean_init_velocity: 0.0
   variance_init_velocity: 0.5
