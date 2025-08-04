@@ -111,6 +111,8 @@ if __name__ == "__main__":
         vis_height=config["visuals"]["height"],
         video_file_path=video_file_path,
         video_codec=config["visuals"]["video_codec"],
+        video_fps=config["visuals"]["video_fps"],
+        agent_shape=config["visuals"]["agent_shape"],
         agent_color=config["visuals"]["agent_color"],
         agent_scale=config["visuals"]["agent_scale"],
         agent_mean_init_velocity=config["agent"]["mean_init_velocity"],

@@ -23,6 +23,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         size=5,
         num_agents=1,
         walking=False,
+        agent_shape='CONE',
         agent_scale=2.0,
         agent_color=[1,0,0],
         agent_mean_init_velocity=0.0,
@@ -37,8 +38,10 @@ class BoidsWorldSimpleEnv(gym.Env):
         store_video=False,
         video_file_path="video.mp4",
         video_codec="*mpv4",
+        video_fps=30,
         vis_width=1920,
         vis_height=1027,
+
     ):
         self.size = size  # The size of the square grid
         self.window_size = 512  # The size of the render window
@@ -51,6 +54,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self._ground_target_velocity = None
         self.mesh_scene = None  # initialized by reset()
         self.max_dist_from_center = 3
+        self.agent_shape = agent_shape.upper()
         self.agent_color = agent_color
         self.action_scale = agent_scale
         self.agent_mean_init_velocity = agent_mean_init_velocity
@@ -67,6 +71,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.store_video = store_video
         self.video_file_path = video_file_path
         self.video_codec = video_codec
+        self.video_fps = video_fps
         self.vis_width = vis_width
         self.vis_height = vis_height
         logger.debug(f"video path is {self.video_file_path}")
@@ -187,7 +192,10 @@ class BoidsWorldSimpleEnv(gym.Env):
     def _get_info(self):
         """
         TOC -- 071625
-        need to look at this for performance later
+        need to look at this for performance later.
+
+        TOC -- 080325
+        Took this out since it was unused.
         """
 
         # norms = [np.linalg.norm(a - self._target_location) for a in self._agent_location]
@@ -242,13 +250,16 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
         if self.mesh_scene is not None and self.walking:
             distances, closest_points = self.compute_distance_and_closest_points(
-                self.mesh_scene
+                self.mesh_scene, self._agent_location
             )
             self._agent_location = closest_points.numpy()
 
         """
         TOC -- 073025 
         Need to replace hard coded numbers. 
+        
+        TOC -- 080325
+        Replaced
         """
         self._agent_velocity = [
             self.np_random.normal(self.agent_mean_init_velocity, self.agent_variance_init_velocity, size=3) for _ in range(self.num_agents)
@@ -271,6 +282,10 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
         TOC -- 071625
         not sure why I was starting this at the agent location
+        
+        TOC -- 080325 
+        hard coded numbers need to be replaced. 
+        
         """
         # self._target_location = self.np_random.uniform(low=0.1 * self.box_size, high=0.9 * self.box_size, size=3)
         self._target_location = np.array(
@@ -288,6 +303,10 @@ class BoidsWorldSimpleEnv(gym.Env):
         # while np.linalg.norm(self._target_location - self._agent_location) < 1:
         #    self._target_location = self.np_random.normal(0, self.size, size=3)
 
+        '''
+        TOC -- 080325 
+        This need to be configurable. No idea what I did with these while loops. 
+        '''
         # set the target velocity
         self._target_velocity = self.np_random.normal(0, 0.1, size=3)
         while (
@@ -304,6 +323,9 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
         TOC -- 072125
         stop moving the target so we can debug the boids
+        
+        TOC -- 080325
+        these need to be removed once velocities are configurable. 
         """
         self._ground_target_velocity = np.zeros(3)
         self._target_velocity = np.zeros(3)
@@ -514,6 +536,10 @@ class BoidsWorldSimpleEnv(gym.Env):
         set this to false here if that is what I want. Terminated should be controlled here and nowhere else. 
         runboids() is just ignoring terminated -- Never mind.  
         """
+        '''
+        TOC -- 080325
+        Hit distance should be configurable
+        '''
         terminated = (
             len(distance[distance < HIT_DISTANCE]) > 0
         )  # np.array_equal(self._agent_location, self._target_location)
@@ -566,6 +592,9 @@ class BoidsWorldSimpleEnv(gym.Env):
         points = [[self.box_size * int(b) for b in b_list] for b_list in bit_array]
         logger.debug("_render_frame(): points: " + str(points))
 
+        #
+        # This is the set of lines representing the edges of the cube
+        #
         lines = [
             [0, 1],
             [0, 2],
@@ -580,6 +609,12 @@ class BoidsWorldSimpleEnv(gym.Env):
             [2, 6],
             [3, 7],
         ]
+
+        '''
+        TOC -- 080325
+        This color should be configurable.
+        '''
+
         colors = [[1, 0, 0] for i in range(len(lines))]
         self.line_set = open3d.geometry.LineSet(
             points=open3d.utility.Vector3dVector(points),
@@ -783,11 +818,11 @@ class BoidsWorldSimpleEnv(gym.Env):
             # Create VideoWriter object.
             #
             # TOC -- 080325 12:13PM
-            # This file type shou be configurable.
+            # This file type should be configurable.
             #
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
             self.video_out = cv2.VideoWriter(
-                str(self.video_file_path), fourcc, 30, (self.vis_width, self.vis_height)
+                str(self.video_file_path), fourcc, self.video_fps, (self.vis_width, self.vis_height)
             )
             logger.debug(f"video file {self.video_file_path}")
 
@@ -805,25 +840,24 @@ class BoidsWorldSimpleEnv(gym.Env):
         # self.mesh_sphere_agent = [None] * self.num_agents
         self.mesh_agent = [None] * self.num_agents
         for i in range(self.num_agents):
-            # logger.debug('i = ', i)
-            # self.mesh_sphere_agent[i] = open3d.geometry.TriangleMesh.create_sphere(radius=0.4)
-            # self.mesh_sphere_agent[i].compute_vertex_normals()
-            # self.mesh_sphere_agent[i].paint_uniform_color([0, 0, 1])
-            # self.mesh_sphere_agent[i].translate(self._agent_location[i])
-            # self.vis.update_geometry(self.mesh_sphere_agent[i])
-            # self.vis.add_geometry(self.mesh_sphere_agent[i])
             """
             TOC -- 080225 1:57PM 
             Have a config option to make this a sphere instead of a cone. 
             """
-            self.mesh_agent[i] = open3d.geometry.TriangleMesh.create_arrow(
-                cone_height=0.8,
-                cone_radius=0.4,
-                cylinder_radius=0.4,
-                cylinder_height=1.0,
-            )
-            # bunny = open3d.data.BunnyMesh()
-            # self.mesh_arrow_agent[i] = open3d.io.read_triangle_mesh(bunny.path)
+            if self.agent_shape == 'SPHERE':
+                self.mesh_agent[i] = open3d.geometry.TriangleMesh.create_sphere(radius=0.4)
+
+            elif self.agent_shape == 'BUNNY':
+                bunny = open3d.data.BunnyMesh()
+                self.mesh_agent[i] = open3d.io.read_triangle_mesh(bunny.path)
+            else: # default to cone
+                self.mesh_agent[i] = open3d.geometry.TriangleMesh.create_arrow(
+                    cone_height=0.8,
+                    cone_radius=0.4,
+                    cylinder_radius=0.4,
+                    cylinder_height=1.0,
+                )
+
             self.mesh_agent[i].compute_vertex_normals()
             self.mesh_agent[i].paint_uniform_color(self.agent_color)
             self.mesh_agent[i].translate(self._agent_location[i])
@@ -833,7 +867,6 @@ class BoidsWorldSimpleEnv(gym.Env):
             self.vis.update_geometry(self.mesh_agent[i])
 
             self.vis.add_geometry(self.mesh_agent[i])
-            # print('bunny agent ', self.mesh_arrow_agent[i])
 
     def initalize_meshes(self):
         """

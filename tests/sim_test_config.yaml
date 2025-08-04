@@ -1,6 +1,6 @@
 
 simulator:
-  walking: False
+  walking: True
   num_agents: 20
   num_episodes: 3
   num_frames: 5
@@ -15,16 +15,20 @@ visuals:
   store_video: True
   show_visualizer: False
   width: 1920
-  height: 1027
+  height: 1280
   video_codec: '*mpv4'
   video_file_extension: 'mp4'
-
+  video_fps: 30
+  agent_shape: 'sphere'
+  agent_color: [ 0, 1, 0 ]
+  agent_scale: 20.0
 
 environment:
   max_dist_from_center: 3
   box_size: 300
   scene_scale: 200.0
   target_speed: 0.1
+  scene_position: [175, 20, 175]
 
 agent:
   min_ground_separation: 3.0
@@ -37,7 +41,15 @@ agent:
   target_weight: 0.0
   max_speed: 0.8
   max_force: 0.1
+  mean_init_velocity: 1.0
+  variance_init_velocity: 0.2
+
+meshes:
+    # mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
+    mesh_scene: 'meshes/query-tree.ply'
+    scene_angle: [-90.0, 0.0, 0.0]
+    # mesh_scene: 'meshes/example_mesh.ply'
+    #scene_angle: [-10.0, 0.0, -115.0]
 
 files:
-    mesh_scene: 'meshes/query-tree.ply'
     output_folder_prefix: 'boids_sim_runs'
