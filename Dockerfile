@@ -12,6 +12,7 @@ ARG NVIDIA_CUDA_VERSION=11.8.0
 
 # Get conda from official image
 FROM continuumio/miniconda3:latest as conda-source
+FROM colmap/colmap:20250716.3305 as colmap-source
 
 ##################################################
 #           Runtime stage                        #
@@ -55,11 +56,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends --no-install-su
     libqt5widgets5 \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy env.yml to container
+COPY env.yml /tmp/env.yml
+
 # Copy conda installation from conda-source
 COPY --from=conda-source /opt/conda/ /opt/conda
 
-# Copy env.yml to container
-COPY env.yml /tmp/env.yml
+# COLMAP files (used for 2d/3d alignment + reprojection)
+#  1. Binaries
+#  2. Shared libraries
+#  3. CMake support
+COPY --from=colmap-source /usr/local/bin/colmap /usr/local/bin/colmap
+COPY --from=colmap-source /usr/local/lib/libcolmap* /usr/local/lib/
+COPY --from=colmap-source /usr/local/lib/cmake/COLMAP/ /usr/local/lib/cmake/COLMAP/
 
 # Set CUDA environment variables
 ENV CUDA_HOME=/usr/local/cuda
