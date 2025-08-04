@@ -15,7 +15,8 @@ classifiers = [
 ]
 
 dependencies = [
-  "torch>2.0",
+  "numpy<2",
+  "torch",
   "torchvision",
   "pyro-ppl",
   "numpy<2",
@@ -40,6 +41,9 @@ dependencies = [
   "rfdetr",
   "open3d",
   "gymnasium",
+  "scipy",
+  "torch_geometric",
+  "ipympl",
 ]
 
 [tool.setuptools]                         # NEW

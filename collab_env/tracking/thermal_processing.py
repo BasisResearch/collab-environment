@@ -36,6 +36,7 @@ import exiftool
 MAGIC_SEQ = re.compile(b"\x46\x46\x46\x00\x52\x54")
 EXIFTOOL_PATH = subprocess.check_output(["which", "exiftool"]).decode("utf-8").strip()
 
+
 class CSQReader:
     """
     Reader for FLIR .csq thermal video files.
