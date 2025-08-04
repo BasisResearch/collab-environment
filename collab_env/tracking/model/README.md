@@ -6,7 +6,7 @@ This section explains how to download training images from the cloud and train v
 Downloading Training Images
 ---------------------------
 To access training images please download the zip file from the roboflow_model bucket in the google cloud. 
-The bucket should contain a .pt file containing the model weights for an rf-detr model and a zip file containing the images, labels, and annotations in YOLO v7 PyTorch format, as well as in the COCO format.
+The bucket should contain a .pt file containing the model weights for a YOLOv11 and rf-detr model and a zip file containing the images, labels, and annotations in YOLO v7 PyTorch format, as well as in the COCO format. The default setting for the local_model_inference script is YOLO. 
 
 
 ### Downloading a Zip File from Google Cloud
