@@ -1,9 +1,9 @@
 
 simulator:
-  walking: False
+  walking: True
   num_agents: 20
-  num_targets: 1
-  num_ground_targets: 1
+  num_targets: 5
+  num_ground_targets: 2
   moving_targets: False
   num_episodes: 1
   num_frames: 1000
@@ -46,7 +46,7 @@ agent:
   alignment_weight: 1.0
   cohesion_weight: 0.5
   ground_weight: 0.0
-  target_weight: [0.1]
+  target_weight: [1.0, 1.0, 1.0, 1.0, 1.0]
   max_speed: 1.0
   min_speed: 0.1
   max_force: 0.1

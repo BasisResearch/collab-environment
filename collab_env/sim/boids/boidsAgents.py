@@ -236,7 +236,7 @@ class BoidsWorldAgent:
                     if self.target_weight[t] > 0.0:
                         steer = obs["target_loc"][t] - obs["agent_loc"][i]
                         logger.debug("target_loc = " + str(obs["target_loc"][t]))
-                        logger.debug("velocity " + str(velocity[i][t]))
+                        logger.debug("velocity " + str(velocity[i]))
                         logger.debug("steer " + str(steer))
 
                         """

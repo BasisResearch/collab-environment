@@ -1197,12 +1197,10 @@ class BoidsWorldSimpleEnv(gym.Env):
             if i >= self.ground_target_first_index and self.mesh_scene is not None:
                 distances, closest_points = self.compute_distance_and_closest_points(
                     self.mesh_scene,
-                    [self._target_location[i + self.ground_target_first_index]],
+                    [self._target_location[i]],
                 )
                 # self.mesh_sphere_target.translate(closest_points.numpy()[0] - self._target_location)
-                self._target_location[i + self.ground_target_first_index] = (
-                    closest_points.numpy()[0]
-                )
+                self._target_location[i] = closest_points.numpy()[0]
 
             """
             TOC -- 073125 -- 7:30AM 

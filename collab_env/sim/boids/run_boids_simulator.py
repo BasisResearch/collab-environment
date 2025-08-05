@@ -158,7 +158,7 @@ if __name__ == "__main__":
         separation_weight=config["agent"]["separation_weight"],
         alignment_weight=config["agent"]["alignment_weight"],
         cohesion_weight=config["agent"]["cohesion_weight"],
-        target_weight=[0.0],
+        target_weight=config["agent"]["target_weight"],
         max_speed=config["agent"]["max_speed"],
         min_speed=config["agent"]["min_speed"],
         max_force=config["agent"]["max_force"],
