@@ -7,7 +7,6 @@ import cv2
 
 # from Boids.sim_utils import calc_angles
 from loguru import logger
-from sympy import closest_points
 
 from collab_env.data.file_utils import get_project_root, expand_path
 
@@ -65,7 +64,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.box_size = box_size  # tne size of the cube boundary around the world
         self.show_box = show_box
         self.walking = walking
-        self.target_creation_time=target_creation_time
+        self.target_creation_time = target_creation_time
         self.agent_scale = agent_scale
         self.scene_scale = scene_scale
         self.scene_filename = scene_filename
@@ -180,7 +179,9 @@ class BoidsWorldSimpleEnv(gym.Env):
         return {
             "agent_loc": tuple(self._agent_location),
             "agent_vel": tuple(self._agent_velocity),
-            "target_loc": (self._ground_target_location if self.walking else self._target_location),
+            "target_loc": (
+                self._ground_target_location if self.walking else self._target_location
+            ),
             # "target_loc":
             "norms": self.compute_distances(),
             "mesh_distance": distances,
@@ -234,6 +235,9 @@ class BoidsWorldSimpleEnv(gym.Env):
         if walking, start the agents off at height 0, otherwise start them anywhere. We could always start the flying
         boids on the ground, but we would need to change the initial placement code elsewhere, because the flying boids get 
         stuck under the mesh when I start them at 0 height.   
+        
+        TOC -- 080425
+        These numbers need to be configurable. 
         """
         if self.walking:
             self._agent_location = [
@@ -474,8 +478,6 @@ class BoidsWorldSimpleEnv(gym.Env):
             # new_locations = closest_points.numpy()
             # self._agent_velocity = new_locations - self._agent_location
 
-
-
         # update the agent's position based on its velocity
         self._agent_location = np.array(self._agent_location) + np.array(
             self._agent_velocity
@@ -509,10 +511,10 @@ class BoidsWorldSimpleEnv(gym.Env):
             )[0]
         else:
             self._ground_target_velocity[1] = 0.0
-        '''
+        """
         TOC -- 080425 2:33PM
         Need not do to this until the targets are created. Also need one target or a list instead of using ground. 
-        '''
+        """
         self._ground_target_location = (
             self._ground_target_location + self._ground_target_velocity
         )
@@ -913,28 +915,29 @@ class BoidsWorldSimpleEnv(gym.Env):
             self.vis.add_geometry(self.mesh_agent[i])
 
     def create_target(self):
-        '''
+        """
         This method simply adds the target meshes that were already created to the visualizer.
         Returns:
 
-        '''
+        """
         if self.walking:
             self.vis.add_geometry(self.mesh_ground_target)
         else:
             self.vis.add_geometry(self.mesh_target)
 
-
-    def initalize_meshes(self):
+    def initialize_meshes(self):
         """
         TOC -- 073125
         Scene may need to be read in reset() since it is needed even if not rendering.
         """
         # self.mesh_scene = self
         # .load_rotate_scene("example_meshes/example_mesh.ply", position=np.array([self.box_size/2.0, 0.0, self.box_size/2.0]), angles=(-np.pi / 18, 0, -np.pi / 1.6)
-        if self.scene_filename == '':
+        if self.scene_filename == "":
             self.mesh_scene = None
             if self.walking:
-                logger.warning('Walking requires a scene to walk on. Walking will be turned off.')
+                logger.warning(
+                    "Walking requires a scene to walk on. Walking will be turned off."
+                )
                 self.walking = False
         else:
             filename = expand_path(self.scene_filename, get_project_root())
@@ -954,12 +957,16 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.mesh_target = open3d.geometry.TriangleMesh.create_sphere(radius=1.0)
         self.mesh_target.compute_vertex_normals()
         self.mesh_target.paint_uniform_color([0.1, 0.6, 0.1])
-        self.mesh_target.scale(scale=self.target_scale, center=self.mesh_target.get_center())
+        self.mesh_target.scale(
+            scale=self.target_scale, center=self.mesh_target.get_center()
+        )
 
         self.mesh_ground_target = open3d.geometry.TriangleMesh.create_sphere(radius=1.0)
         self.mesh_ground_target.compute_vertex_normals()
         self.mesh_ground_target.paint_uniform_color([0.1, 0.6, 1.0])
-        self.mesh_ground_target.scale(scale=self.target_scale, center=self.mesh_ground_target.get_center())
+        self.mesh_ground_target.scale(
+            scale=self.target_scale, center=self.mesh_ground_target.get_center()
+        )
         """
         TOC -- 072325 
         If agents are walking, put the target on the mesh scene. Screws up the scale 
@@ -1016,7 +1023,6 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         # self.vis.add_geometry(self.mesh_top_corner)
 
-
         self.vis.add_geometry(self.mesh_sphere_world1)
         self.vis.add_geometry(self.mesh_sphere_center)
         # self.vis.add_geometry(self.mesh_sphere_start)
@@ -1041,7 +1047,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         if self.vis is None:
             self.initialize_visualizer()
-            self.initalize_meshes()
+            self.initialize_meshes()
 
         self.move_agent_meshes()
 

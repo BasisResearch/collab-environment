@@ -9,7 +9,6 @@ them seem to stop -- not sure why that is happening.
 
 import argparse
 import os
-import threading
 
 from datetime import datetime
 
@@ -34,9 +33,11 @@ from collab_env.sim.boids.sim_utils import add_obs_to_df
 # NUM_AGENTS = 40
 # WALKING = False
 
+
 def function_filter(function_list):
     def is_function(record):
-        return record['function'] in function_list
+        return record["function"] in function_list
+
     return is_function
 
 
@@ -67,17 +68,17 @@ if __name__ == "__main__":
 
     # TOC -- 080225 9:15AM
     # Create the output folder
-    '''
+    """
     # TOC -- 080425 1:49PM
     # Using the time in the folder name seems to be causing a problem for the pytest runs. Furthermore, we could have
     # multiple runs happening at the same time, so let's try using the process and thread ids to distinguish.  
-    '''
-    new_folder_name = (f'{config["simulator"]["run_main_folder"]}/{config["simulator"]["run_sub_folder_prefix"]}-started-{datetime.now().strftime("%Y%m%d-%H%M%S")}')
+    """
+    new_folder_name = f"{config['simulator']['run_main_folder']}/{config['simulator']['run_sub_folder_prefix']}-started-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
     new_run_folder = expand_path(new_folder_name, get_project_root())
     os.mkdir(new_run_folder)
 
-    if not config["simulator"]["logging"]:
+    if not config["logging"]["logging"]:
         logger.disable("")
     else:
         # TOC -- 080325 11:19AM
@@ -85,17 +86,22 @@ if __name__ == "__main__":
         # log file in the run folder and with the prefix specified in the config
         # file.
         logger.remove()
-        print(config["simulator"]["log_functions"])
-        if len(config["simulator"]["log_functions"]) > 0:
+        if len(config["logging"]["log_functions"]) > 0:
             logger.add(
-                expand_path(f"{config['simulator']['logfile_prefix']}.log", new_run_folder),
-                level=config["simulator"]["log_level"],
-                filter=function_filter(function_list=config["simulator"]["log_functions"])
+                expand_path(
+                    f"{config['logging']['logfile_prefix']}.log", new_run_folder
+                ),
+                level=config["logging"]["log_level"],
+                filter=function_filter(
+                    function_list=config["logging"]["log_functions"]
+                ),
             )
         else:
             logger.add(
-                expand_path(f"{config['simulator']['logfile_prefix']}.log", new_run_folder),
-                level=config["simulator"]["log_level"],
+                expand_path(
+                    f"{config['logging']['logfile_prefix']}.log", new_run_folder
+                ),
+                level=config["logging"]["log_level"],
             )
 
     # TOC -- 080225 9:54AM
@@ -113,6 +119,7 @@ if __name__ == "__main__":
     )
     logger.debug(f"video path {video_file_path}")
 
+    target_creation_time = config["simulator"]["target_creation_time"]
     #
     # Create environment and agent
     #
@@ -140,15 +147,14 @@ if __name__ == "__main__":
         scene_filename=config["meshes"]["mesh_scene"],
         scene_position=config["environment"]["scene_position"],
         scene_angle=np.pi * np.array(config["meshes"]["scene_angle"]) / 180.0,
-        target_creation_time = config['environment']['target_creation_time'],
-
+        target_creation_time=target_creation_time,
     )
 
     agent = BoidsWorldAgent(
         env=env,
         num_agents=config["simulator"]["num_agents"],
         walking=config["simulator"]["walking"],
-        has_mesh_scene=(config["meshes"]["mesh_scene"] != ''),
+        has_mesh_scene=(config["meshes"]["mesh_scene"] != ""),
         min_ground_separation=config["agent"]["min_ground_separation"],
         min_separation=config["agent"]["min_separation"],
         neighborhood_dist=config["agent"]["neighborhood_dist"],
@@ -167,7 +173,6 @@ if __name__ == "__main__":
     #
     for episode in tqdm(range(config["simulator"]["num_episodes"])):
         # Start a new episode
-
 
         logger.debug(f"main(): starting episode {episode}")
 
@@ -191,13 +196,13 @@ if __name__ == "__main__":
 
         # while not done:
         for time_step in tqdm(range(config["simulator"]["num_frames"])):
-            if time_step == config['environment']['target_creation_time']:
+            if time_step == target_creation_time:
                 agent.set_target_weight(config["agent"]["target_weight"])
-                '''
+                """
                 TOC -- 080425 2:40PM
                 I can't call this method since the environment is in a wrapper. 
                 I need to understand wrappers better.
-                '''
+                """
                 # env.create_target()
 
             # Agent chooses action
@@ -223,7 +228,7 @@ if __name__ == "__main__":
 
         file_path = expand_path(
             f"episode-{episode}-completed-{datetime.now().strftime('%Y%m%d-%H%M%S')}.parquet",
-            #f"episode-{episode}.parquet",
+            # f"episode-{episode}.parquet",
             new_run_folder,
         )
         logger.info(f"writing output to {file_path}")

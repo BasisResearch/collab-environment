@@ -52,7 +52,7 @@ class BoidsWorldAgent:
         self.cohesion_weight = cohesion_weight
         self.target_weight = target_weight
         self.max_speed = max_speed
-        self.min_speed=min_speed
+        self.min_speed = min_speed
         self.max_force = max_force
         self.walking = walking
         self.env_has_mesh_scene = has_mesh_scene
@@ -90,7 +90,7 @@ class BoidsWorldAgent:
     """
 
     def simpleBoidsAction(self, obs):
-        #logger.debug(f"called with obs: {obs}")
+        # logger.debug(f"called with obs: {obs}")
         velocity = np.array(obs["agent_vel"])  # using ADP style
         location = np.array(obs["agent_loc"])
         for i in range(self.num_agents):
@@ -106,8 +106,10 @@ class BoidsWorldAgent:
             Only do the ground separation if there is a scene to hit the ground on. This grond thins 
             needs a more intelligent solution.   
             """
-            if (not self.walking) and self.env_has_mesh_scene and (
-                obs["mesh_distance"][i] < self.min_ground_separation
+            if (
+                (not self.walking)
+                and self.env_has_mesh_scene
+                and (obs["mesh_distance"][i] < self.min_ground_separation)
             ):
                 # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
                 # velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
@@ -261,7 +263,7 @@ class BoidsWorldAgent:
                     + self.separation_weight * separation_force
                     + self.ground_weight * ground_force
                 )
-                logger.debug(f'total force: {total_force}')
+                logger.debug(f"total force: {total_force}")
 
                 """
                 TOC -- 073125 9:00AM
@@ -272,8 +274,7 @@ class BoidsWorldAgent:
                 norm_total_force = np.linalg.norm(total_force)
                 if norm_total_force > self.max_force:
                     total_force = total_force / norm_total_force * self.max_force
-                    logger.debug(f'adjusted total force: {total_force}')
-
+                    logger.debug(f"adjusted total force: {total_force}")
 
                 # apply force
                 if np.linalg.norm(total_force) > 0:
