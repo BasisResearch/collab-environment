@@ -45,6 +45,7 @@ dependencies = [
   "ipympl",
   "pycolmap",
   "pyvista",
+  "lpips",
 ]
 
 [tool.setuptools]                         # NEW
