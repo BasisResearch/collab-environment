@@ -1,4 +1,3 @@
-from collections import defaultdict
 from loguru import logger
 
 import gymnasium as gym
@@ -17,6 +16,7 @@ class BoidsWorldAgent:
         self,
         env: gym.Env,
         num_agents=1,
+        num_targets=1,
         min_ground_separation=3.0,
         min_separation=4.0,
         neighborhood_dist=20.0,
@@ -24,7 +24,7 @@ class BoidsWorldAgent:
         separation_weight=3.0,
         alignment_weight=0.5,
         cohesion_weight=0.1,
-        target_weight=0.0,
+        target_weight=None,
         max_speed=0.8,
         min_speed=0.1,
         max_force=0.1,  # maximum steering force
@@ -43,6 +43,7 @@ class BoidsWorldAgent:
         """
         self.env = env
         self.num_agents = num_agents
+        self.num_targets = num_targets
         self.min_ground_separation = min_ground_separation
         self.min_separation = min_separation
         self.neighborhood_dist = neighborhood_dist
@@ -50,25 +51,44 @@ class BoidsWorldAgent:
         self.separation_weight = separation_weight
         self.alignment_weight = alignment_weight
         self.cohesion_weight = cohesion_weight
-        self.target_weight = target_weight
+
+        if target_weight is None:
+            self.target_weight = np.zeros(self.num_targets)
+        else:
+            self.target_weight = target_weight
+
         self.max_speed = max_speed
         self.min_speed = min_speed
         self.max_force = max_force
         self.walking = walking
         self.env_has_mesh_scene = has_mesh_scene
 
+        """
+        TOC -- 080525
+        This q-table stuff should be removed
+        """
         # Q-table: maps (state, action) to expected reward
         # default dict automatically creates entries with zeros for new states
-        self.q_values = [
-            defaultdict(lambda: np.zeros(env.action_space.n))  # type:ignore
-            for _ in range(num_agents)
-        ]
+        # self.q_values = [
+        #    defaultdict(lambda: np.zeros(env.action_space.n))  # type:ignore
+        #    for _ in range(num_agents)
+        # ]
 
         # Track learning progress
-        self.training_error = []  # type:ignore
+        # self.training_error = []  # type:ignore
 
-    def set_target_weight(self, new_weight):
-        self.target_weight = new_weight
+    def set_target_weight(self, new_weight, index=0):
+        """
+        This is necessary to allow for agents to start paying attention to different targets
+        at different points in time controlled by the main program.
+
+        Args:
+            new_weight:
+
+        Returns:
+
+        """
+        self.target_weight[index] = new_weight
 
     """
     Based on Dan Shiffman's Nature of Code. This needs to be optimized for use with torch.
@@ -207,27 +227,33 @@ class BoidsWorldAgent:
                     logger.debug(f"separation {avg_sep_vector}")
 
                 # target
-                if self.target_weight > 0.0:
-                    steer = obs["target_loc"] - obs["agent_loc"][i]
-                    logger.debug("target_loc = " + str(obs["target_loc"]))
-                    logger.debug("velocity " + str(velocity[i]))
-                    logger.debug("steer " + str(steer))
+                """
+                TOC -- 080525 
+                This needs to be a separate configurable weight for each target 
+                """
+                target_force = 0
+                for t in range(self.num_targets):
+                    if self.target_weight[t] > 0.0:
+                        steer = obs["target_loc"][t] - obs["agent_loc"][i]
+                        logger.debug("target_loc = " + str(obs["target_loc"][t]))
+                        logger.debug("velocity " + str(velocity[i][t]))
+                        logger.debug("steer " + str(steer))
 
-                    """
-                    TOC -- 072925 10:10AM
-                    Change this to just use the full force computed to steer rather than pushing it 
-                    to max_force, which doesn't make sense. We will limit to max_force when we 
-                    accumulate all of the forces. This is different from the way Shiffman does it -- 
-                    not sure if he is doing it that way for pedagogical reasons. 
-                    
-                    TOC -- 073125 8:58AM
-                    I think Shiffman uses max_speed. We should probably treat the forces consistently and 
-                    make everyone move at max_speed and then limit the total steering force. This seem to 
-                    cause problems with everyone going to the walls, so took it out. 
-                    """
-                    # target_force = steer / np.linalg.norm(steer) * self.max_speed
-                    target_force = steer
-                    logger.debug(f"target force {target_force}")
+                        """
+                        TOC -- 072925 10:10AM
+                        Change this to just use the full force computed to steer rather than pushing it 
+                        to max_force, which doesn't make sense. We will limit to max_force when we 
+                        accumulate all of the forces. This is different from the way Shiffman does it -- 
+                        not sure if he is doing it that way for pedagogical reasons. 
+                        
+                        TOC -- 073125 8:58AM
+                        I think Shiffman uses max_speed. We should probably treat the forces consistently and 
+                        make everyone move at max_speed and then limit the total steering force. This seem to 
+                        cause problems with everyone going to the walls, so took it out. 
+                        """
+                        # target_force = steer / np.linalg.norm(steer) * self.max_speed
+                        target_force += self.target_weight[t] * steer
+                        logger.debug(f"target force {target_force}")
 
                 # ground
                 if (
@@ -259,7 +285,7 @@ class BoidsWorldAgent:
                 total_force += (
                     self.alignment_weight * align_force
                     + self.cohesion_weight * cohesion_force
-                    + self.target_weight * target_force
+                    + target_force  # weights are applied above
                     + self.separation_weight * separation_force
                     + self.ground_weight * ground_force
                 )

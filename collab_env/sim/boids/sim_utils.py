@@ -2,8 +2,16 @@ import numpy as np
 import pandas as pd
 
 
+def function_filter(function_list):
+    def is_function(record):
+        return record["function"] in function_list
+
+    return is_function
+
+
 def add_obs_to_df(df: pd.DataFrame, obs, time_step=0):
     num_agents = len(obs["agent_loc"])
+    num_targets = len(obs["target_loc"])
     agent_rows = [
         {
             "id": i,
@@ -16,16 +24,16 @@ def add_obs_to_df(df: pd.DataFrame, obs, time_step=0):
         for i, location in zip(range(1, num_agents + 1), obs["agent_loc"])
     ]
     # currently only one environmental object really -- not sure the scene really counts yet
-    target_location = obs["target_loc"]
     env_rows = [
         {
             "id": 1,
             "type": "env",
             "time": time_step,
-            "x": target_location[0],
-            "y": target_location[1],
-            "z": target_location[1],
+            "x": location[0],
+            "y": location[1],
+            "z": location[2],
         }
+        for t, location in zip(range(1, num_targets + 1), obs["target_loc"])
     ]
     df = pd.concat([df, pd.DataFrame(agent_rows + env_rows)]).reset_index(drop=True)
     return df

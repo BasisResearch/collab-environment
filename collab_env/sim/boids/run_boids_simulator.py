@@ -28,17 +28,10 @@ import shutil
 from collab_env.sim.boids.boidsAgents import BoidsWorldAgent
 import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
 from collab_env.data.file_utils import get_project_root, expand_path
-from collab_env.sim.boids.sim_utils import add_obs_to_df
+from collab_env.sim.boids.sim_utils import add_obs_to_df, function_filter
 
 # NUM_AGENTS = 40
 # WALKING = False
-
-
-def function_filter(function_list):
-    def is_function(record):
-        return record["function"] in function_list
-
-    return is_function
 
 
 if __name__ == "__main__":
@@ -127,6 +120,8 @@ if __name__ == "__main__":
         "gymnasium_env/BoidsWorldSimple-v0",
         render_mode=render_mode,
         num_agents=config["simulator"]["num_agents"],
+        num_targets=config["simulator"]["num_targets"],
+        num_ground_targets=config["simulator"]["num_ground_targets"],
         walking=config["simulator"]["walking"],
         show_box=config["simulator"]["show_box"],
         store_video=config["visuals"]["store_video"],
@@ -153,6 +148,7 @@ if __name__ == "__main__":
     agent = BoidsWorldAgent(
         env=env,
         num_agents=config["simulator"]["num_agents"],
+        num_targets=config["simulator"]["num_targets"],
         walking=config["simulator"]["walking"],
         has_mesh_scene=(config["meshes"]["mesh_scene"] != ""),
         min_ground_separation=config["agent"]["min_ground_separation"],
@@ -162,7 +158,7 @@ if __name__ == "__main__":
         separation_weight=config["agent"]["separation_weight"],
         alignment_weight=config["agent"]["alignment_weight"],
         cohesion_weight=config["agent"]["cohesion_weight"],
-        target_weight=0.0,
+        target_weight=[0.0],
         max_speed=config["agent"]["max_speed"],
         min_speed=config["agent"]["min_speed"],
         max_force=config["agent"]["max_force"],
@@ -181,6 +177,7 @@ if __name__ == "__main__":
 
         # TOC -- 080225 8:58AM
         # create the dataframe for the simulation output
+
         df = pd.DataFrame(columns=["id", "type", "time", "x", "y", "z"])
 
         done = False
@@ -197,7 +194,7 @@ if __name__ == "__main__":
         # while not done:
         for time_step in tqdm(range(config["simulator"]["num_frames"])):
             if time_step == target_creation_time:
-                agent.set_target_weight(config["agent"]["target_weight"])
+                agent.set_target_weight(config["agent"]["target_weight"][0], 0)
                 """
                 TOC -- 080425 2:40PM
                 I can't call this method since the environment is in a wrapper. 

@@ -22,6 +22,9 @@ class BoidsWorldSimpleEnv(gym.Env):
         render_mode=None,
         size=5,
         num_agents=1,
+        num_targets=1,
+        num_ground_targets=1,
+        moving_targets=False,
         walking=False,
         target_scale=1.0,
         agent_shape="CONE",
@@ -47,6 +50,11 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.size = size  # The size of the square grid
         self.window_size = 512  # The size of the render window
         self.num_agents = num_agents
+        self.num_targets = num_targets
+        self.num_ground_targets = num_ground_targets
+        self.moving_targets = moving_targets
+        # keep track of the first index in the target list that is a ground target.
+        self.ground_target_first_index = num_targets - num_ground_targets
         self._agent_location = None  # initialized by reset()
         self._agent_velocity = None  # initialized by reset()
         self._target_location = None  # initialized by reset()
@@ -99,13 +107,35 @@ class BoidsWorldSimpleEnv(gym.Env):
                         for _ in range(num_agents)
                     ]
                 ),
-                "target_loc": spaces.Box(
-                    low=-torch.inf, high=torch.inf, shape=(3,), dtype=np.float64
-                ),
-                "norms": spaces.Tuple(
+                # TOC -- 080525 2:01PM
+                # replaced this with list of targets.
+                # "target_loc": spaces.Box(
+                #     low=-torch.inf, high=torch.inf, shape=(3,), dtype=np.float64
+                # ),
+                "target_loc": spaces.Tuple(
                     [
                         spaces.Box(
-                            low=-torch.inf, high=torch.inf, shape=(1,), dtype=np.float64
+                            low=-torch.inf, high=torch.inf, shape=(3,), dtype=np.float64
+                        )
+                        for _ in range(num_targets)
+                    ]
+                ),
+                #
+                # TOC -- 080525 2:06PM
+                # updated to deal with multiple targets.
+                #
+                "distances_to_targets": spaces.Tuple(
+                    [
+                        spaces.Tuple(
+                            [
+                                spaces.Box(
+                                    low=-torch.inf,
+                                    high=torch.inf,
+                                    shape=(1,),
+                                    dtype=np.float64,
+                                )
+                                for _ in range(self.num_targets)
+                            ]
                         )
                         for _ in range(self.num_agents)
                     ]
@@ -179,31 +209,63 @@ class BoidsWorldSimpleEnv(gym.Env):
         return {
             "agent_loc": tuple(self._agent_location),
             "agent_vel": tuple(self._agent_velocity),
-            "target_loc": (
-                self._ground_target_location if self.walking else self._target_location
-            ),
+            "target_loc": (tuple(self._target_location)),
             # "target_loc":
-            "norms": self.compute_distances(),
+            "distances_to_targets": self.compute_target_distances(),
             "mesh_distance": distances,
             "mesh_closest_points": closest_points,
         }
 
-    def compute_distances(self):
+    def _get_obs_no_target_list(self):
+        #
+        # TOC -- 080425 7:50PM
+        # distances and closest points should be set to some bogus value when there is no scene
+        # we cannot set them to None, or we will fail the observation space checker in Gymnasium.
+        # This is already done in compute_distance_and_closest_points() but it is better to do
+        # it here rather than making the call for no reason.
+        #
+        if self.mesh_scene is None:
+            distances = -np.ones(self.num_agents)
+            closest_points = -np.ones(self.num_agents)
+        else:
+            distances, closest_points = self.compute_distance_and_closest_points(
+                self.mesh_scene, self._agent_location
+            )
+        return {
+            "agent_loc": tuple(self._agent_location),
+            "agent_vel": tuple(self._agent_velocity),
+            "target_loc": (
+                self._ground_target_location if self.walking else self._target_location
+            ),
+            # "target_loc":
+            "distances_to_targets": self.compute_target_distances(),
+            "mesh_distance": distances,
+            "mesh_closest_points": closest_points,
+        }
+
+    def compute_target_distances(self):
         """
         TOC -- 071825
         need to make this faster
         might want to have a different target for each agent -- in fact, definitely do
+
+        TOC -- 080425
+        This needs to work with multiple targets and ground versus non ground. We could
+        just have a set of indices that are ground targets or a set that are not since
+        ground targets seem more likely. That way we only need one array. Not sure that is
+        worth it.
         """
         # logger.debug('compute distances(): agent location' + str(self._agent_location))
         norms = tuple(
             np.array(
                 [
-                    np.linalg.norm(a - self._target_location)
+                    [np.linalg.norm(a - t) for t in self._target_location]
                     for a in self._agent_location
                 ],
                 dtype="f",
             )
         )
+        logger.debug(f"norms = {norms}")
         return norms
 
     def _get_info(self):
@@ -220,25 +282,70 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         return {"distance": None}
 
-    def reset(self, seed=None, options=None):
-        # We need the following line to seed self.np_random
-        super().reset(seed=seed)
+    def init_targets(self):
         """
-        TOC -- 071025 
-        Switched these to fit the Euclidean space types that they should be 
+        initialize list of targets with random positions
+        Returns:
+
         """
-        # Choose the agent's location normally centered at 0
-        # self._agent_location = [self.np_random.normal(0, self.size, size=3) for _ in range(self.num_agents)]
-        # Choose uniformly inside the box
+        self._target_location = self.np_random.uniform(
+            low=0.1 * self.box_size,
+            high=0.9 * self.box_size,
+            size=(self.num_targets, 3),
+        )
+
+        #
+        # TOC -- 080525 3:54PM
+        # I think this will work without the if, but better to be safe
+        #
+        if self.num_ground_targets > 0:
+            self._target_location[self.ground_target_first_index :, 1] = 0.0
+
+        # self._target_location = np.array(
+        #    [self.box_size / 2, self.box_size / 2, self.box_size / 2]
+        # )
+        # self._ground_target_location = np.array(
+        #    [self.box_size / 2.0, 0, self.box_size / 2]
+        # )
+
         """
-        TOC -- 072525 
-        if walking, start the agents off at height 0, otherwise start them anywhere. We could always start the flying
-        boids on the ground, but we would need to change the initial placement code elsewhere, because the flying boids get 
-        stuck under the mesh when I start them at 0 height.   
-        
-        TOC -- 080425
-        These numbers need to be configurable. 
+        TOC -- 071625
+        Cut this out for now because we are dealing with multiple agents. Can add it back later in a 
+        loop or something.
         """
+        # while np.linalg.norm(self._target_location - self._agent_location) < 1:
+        #    self._target_location = self.np_random.normal(0, self.size, size=3)
+
+        """
+        TOC -- 080325 
+        This need to be configurable. No idea what I did with these while loops. 
+        """
+        # set the target velocity
+        self._target_velocity = self.np_random.normal(
+            0, 0.1, size=(self.num_targets, 3)
+        )
+        # while (
+        #        np.linalg.norm(self._target_location - np.array([0.0, 0.0, 0.0])) < 0.000001
+        # ):
+        #   self._target_velocity = self.np_random.normal(0, 0.1, size=3)
+
+        # self._ground_target_velocity = self.np_random.normal(0, 0.01, size=3)
+        # while (
+        #        np.linalg.norm(self._target_location - np.array([0.0, 0.0, 0.0])) < 0.000001
+        # ):
+        #    self._ground_target_velocity = self.np_random.normal(0, 0.1, size=3)
+
+        """
+        TOC -- 072125
+        stop moving the target so we can debug the boids
+
+        TOC -- 080325
+        these need to be removed once velocities are configurable. 
+        """
+        # self._ground_target_velocity = np.zeros(3)
+        # self._target_velocity = np.zeros((self.num_targets,3)
+
+    def init_agents(self):
         if self.walking:
             self._agent_location = [
                 np.array(
@@ -277,7 +384,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
         TOC -- 073025 
         Need to replace hard coded numbers. 
-        
+
         TOC -- 080325
         Replaced
         """
@@ -298,6 +405,88 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
         logger.debug("agent vel:" + str(self._agent_velocity))
 
+    def reset(self, seed=None, options=None):
+        # We need the following line to seed self.np_random
+        super().reset(seed=seed)
+        """
+        TOC -- 071025 
+        Switched these to fit the Euclidean space types that they should be 
+        """
+        # Choose the agent's location normally centered at 0
+        # self._agent_location = [self.np_random.normal(0, self.size, size=3) for _ in range(self.num_agents)]
+        # Choose uniformly inside the box
+        """
+        TOC -- 072525 
+        if walking, start the agents off at height 0, otherwise start them anywhere. We could always start the flying
+        boids on the ground, but we would need to change the initial placement code elsewhere, because the flying boids get 
+        stuck under the mesh when I start them at 0 height.   
+        
+        TOC -- 080425
+        These numbers need to be configurable. 
+        
+        TOC -- 080525 
+        replace with function 
+        """
+        self.init_agents()
+        # if self.walking:
+        #     self._agent_location = [
+        #         np.array(
+        #             [
+        #                 np.random.uniform(
+        #                     low=0.1 * self.box_size, high=0.9 * self.box_size
+        #                 ),
+        #                 0.0,
+        #                 np.random.uniform(
+        #                     low=0.1 * self.box_size, high=0.9 * self.box_size
+        #                 ),
+        #             ]
+        #         )
+        #         for _ in range(self.num_agents)
+        #     ]
+        #
+        # else:
+        #     self._agent_location = [
+        #         self.np_random.uniform(
+        #             low=0.1 * self.box_size, high=0.9 * self.box_size, size=3
+        #         )
+        #         for _ in range(self.num_agents)
+        #     ]
+        #     logger.debug("agent loc:" + str(self._agent_location))
+        #
+        # """
+        # TOC -- 072325
+        # We have to wait for rendering to be initialized for the mesh_scene to be created I think.
+        # """
+        # if self.mesh_scene is not None and self.walking:
+        #     distances, closest_points = self.compute_distance_and_closest_points(
+        #         self.mesh_scene, self._agent_location
+        #     )
+        #     self._agent_location = closest_points.numpy()
+        #
+        # """
+        # TOC -- 073025
+        # Need to replace hard coded numbers.
+        #
+        # TOC -- 080325
+        # Replaced
+        # """
+        # self._agent_velocity = [
+        #     self.np_random.normal(
+        #         self.agent_mean_init_velocity, self.agent_variance_init_velocity, size=3
+        #     )
+        #     for _ in range(self.num_agents)
+        # ]
+        # """
+        # TOC -- 072125
+        # """
+        # # Set the initial velocities fast to debug the reverse
+        # # self._agent_velocity = np.array([np.array([2.0, 2.0, 2.0]) for _ in range(self.num_agents)])
+        # """
+        # TOC -- 073025
+        # Get rid of all my logger.debug code since logger.debug doesn't work with gymnasium anyway.
+        # """
+        # logger.debug("agent vel:" + str(self._agent_velocity))
+
         # integers(0, self.size, size=3, dtype=int)
 
         # We will sample the target's location randomly until it does not
@@ -309,49 +498,52 @@ class BoidsWorldSimpleEnv(gym.Env):
         TOC -- 080325 
         hard coded numbers need to be replaced. 
         
+        TOC -- 080525 
+        replace with function 
         """
-        # self._target_location = self.np_random.uniform(low=0.1 * self.box_size, high=0.9 * self.box_size, size=3)
-        self._target_location = np.array(
-            [self.box_size / 2, self.box_size / 2, self.box_size / 2]
-        )
-        self._ground_target_location = np.array(
-            [self.box_size / 2.0, 0, self.box_size / 2]
-        )
-
-        """
-        TOC -- 071625
-        Cut this out for now because we are dealing with multiple agents. Can add it back later in a 
-        loop or something.
-        """
-        # while np.linalg.norm(self._target_location - self._agent_location) < 1:
-        #    self._target_location = self.np_random.normal(0, self.size, size=3)
-
-        """
-        TOC -- 080325 
-        This need to be configurable. No idea what I did with these while loops. 
-        """
-        # set the target velocity
-        self._target_velocity = self.np_random.normal(0, 0.1, size=3)
-        while (
-            np.linalg.norm(self._target_location - np.array([0.0, 0.0, 0.0])) < 0.000001
-        ):
-            self._target_velocity = self.np_random.normal(0, 0.1, size=3)
-
-        self._ground_target_velocity = self.np_random.normal(0, 0.01, size=3)
-        while (
-            np.linalg.norm(self._target_location - np.array([0.0, 0.0, 0.0])) < 0.000001
-        ):
-            self._ground_target_velocity = self.np_random.normal(0, 0.1, size=3)
-
-        """
-        TOC -- 072125
-        stop moving the target so we can debug the boids
-        
-        TOC -- 080325
-        these need to be removed once velocities are configurable. 
-        """
-        self._ground_target_velocity = np.zeros(3)
-        self._target_velocity = np.zeros(3)
+        self.init_targets()
+        # # self._target_location = self.np_random.uniform(low=0.1 * self.box_size, high=0.9 * self.box_size, size=3)
+        # self._target_location = np.array(
+        #     [self.box_size / 2, self.box_size / 2, self.box_size / 2]
+        # )
+        # self._ground_target_location = np.array(
+        #     [self.box_size / 2.0, 0, self.box_size / 2]
+        # )
+        #
+        # """
+        # TOC -- 071625
+        # Cut this out for now because we are dealing with multiple agents. Can add it back later in a
+        # loop or something.
+        # """
+        # # while np.linalg.norm(self._target_location - self._agent_location) < 1:
+        # #    self._target_location = self.np_random.normal(0, self.size, size=3)
+        #
+        # """
+        # TOC -- 080325
+        # This need to be configurable. No idea what I did with these while loops.
+        # """
+        # # set the target velocity
+        # self._target_velocity = self.np_random.normal(0, 0.1, size=3)
+        # while (
+        #         np.linalg.norm(self._target_location - np.array([0.0, 0.0, 0.0])) < 0.000001
+        # ):
+        #     self._target_velocity = self.np_random.normal(0, 0.1, size=3)
+        #
+        # self._ground_target_velocity = self.np_random.normal(0, 0.01, size=3)
+        # while (
+        #         np.linalg.norm(self._target_location - np.array([0.0, 0.0, 0.0])) < 0.000001
+        # ):
+        #     self._ground_target_velocity = self.np_random.normal(0, 0.1, size=3)
+        #
+        # """
+        # TOC -- 072125
+        # stop moving the target so we can debug the boids
+        #
+        # TOC -- 080325
+        # these need to be removed once velocities are configurable.
+        # """
+        # self._ground_target_velocity = np.zeros(3)
+        # self._target_velocity = np.zeros(3)
 
         # self._target_velocity  = np.array([0.0, 0.0, 0.0])
         # logger.debug('reset(): target velocity: ' + str(self._target_velocity))
@@ -398,13 +590,55 @@ class BoidsWorldSimpleEnv(gym.Env):
         velocity = new_locations - location
         return velocity
 
+    def update_target_locations(self):
+        #
+        # TOC -- 080425 8:00PM
+        # If there is no mesh_scene, just move the ground target along the bottom of the box
+        # by setting its velocity in the vertical direction to 0, but right now there is no
+        # ground target if we are not walking. We can go back to this when we create multiple
+        # targets. On second thought, we should have the ability to have both ground and air
+        # targets, so this is the right way to do this. When we have multiple targets, this
+        # should be an array of ground targets.
+        #
+
+        #
+        # TOC -- 080525 3:18PM
+        # make sure the ground targets will move to the ground
+        #
+        for i in range(self.num_ground_targets):
+            if self.mesh_scene is not None:
+                self._target_velocity[i + self.ground_target_first_index] = (
+                    self.convert_to_velocity_along_mesh(
+                        np.array(
+                            [self._target_location[i + self.ground_target_first_index]]
+                        ),
+                        np.array(
+                            [self._target_velocity[i + self.ground_target_first_index]]
+                        ),
+                    )[0]
+                )
+            else:
+                self._target_velocity[i + self.ground_target_first_index][1] = 0.0
+            """
+            TOC -- 080425 2:33PM
+            Need not do to this until the targets are created. Also need one target or a list instead of using ground. 
+            """
+            # self._ground_target_location = (
+            #        self._ground_target_location + self._ground_target_velocity
+            # )
+            """
+            TOC -- 080525 -- 3:16PM
+            This should work as a numpy array instead of needing to do this is a for loop
+            """
+            self._target_location = self._target_location + self._target_velocity
+
     def step(self, action):
         self.time_step += 1
         if self.time_step == self.target_creation_time:
-            self.create_target()
+            self.create_targets()
         """
         Some of this code, like the wall avoidance, should be in action
-        selection of the agent.
+        selection of the agent. Maybe not. 
         """
         # logger.debug('step(): called with action: ' + str(action))
         # Map the action (element of {0,1,2,3}) to the direction we walk in
@@ -494,31 +728,32 @@ class BoidsWorldSimpleEnv(gym.Env):
         # distances, closest_points = self.compute_distance_and_closest_points(self.mesh_scene, self._agent_location)
 
         # update the targets
-
-        #
-        # TOC -- 080425 8:00PM
-        # If there is no mesh_scene, just move the ground target along the bottom of the box
-        # by setting its velocity in the vertical direction to 0, but right now there is no
-        # ground target if we are not walking. We can go back to this when we create multiple
-        # targets. On second thought, we should have the ability to have both ground and air
-        # targets, so this is the right way to do this. When we have multiple targets, this
-        # should be an array of ground targets.
-        #
-        if self.mesh_scene is not None:
-            self._ground_target_velocity = self.convert_to_velocity_along_mesh(
-                np.array([self._ground_target_location]),
-                np.array([self._ground_target_velocity]),
-            )[0]
-        else:
-            self._ground_target_velocity[1] = 0.0
-        """
-        TOC -- 080425 2:33PM
-        Need not do to this until the targets are created. Also need one target or a list instead of using ground. 
-        """
-        self._ground_target_location = (
-            self._ground_target_location + self._ground_target_velocity
-        )
-        self._target_location = self._target_location + self._target_velocity
+        if self.moving_targets:
+            self.update_target_locations()
+        # #
+        # # TOC -- 080425 8:00PM
+        # # If there is no mesh_scene, just move the ground target along the bottom of the box
+        # # by setting its velocity in the vertical direction to 0, but right now there is no
+        # # ground target if we are not walking. We can go back to this when we create multiple
+        # # targets. On second thought, we should have the ability to have both ground and air
+        # # targets, so this is the right way to do this. When we have multiple targets, this
+        # # should be an array of ground targets.
+        # #
+        # if self.mesh_scene is not None:
+        #     self._ground_target_velocity = self.convert_to_velocity_along_mesh(
+        #         np.array([self._ground_target_location]),
+        #         np.array([self._ground_target_velocity]),
+        #     )[0]
+        # else:
+        #     self._ground_target_velocity[1] = 0.0
+        # """
+        # TOC -- 080425 2:33PM
+        # Need not do to this until the targets are created. Also need one target or a list instead of using ground.
+        # """
+        # self._ground_target_location = (
+        #     self._ground_target_location + self._ground_target_velocity
+        # )
+        # self._target_location = self._target_location + self._target_velocity
         # logger.debug('step(): new location ' + str(self._agent_location))
         # An episode is done iff the agent has reached the target
         """
@@ -537,7 +772,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         to do that to determine whether the agent ate the food.  
         """
         # distance = np.linalg.norm(self._agent_location - self._target_location, ord=1)
-        distance = np.array(self.compute_distances())
+        distance = np.array(self.compute_target_distances())
 
         # logger.debug('new distance:' + str(distance))
         """
@@ -754,6 +989,11 @@ class BoidsWorldSimpleEnv(gym.Env):
             self.mesh_agent[i].translate(np.array(self._agent_velocity[i]))
             self.vis.update_geometry(self.mesh_agent[i])
 
+    def move_target_meshes(self):
+        for i in range(self.num_targets):
+            self.mesh_target[i].translate(np.array(self._target_velocity[i]))
+            self.vis.update_geometry(self.mesh_target[i])
+
     def load_rotate_scene(
         self, filename, position=np.array([0.0, 0.0, 0.0]), angles=(-np.pi / 2, 0, 0)
     ):
@@ -870,7 +1110,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             )
             logger.debug(f"video file {self.video_file_path}")
 
-    def initialize_agent_meshes(self):
+    def init_agent_meshes(self):
         #
         # TOC -- 072325
         # Move all agents to the closest point on the mesh
@@ -914,18 +1154,69 @@ class BoidsWorldSimpleEnv(gym.Env):
 
             self.vis.add_geometry(self.mesh_agent[i])
 
-    def create_target(self):
+    def create_targets(self):
         """
         This method simply adds the target meshes that were already created to the visualizer.
         Returns:
 
         """
-        if self.walking:
-            self.vis.add_geometry(self.mesh_ground_target)
-        else:
-            self.vis.add_geometry(self.mesh_target)
 
-    def initialize_meshes(self):
+        """
+        TOC -- 080525
+        Right now all targets will be created at the same time. This needs to be changed 
+        to have configurable times for each target. 
+        """
+        for i in range(self.num_targets):
+            self.vis.add_geometry(self.mesh_target[i])
+        # if self.walking:
+        #     self.vis.add_geometry(self.mesh_ground_target[i])
+        # else:
+        #     self.vis.add_geometry(self.mesh_target)
+
+    def init_target_meshes(self):
+        self.mesh_target = [None] * self.num_targets
+        for i in range(self.num_targets):
+            self.mesh_target[i] = open3d.geometry.TriangleMesh.create_sphere(radius=1.0)
+            self.mesh_target[i].compute_vertex_normals()
+            self.mesh_target[i].paint_uniform_color([0.1, 0.6, 0.1])
+            self.mesh_target[i].scale(
+                scale=self.target_scale, center=self.mesh_target[i].get_center()
+            )
+
+            # self.mesh_ground_target = open3d.geometry.TriangleMesh.create_sphere(radius=1.0)
+            # self.mesh_ground_target.compute_vertex_normals()
+            # self.mesh_ground_target.paint_uniform_color([0.1, 0.6, 1.0])
+            # self.mesh_ground_target.scale(
+            #     scale=self.target_scale, center=self.mesh_ground_target.get_center()
+            # )
+            """
+            TOC -- 072325 
+            If agents are walking, put the target on the mesh scene. Screws up the scale 
+            somehow. It must not be drawn to the correct spot. Try not drawing it.   
+            """
+            if i >= self.ground_target_first_index and self.mesh_scene is not None:
+                distances, closest_points = self.compute_distance_and_closest_points(
+                    self.mesh_scene,
+                    [self._target_location[i + self.ground_target_first_index]],
+                )
+                # self.mesh_sphere_target.translate(closest_points.numpy()[0] - self._target_location)
+                self._target_location[i + self.ground_target_first_index] = (
+                    closest_points.numpy()[0]
+                )
+
+            """
+            TOC -- 073125 -- 7:30AM 
+            Need to decide on how we are dealing with ground and non-ground targets. The initial non-ground
+            target was to keep boids away from the walls, but that doesn't make sense from a food source 
+            point of view. Each of the targets is going to have to have some weight (possibly changing)
+            associated with it. 
+            """
+            self.mesh_target[i].translate(self._target_location[i])
+            # self.mesh_ground_target.translate(self._ground_target_location)
+            self.vis.update_geometry(self.mesh_target[i])
+            # self.vis.update_geometry(self.mesh_ground_target)
+
+    def init_meshes(self):
         """
         TOC -- 073125
         Scene may need to be read in reset() since it is needed even if not rendering.
@@ -952,44 +1243,46 @@ class BoidsWorldSimpleEnv(gym.Env):
         if self.show_box:
             self.add_box()
 
-        self.initialize_agent_meshes()
+        self.init_agent_meshes()
 
-        self.mesh_target = open3d.geometry.TriangleMesh.create_sphere(radius=1.0)
-        self.mesh_target.compute_vertex_normals()
-        self.mesh_target.paint_uniform_color([0.1, 0.6, 0.1])
-        self.mesh_target.scale(
-            scale=self.target_scale, center=self.mesh_target.get_center()
-        )
+        self.init_target_meshes()
 
-        self.mesh_ground_target = open3d.geometry.TriangleMesh.create_sphere(radius=1.0)
-        self.mesh_ground_target.compute_vertex_normals()
-        self.mesh_ground_target.paint_uniform_color([0.1, 0.6, 1.0])
-        self.mesh_ground_target.scale(
-            scale=self.target_scale, center=self.mesh_ground_target.get_center()
-        )
-        """
-        TOC -- 072325 
-        If agents are walking, put the target on the mesh scene. Screws up the scale 
-        somehow. It must not be drawn to the correct spot. Try not drawing it.   
-        """
-        if self.walking:
-            distances, closest_points = self.compute_distance_and_closest_points(
-                self.mesh_scene, [self._ground_target_location]
-            )
-            # self.mesh_sphere_target.translate(closest_points.numpy()[0] - self._target_location)
-            self._ground_target_location = closest_points.numpy()[0]
-
-        """
-        TOC -- 073125 -- 7:30AM 
-        Need to decide on how we are dealing with ground and non-ground targets. The initial non-ground
-        target was to keep boids away from the walls, but that doesn't make sense from a food source 
-        point of view. Each of the targets is going to have to have some weight (possibly changing)
-        associated with it. 
-        """
-        self.mesh_target.translate(self._target_location)
-        self.mesh_ground_target.translate(self._ground_target_location)
-        self.vis.update_geometry(self.mesh_target)
-        self.vis.update_geometry(self.mesh_ground_target)
+        # self.mesh_target = open3d.geometry.TriangleMesh.create_sphere(radius=1.0)
+        # self.mesh_target.compute_vertex_normals()
+        # self.mesh_target.paint_uniform_color([0.1, 0.6, 0.1])
+        # self.mesh_target.scale(
+        #     scale=self.target_scale, center=self.mesh_target.get_center()
+        # )
+        #
+        # self.mesh_ground_target = open3d.geometry.TriangleMesh.create_sphere(radius=1.0)
+        # self.mesh_ground_target.compute_vertex_normals()
+        # self.mesh_ground_target.paint_uniform_color([0.1, 0.6, 1.0])
+        # self.mesh_ground_target.scale(
+        #     scale=self.target_scale, center=self.mesh_ground_target.get_center()
+        # )
+        # """
+        # TOC -- 072325
+        # If agents are walking, put the target on the mesh scene. Screws up the scale
+        # somehow. It must not be drawn to the correct spot. Try not drawing it.
+        # """
+        # if self.walking:
+        #     distances, closest_points = self.compute_distance_and_closest_points(
+        #         self.mesh_scene, [self._ground_target_location]
+        #     )
+        #     # self.mesh_sphere_target.translate(closest_points.numpy()[0] - self._target_location)
+        #     self._ground_target_location = closest_points.numpy()[0]
+        #
+        # """
+        # TOC -- 073125 -- 7:30AM
+        # Need to decide on how we are dealing with ground and non-ground targets. The initial non-ground
+        # target was to keep boids away from the walls, but that doesn't make sense from a food source
+        # point of view. Each of the targets is going to have to have some weight (possibly changing)
+        # associated with it.
+        # """
+        # self.mesh_target.translate(self._target_location)
+        # self.mesh_ground_target.translate(self._ground_target_location)
+        # self.vis.update_geometry(self.mesh_target)
+        # self.vis.update_geometry(self.mesh_ground_target)
 
         """
         TOC -- 080225 2:56PM
@@ -1005,10 +1298,10 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.mesh_sphere_center.paint_uniform_color([1.0, 0.0, 0.0])
         self.mesh_sphere_center.translate([0.0, 0.0, 0.0])
 
-        self.mesh_sphere_start = open3d.geometry.TriangleMesh.create_sphere(radius=0.1)
-        self.mesh_sphere_start.compute_vertex_normals()
-        self.mesh_sphere_start.paint_uniform_color([0.6, 0.1, 0.1])
-        self.mesh_sphere_start.translate(self._target_location + [2, 2, 2])
+        # self.mesh_sphere_start = open3d.geometry.TriangleMesh.create_sphere(radius=0.1)
+        # self.mesh_sphere_start.compute_vertex_normals()
+        # self.mesh_sphere_start.paint_uniform_color([0.6, 0.1, 0.1])
+        # self.mesh_sphere_start.translate(self._target_location + [2, 2, 2])
 
         """
         TOC -- 073125 -- 7:22AM
@@ -1047,7 +1340,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         if self.vis is None:
             self.initialize_visualizer()
-            self.initialize_meshes()
+            self.init_meshes()
 
         self.move_agent_meshes()
 
@@ -1083,15 +1376,20 @@ class BoidsWorldSimpleEnv(gym.Env):
         TOC -- 080225 2:14PM 
         Why am I not translating the ground target by the ground target velocity?
         """
-        self.mesh_target.translate(self._target_velocity)
+        if self.moving_targets:
+            self.move_target_meshes()
+        # self.mesh_target.translate(self._target_velocity)
 
-        for i in range(self.num_agents):
-            # self.vis.update_geometry(self.mesh_sphere_agent[i])
-            self.vis.update_geometry(self.mesh_agent[i])
-            # logger.debug("render(): mesh center " + str(self.mesh_arrow_agent[i].get_center()))
-            # logger.debug("render(): agent location " + str(self._agent_location[i]))
-        self.vis.update_geometry(self.mesh_target)
-        self.vis.update_geometry(self.mesh_ground_target)
+        # TOC -- 080525
+        # this is done in move_agent_meshes()
+        # for i in range(self.num_agents):
+        #     # self.vis.update_geometry(self.mesh_sphere_agent[i])
+        #     self.vis.update_geometry(self.mesh_agent[i])
+        #     # logger.debug("render(): mesh center " + str(self.mesh_arrow_agent[i].get_center()))
+        #     # logger.debug("render(): agent location " + str(self._agent_location[i]))
+        #
+
+        # self.vis.update_geometry(self.mesh_ground_target)
         self.vis.poll_events()
         self.vis.update_renderer()
 
