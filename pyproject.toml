@@ -3,7 +3,7 @@ name = "collab_env"
 version = "0.0.1"
 description = "Basic scientific computing and deep learning environment with CUDA support"
 readme = "README.rst"
-requires-python = ">=3.8,<3.12"
+requires-python = ">=3.8,<3.11"
 license = { text = "Apache-2.0" }
 keywords = ["scientific computing", "deep learning", "CUDA", "data processing", "plotting"]
 authors = [{ name = "Basis" }]
@@ -16,10 +16,10 @@ classifiers = [
 
 dependencies = [
   "numpy<2",
-  "torch",
+  "torch>=2.1,<2.4",
   "torchvision",
+  "torchaudio",
   "pyro-ppl",
-  "numpy<2",
   "pandas",
   "scipy",
   "scikit-learn",
@@ -31,19 +31,19 @@ dependencies = [
   "seaborn",
   "plotly",
   "ultralytics",
-  "dotenv",
+  "python-dotenv",
   "jupyterlab", 
   "ipywidgets",
-  "dotenv",
   "gcsfs",
   "loguru",
   "pylibjpeg-libjpeg",
   "rfdetr",
   "open3d",
   "gymnasium",
-  "scipy",
   "torch_geometric",
   "ipympl",
+  "pycolmap==0.4.0",
+  "pyvista",
 ]
 
 [tool.setuptools]                         # NEW
