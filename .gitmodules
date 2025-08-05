@@ -1,0 +1,6 @@
+[submodule "submodules/submodules/hloc"]
+	path = submodules/submodules/hloc
+	url = https://github.com/cvg/Hierarchical-Localization.git
+[submodule "submodules/hloc"]
+	path = submodules/hloc
+	url = https://github.com/cvg/Hierarchical-Localization.git
