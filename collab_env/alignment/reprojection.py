@@ -8,17 +8,25 @@ import open3d as o3d
 @dataclass
 class Camera:
     # A camera is a set of transformations that relates the world points to the camera
-    def __init__(self, K, R, t):
+    def __init__(self, K, c2w, width, height):
         self.K = K
-        self.R = R
-        self.t = t
-
-        self._set_c2w()
-    
-    def _set_c2w(self):
-        c2w = np.concatenate([self.R, self.t], axis=1)
-        c2w = np.vstack([c2w, np.array([0, 0, 0, 1])]) # 4x4
         self.c2w = c2w
+        self.width = width
+        self.height = height
+        self.image = None
+        self.depth = None
+    
+    # def _set_c2w(self, c2w):
+    #     # c2w = np.concatenate([self.R, self.t], axis=1)
+    #     # c2w = np.vstack([c2w, np.array([0, 0, 0, 1])]) # 4x4
+    #     self.c2w = c2w
+
+    def set_view(self, image: np.ndarray, depth: np.ndarray):
+        self.image = image
+        self.depth = depth
+
+    def get_view(self):
+        return self.image, self.depth
 
     @property
     def fx(self):
@@ -36,9 +44,9 @@ class Camera:
     def cy(self):
         return self.K[1, 2]
 
-    @property
-    def c2w(self):
-        return self.c2w
+    # @property
+    # def c2w(self):
+    #     return self.c2w
 
     @property
     def w2c(self):
@@ -80,39 +88,75 @@ class Camera:
         u = self.fx * x_norm + self.cx
         v = self.fy * y_norm + self.cy
 
-        return np.stack([u, v], axis=1)  # (N, 2)
+        # Step 5: Stack 2D points
+        points2d = np.stack([u, v], axis=1)  # (N, 2)
 
-    def project_to_world(self, points2d, depth):
+        # Return 2D points and associated depths
+        return points2d, z
+
+    def project_to_world(self, points2d):
         """
-        Project 2D image points (u, v) with depth into 3D world coordinates.
+        Project 2D pixel coordinates (u, v) into 3D world points using stored depth.
 
         Args:
-            points2d: (N, 2) array of 2D image pixel coordinates (u, v)
-            depth: (N, 1) or (N,) array of depths corresponding to each point
+            points2d: (N, 2) array of (u, v) pixel coordinates where
+                    u = column (horizontal),
+                    v = row (vertical)
 
         Returns:
             points3d_world: (N, 3) array of 3D points in world coordinates
         """
-        # Ensure depth is column vector
-        depth = depth.reshape(-1, 1)  # (N, 1)
+        points2d = np.asarray(points2d).astype(int)
+        u = np.clip(points2d[:, 0], 0, self.depth.shape[1] - 1)  # col index (width)
+        v = np.clip(points2d[:, 1], 0, self.depth.shape[0] - 1)  # row index (height)
 
-        u = points2d[:, 0]
-        v = points2d[:, 1]
+        depth = self.depth[v, u].reshape(-1, 1)  # note depth indexed by [row, col] = [v, u]
 
-        # Step 1: Unproject to camera space (normalized)
-        x = (u - self.cx) * depth / self.fx
-        y = (v - self.cy) * depth / self.fy
+        valid_mask = depth.squeeze() > 0
+        if not np.any(valid_mask):
+            return np.zeros((0, 3))  # or raise exception / return NaNs
+
+        # Backproject to camera space
+        x = (u - self.cx)[:, None] * depth / self.fx
+        y = (v - self.cy)[:, None] * depth / self.fy
         z = depth
 
-        # Step 2: Convert to homogeneous coordinates (camera space)
-        points_cam = np.stack([x, y, z, np.ones_like(z)], axis=1)  # (N, 4)
+        points_cam = np.concatenate([x, y, z, np.ones_like(z)], axis=1)
+        points_world_hom = (self.c2w @ points_cam.T).T
+        points_world = points_world_hom[:, :3] / points_world_hom[:, 3:4]
 
-        # Step 3: Apply camera-to-world transformation (returns homogeneous coordinates)
-        points_world_homogenous = (self.c2w @ points_cam.T).T  # (4, N).T -> (N, 4)
-
-        # Step 4: Return 3D world coordinates
-        points_world = points_world_homogenous[:, :3] / points_world_homogenous[:, 3:4]  # handle non-unity w
         return points_world
+    # def project_to_world(self, points2d, depth):
+    #     """
+    #     Project 2D image points (u, v) with depth into 3D world coordinates.
+
+    #     Args:
+    #         points2d: (N, 2) array of 2D image pixel coordinates (u, v)
+    #         depth: (N, 1) or (N,) array of depths corresponding to each point
+
+    #     Returns:
+    #         points3d_world: (N, 3) array of 3D points in world coordinates
+    #     """
+    #     # Ensure depth is column vector
+    #     depth = depth.reshape(-1, 1)  # (N, 1)
+
+    #     u = points2d[:, 0]
+    #     v = points2d[:, 1]
+
+    #     # Step 1: Unproject to camera space (normalized)
+    #     x = (u - self.cx) * depth / self.fx
+    #     y = (v - self.cy) * depth / self.fy
+    #     z = depth
+
+    #     # Step 2: Convert to homogeneous coordinates (camera space)
+    #     points_cam = np.stack([x, y, z, np.ones_like(z)], axis=1)  # (N, 4)
+
+    #     # Step 3: Apply camera-to-world transformation (returns homogeneous coordinates)
+    #     points_world_homogenous = (self.c2w @ points_cam.T).T  # (4, N).T -> (N, 4)
+
+    #     # Step 4: Return 3D world coordinates
+    #     points_world = points_world_homogenous[:, :3] / points_world_homogenous[:, 3:4]  # handle non-unity w
+    #     return points_world
 
 @dataclass
 class MeshEnvironment:
@@ -144,6 +188,43 @@ class MeshEnvironment:
 
         return pos, size
 
+    def render_camera(self, camera: Camera) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Render the camera view of the mesh.
+        """
+
+        if camera.image is not None:
+            return camera.get_view()
+        
+        # Create renderer
+        renderer = o3d.visualization.rendering.OffscreenRenderer(camera.width, camera.height)
+        renderer.scene.set_background([1, 1, 1, 1])  # white bg
+
+        # Set material to use vertex colors
+        material = o3d.visualization.rendering.MaterialRecord()
+        material.shader = "defaultUnlit"  # or "defaultLit" if lighting desired
+
+        # Add mesh with material
+        renderer.scene.add_geometry("mesh", self.mesh, material)
+
+        # Set up camera
+        renderer.setup_camera(camera.K, camera.w2c, camera.width, camera.height)
+        
+        # Render
+        image = renderer.render_to_image()
+        depth = renderer.render_to_depth_image(z_in_view_space=True)
+
+        image = np.asarray(image)
+        depth = np.asarray(depth)
+
+        camera.set_view(
+            image=image,
+            depth=depth # depth is in world units
+        )
+
+        del renderer
+
+        return image, depth
 
 ################################
 ########### Observer ###########
@@ -185,3 +266,16 @@ class Observer:
         vmap_observe = vmap(self.__observe__, in_dims = 0)(*tuple(item.view(-1, item.shape[-1]) for item in batch))
         
         return tuple(state.view(*agent, -1) for state in vmap_observe)
+
+################################
+########### Agent ##############
+################################
+
+# def Agent:
+#     def __init__(self, position: torch.Tensor, size: torch.Tensor, angle: torch.Tensor):
+#         self.position = position
+#         self.size = size
+#         self.angle = angle
+
+#     def observe(self, batch: State) -> ObservedState:
+#         return self.camera.project_to_world(batch)

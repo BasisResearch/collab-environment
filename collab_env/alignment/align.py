@@ -5,6 +5,8 @@ import shutil
 from pathlib import Path
 import pyvista as pv
 import matplotlib.pyplot as plt
+import pickle
+import cv2
 
 import pycolmap
 from hloc import extract_features, match_features, pairs_from_exhaustive
@@ -122,20 +124,24 @@ def align_to_colmap(
 
     return poses, logs
 
-def align_to_splat(preproc_dir, pose):
+def align_to_splat(preproc_dir, pose, out_dir: str = None):
 
     # Load COLMAP cameras and align them to nerfstudio format
     camera_params, transforms = colmap2nerfstudio(preproc_dir)
     camera_params = extract_camera_params(pose)
 
     # Apply nerfstudio transforms to our new camera pose
-    camera_params['pose'] = transforms['transform_matrix'] @ camera_params['pose'] # Align to splat
-    camera_params['pose'][:3, 3] *= transforms['scale'] # Scale to splat
+    camera_params['c2w'] = transforms['transform_matrix'] @ camera_params['c2w'] # Align to splat
+    camera_params['c2w'][:3, 3] *= transforms['scale'] # Scale to splat
+
+    if out_dir is not None:
+        with open(out_dir / "camera_params_splat.pkl", 'wb') as f:
+            pickle.dump(camera_params, f)
 
     return camera_params
     
 
-def align_to_mesh(preproc_dir, mesh_dir, pose):
+def align_to_mesh(preproc_dir, mesh_dir, pose, out_dir: str = None):
 
     # Align to splat first --> returns camera params aligned to the splat
     camera_params = align_to_splat(preproc_dir, pose)
@@ -154,13 +160,28 @@ def align_to_mesh(preproc_dir, mesh_dir, pose):
     ], axis=0)
 
     # Apply the mesh transform to the camera params
-    camera_params['pose'] = transform @ camera_params['pose']
+    camera_params['c2w'] = transform @ camera_params['c2w']
     
+    if out_dir is not None:
+        with open(out_dir / "camera_params_mesh.pkl", 'wb') as f:
+            pickle.dump(camera_params, f)
+
     return camera_params
 
 def extract_camera_params(pose):
     """
-    Transform a localized pose in COLMAP to match the nerfstudio coordinate system.
+    Extract camera parameters from a COLMAP pose (OpenCV convention) and 
+    convert to OpenGL convention. 
+
+    OpenCV convention:
+    - x right
+    - y down
+    - z forward
+
+    OpenGL convention:
+    - x right
+    - y up
+    - z backward
     """
 
     # Convert COLMAP pose to c2w
@@ -174,10 +195,43 @@ def extract_camera_params(pose):
     c2w[0:3, 1:3] *= -1
     c2w = c2w[np.array([0, 2, 1, 3]), :]
     c2w[2, :] *= -1
+    c2w[:3, 1:3] *= -1
 
     # Get intrinsics
-    f, cx, cy, _ = pose['camera'].params
-    fx = fy = f
+    camera_model = pose['camera'].model.name
+    params = pose['camera'].params
+
+    if camera_model in ['SIMPLE_PINHOLE']:
+        fx = fy = params[0]
+        cx, cy = params[1], params[2]
+        dist_coeffs = np.zeros(5)
+
+    elif camera_model in ['SIMPLE_RADIAL']:
+        fx = fy = params[0]
+        cx, cy = params[1], params[2]
+        dist_coeffs = np.zeros(5)
+        dist_coeffs[0] = params[3]  # k1
+
+    elif camera_model in ['PINHOLE']:
+        fx, fy, cx, cy = params[:4]
+        dist_coeffs = np.zeros(5)
+
+    elif camera_model in ['RADIAL']:
+        fx = fy = params[0]
+        cx, cy = params[1], params[2]
+        dist_coeffs = np.zeros(5)
+        dist_coeffs[:3] = params[3:6]  # k1, k2, k3
+
+    elif camera_model in ['OPENCV', 'FULL_OPENCV']:
+        fx, fy, cx, cy = params[:4]
+        raw_dist = np.array(params[4:], dtype=np.float32)
+        dist_coeffs = np.zeros(8, dtype=np.float32)
+        dist_coeffs[:len(raw_dist)] = raw_dist
+        # No reordering needed; COLMAP already uses OpenCV order: [k1, k2, p1, p2, k3, k4, k5, k6]
+
+    else:
+        raise ValueError(f"Camera model {camera_model} not supported.")
+
     height, width = pose['camera'].height, pose['camera'].width
 
     K = np.array([
@@ -185,6 +239,8 @@ def extract_camera_params(pose):
         [0, fy, cy],
         [0,  0,  1],
     ])
+
+    K, _ = cv2.getOptimalNewCameraMatrix(K, dist_coeffs, (width, height), 0.5)
 
     return {
         'fx': fx,
@@ -194,7 +250,7 @@ def extract_camera_params(pose):
         'K': K,
         'height': height,
         'width': width,
-        'pose': c2w,  # 4x4 matrix
+        'c2w': c2w,  # 4x4 matrix
     }
 
 #########################################################
@@ -274,7 +330,6 @@ def colmap2nerfstudio(preproc_dir, downscale_factor=2.0):
 
     return camera_params, transforms
 
-
 def project_image(K, c2w, points, colors):
     """
     Project 3D points to 2D image coordinates.
@@ -301,13 +356,19 @@ def project_image(K, c2w, points, colors):
     points_cam = (R @ points.T + t).T  # (N, 3)
     points_cam = np.asarray(points_cam)
 
-    # Filter out points behind the camera
+    # CORRECTION: Apply coordinate system convention
+    # In computer vision, camera looks down -Z axis
+    # So we need to negate the Z coordinate to match PyVista's convention
+    points_cam[:, 2] = -points_cam[:, 2]
+    points_cam[:, 1] = -points_cam[:, 1]
+
+    # Filter out points behind the camera (now positive Z is in front)
     in_front = points_cam[:, 2] > 0
     points_cam = points_cam[in_front]
     colors = colors[in_front]
 
     # Project to 2D
-    points_proj = (K @ points_cam.T).T  # (N, 3)
+    points_proj = (K @ points_cam.T) #.T  # (N, 3)
     points_proj = points_proj[:, :2] / points_proj[:, 2:3]  # normalize
 
     return points_proj, colors
@@ -410,55 +471,6 @@ def qvec2rotmat(qvec):
         ]
     )
 
-# def transform_localized(ret, transforms):
-#     """
-#     Transform a localized pose in COLMAP to match the nerfstudio coordinate system.
-#     """
-#     # Convert COLMAP (qvec + tvec) to c2w
-#     rotation = qvec2rotmat(ret['qvec'])
-#     translation = ret['tvec'].reshape(3, 1)
-    
-#     w2c = np.concatenate([rotation, translation], axis=1)  # 3x4
-#     w2c = np.vstack([w2c, np.array([0, 0, 0, 1])])         # 4x4
-#     c2w = np.linalg.inv(w2c)                               # world-to-camera → camera-to-world
-
-#     # Convert from COLMAP's camera coordinate system (OpenCV) to ours (OpenGL)
-#     c2w[0:3, 1:3] *= -1
-#     c2w = c2w[np.array([0, 2, 1, 3]), :]
-#     c2w[2, :] *= -1
-
-#     # Apply transform matrix (global alignment from colmap2nerfstudio)
-#     c2w = transforms['transform_matrix'] @ c2w
-
-#     # Apply scene scaling
-#     c2w[:3, 3] *= transforms['scale']
-
-#     # Flip y and z axes (OpenCV → OpenGL)
-#     c2w[:3, 1:3] *= -1
-#     c2w = np.concatenate([c2w, np.asarray([0, 0, 0, 1])[np.newaxis, :]], axis=0)
-
-#     # Get intrinsics
-#     f, cx, cy, _ = ret['camera']['params']
-#     fx = fy = f
-#     height, width = ret['camera']['height'], ret['camera']['width']
-
-#     K = np.array([
-#         [fx, 0, cx],
-#         [0, fy, cy],
-#         [0,  0,  1],
-#     ])
-
-#     return {
-#         'fx': fx,
-#         'fy': fy,
-#         'cx': cx,
-#         'cy': cy,
-#         'K': K,
-#         'height': height,
-#         'width': width,
-#         'pose': c2w,  # 4x4 matrix
-#     }
-
 #########################################################
 ######### Visualization of alignment ###################
 #########################################################
@@ -471,7 +483,7 @@ def pyvista_camera_view_with_intrinsics(mesh_fn, camera_params,
     Args:
         mesh_fn: Path to mesh PLY file
         mesh_alignment_fn: Path to alignment NPZ file
-        localized_params: Dict with 'pose', 'K', 'height', 'width'
+        localized_params: Dict with 'c2w', 'K', 'height', 'width'
         save_path: Optional path to save the image
         show_info: Whether to print camera info
     """
@@ -480,7 +492,7 @@ def pyvista_camera_view_with_intrinsics(mesh_fn, camera_params,
     mesh_pv = pv.read(str(mesh_fn))
 
     # Get camera parameters
-    c2w = camera_params['pose']
+    c2w = camera_params['c2w']
     
     K = camera_params['K']
     fx, fy = K[0, 0], K[1, 1]
@@ -533,7 +545,7 @@ def pyvista_camera_view_with_intrinsics(mesh_fn, camera_params,
     plotter.camera.up = camera_up
     
     # Set field of view - PyVista uses vertical FOV
-    plotter.camera.view_angle = fov_x_deg #fov_y_deg * aspect_ratio
+    plotter.camera.view_angle = fov_y_deg
     
     # Handle non-square pixels by adjusting the viewport
     if abs(fx - fy) > 1:
