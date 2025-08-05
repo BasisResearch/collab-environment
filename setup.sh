@@ -12,6 +12,5 @@ if [ ! -d "$submodule_dir" ]; then
 fi
 
 cd $submodule_dir
-git checkout v1.4
 git submodule update --init --recursive
 pip install -e . --no-cache-dir
