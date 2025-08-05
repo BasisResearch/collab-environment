@@ -7,6 +7,7 @@ import cv2
 
 # from Boids.sim_utils import calc_angles
 from loguru import logger
+from sympy import closest_points
 
 from collab_env.data.file_utils import get_project_root, expand_path
 
@@ -162,9 +163,20 @@ class BoidsWorldSimpleEnv(gym.Env):
         return np.array(self._action_to_direction.values())
 
     def _get_obs(self):
-        distances, closest_points = self.compute_distance_and_closest_points(
-            self.mesh_scene, self._agent_location
-        )
+        #
+        # TOC -- 080425 7:50PM
+        # distances and closest points should be set to some bogus value when there is no scene
+        # we cannot set them to None, or we will fail the observation space checker in Gymnasium.
+        # This is already done in compute_distance_and_closest_points() but it is better to do
+        # it here rather than making the call for no reason.
+        #
+        if self.mesh_scene is None:
+            distances = -np.ones(self.num_agents)
+            closest_points = -np.ones(self.num_agents)
+        else:
+            distances, closest_points = self.compute_distance_and_closest_points(
+                self.mesh_scene, self._agent_location
+            )
         return {
             "agent_loc": tuple(self._agent_location),
             "agent_vel": tuple(self._agent_velocity),
@@ -480,11 +492,23 @@ class BoidsWorldSimpleEnv(gym.Env):
         # distances, closest_points = self.compute_distance_and_closest_points(self.mesh_scene, self._agent_location)
 
         # update the targets
-        self._ground_target_velocity = self.convert_to_velocity_along_mesh(
-            np.array([self._ground_target_location]),
-            np.array([self._ground_target_velocity]),
-        )[0]
 
+        #
+        # TOC -- 080425 8:00PM
+        # If there is no mesh_scene, just move the ground target along the bottom of the box
+        # by setting its velocity in the vertical direction to 0, but right now there is no
+        # ground target if we are not walking. We can go back to this when we create multiple
+        # targets. On second thought, we should have the ability to have both ground and air
+        # targets, so this is the right way to do this. When we have multiple targets, this
+        # should be an array of ground targets.
+        #
+        if self.mesh_scene is not None:
+            self._ground_target_velocity = self.convert_to_velocity_along_mesh(
+                np.array([self._ground_target_location]),
+                np.array([self._ground_target_velocity]),
+            )[0]
+        else:
+            self._ground_target_velocity[1] = 0.0
         '''
         TOC -- 080425 2:33PM
         Need not do to this until the targets are created. Also need one target or a list instead of using ground. 
@@ -905,15 +929,22 @@ class BoidsWorldSimpleEnv(gym.Env):
         TOC -- 073125
         Scene may need to be read in reset() since it is needed even if not rendering.
         """
-        # self.mesh_scene = self.load_rotate_scene("example_meshes/example_mesh.ply", position=np.array([self.box_size/2.0, 0.0, self.box_size/2.0]), angles=(-np.pi / 18, 0, -np.pi / 1.6)
-        filename = expand_path(self.scene_filename, get_project_root())
-        self.mesh_scene = self.load_rotate_scene(
-            filename,
-            # position=np.array([self.box_size / 2.0, -self.box_size / 2.0, 8.0]),
-            position=self.scene_position,
-            # angles=(-np.pi / 2, 0, 0),
-            angles=self.scene_angle,
-        )
+        # self.mesh_scene = self
+        # .load_rotate_scene("example_meshes/example_mesh.ply", position=np.array([self.box_size/2.0, 0.0, self.box_size/2.0]), angles=(-np.pi / 18, 0, -np.pi / 1.6)
+        if self.scene_filename == '':
+            self.mesh_scene = None
+            if self.walking:
+                logger.warning('Walking requires a scene to walk on. Walking will be turned off.')
+                self.walking = False
+        else:
+            filename = expand_path(self.scene_filename, get_project_root())
+            self.mesh_scene = self.load_rotate_scene(
+                filename,
+                # position=np.array([self.box_size / 2.0, -self.box_size / 2.0, 8.0]),
+                position=self.scene_position,
+                # angles=(-np.pi / 2, 0, 0),
+                angles=self.scene_angle,
+            )
 
         if self.show_box:
             self.add_box()
@@ -980,7 +1011,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         extra for loop. I think we might because then we can skip all of this if we are
         not visualizing.   
         """
-        self.vis.add_geometry(self.mesh_scene)
+        if self.mesh_scene is not None:
+            self.vis.add_geometry(self.mesh_scene)
 
         # self.vis.add_geometry(self.mesh_top_corner)
 

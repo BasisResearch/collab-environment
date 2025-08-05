@@ -29,6 +29,7 @@ class BoidsWorldAgent:
         min_speed=0.1,
         max_force=0.1,  # maximum steering force
         walking=True,
+        has_mesh_scene=True,
     ):
         """Initialize a Q-Learning agent.
 
@@ -54,6 +55,7 @@ class BoidsWorldAgent:
         self.min_speed=min_speed
         self.max_force = max_force
         self.walking = walking
+        self.env_has_mesh_scene = has_mesh_scene
 
         # Q-table: maps (state, action) to expected reward
         # default dict automatically creates entries with zeros for new states
@@ -88,7 +90,7 @@ class BoidsWorldAgent:
     """
 
     def simpleBoidsAction(self, obs):
-        logger.debug(f"called with obs: {obs}")
+        #logger.debug(f"called with obs: {obs}")
         velocity = np.array(obs["agent_vel"])  # using ADP style
         location = np.array(obs["agent_loc"])
         for i in range(self.num_agents):
@@ -98,14 +100,18 @@ class BoidsWorldAgent:
             and needs to be fixed.
             
             TOC -- 072925 -- 11:56AM 
-            Add a turning factor to make this less abrupt instead of just turning directly around (vanhunteradams uses this) 
+            Add a turning factor to make this less abrupt instead of just turning directly around (vanhunteradams uses this)
+            
+            TOC -- 080425 -- 9:44PM
+            Only do the ground separation if there is a scene to hit the ground on. This grond thins 
+            needs a more intelligent solution.   
             """
-            if (not self.walking) and (
+            if (not self.walking) and self.env_has_mesh_scene and (
                 obs["mesh_distance"][i] < self.min_ground_separation
             ):
                 # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
-                velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
-                # velocity[i] = velocity[i] + np.random.normal(1, 0.01, 3) * 0.1
+                # velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
+                velocity[i] = velocity[i] + np.random.normal(1, 0.01, 3) * 0.1
             else:
                 # velocity[i] = vel # not sure which is faster, getting the whole thing before or walking through
                 sum_separation_vector = np.zeros(3)
@@ -255,6 +261,7 @@ class BoidsWorldAgent:
                     + self.separation_weight * separation_force
                     + self.ground_weight * ground_force
                 )
+                logger.debug(f'total force: {total_force}')
 
                 """
                 TOC -- 073125 9:00AM
@@ -265,6 +272,8 @@ class BoidsWorldAgent:
                 norm_total_force = np.linalg.norm(total_force)
                 if norm_total_force > self.max_force:
                     total_force = total_force / norm_total_force * self.max_force
+                    logger.debug(f'adjusted total force: {total_force}')
+
 
                 # apply force
                 if np.linalg.norm(total_force) > 0:

@@ -33,6 +33,13 @@ from collab_env.sim.boids.sim_utils import add_obs_to_df
 
 # NUM_AGENTS = 40
 # WALKING = False
+
+def function_filter(function_list):
+    def is_function(record):
+        return record['function'] in function_list
+    return is_function
+
+
 if __name__ == "__main__":
     #
     # Get the config file name if specified on the command line
@@ -78,10 +85,18 @@ if __name__ == "__main__":
         # log file in the run folder and with the prefix specified in the config
         # file.
         logger.remove()
-        logger.add(
-            expand_path(f"{config['simulator']['logfile_prefix']}.log", new_run_folder),
-            level=config["simulator"]["log_level"],
-        )
+        print(config["simulator"]["log_functions"])
+        if len(config["simulator"]["log_functions"]) > 0:
+            logger.add(
+                expand_path(f"{config['simulator']['logfile_prefix']}.log", new_run_folder),
+                level=config["simulator"]["log_level"],
+                filter=function_filter(function_list=config["simulator"]["log_functions"])
+            )
+        else:
+            logger.add(
+                expand_path(f"{config['simulator']['logfile_prefix']}.log", new_run_folder),
+                level=config["simulator"]["log_level"],
+            )
 
     # TOC -- 080225 9:54AM
     # Copy the config file into the run folder to record configuration for the run.
@@ -133,6 +148,7 @@ if __name__ == "__main__":
         env=env,
         num_agents=config["simulator"]["num_agents"],
         walking=config["simulator"]["walking"],
+        has_mesh_scene=(config["meshes"]["mesh_scene"] != ''),
         min_ground_separation=config["agent"]["min_ground_separation"],
         min_separation=config["agent"]["min_separation"],
         neighborhood_dist=config["agent"]["neighborhood_dist"],
