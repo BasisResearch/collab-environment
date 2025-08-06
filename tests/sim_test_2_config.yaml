@@ -8,7 +8,7 @@ simulator:
   num_frames: 5
   target_creation_time: 2000
   show_box: True
-  run_main_folder: "tests/sim-runs"
+  run_main_folder: "sim-output/tests-sim-runs"
   run_sub_folder_prefix: "boids_sim_run-2"
 
 logging:

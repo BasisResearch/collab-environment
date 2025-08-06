@@ -5,30 +5,40 @@ from glob import glob
 # import pandas as pd
 import pyarrow.parquet as pq
 from loguru import logger
+
 # import pyarrow as pa
+from collab_env.data.file_utils import get_project_root, expand_path
+
+
+def clean_files(sim_runs_path=None):
+    if sim_runs_path is not None:
+        if os.path.isdir(sim_runs_path):
+            logger.info(f"removing path {sim_runs_path}")
+            shutil.rmtree(sim_runs_path)
+        logger.info(f"making directory {sim_runs_path}")
+        os.mkdir(f"{sim_runs_path}")
 
 
 def test_sim_files_no_visualizer():
-    # TODO: I have a problem running these tests using the make test since that runs multiple tests
-    # in parallel and these tests remove the directory and when they run at the same time they
-    # create files with the same names. That isn't going to work here. I guess I could get the process
-    # id or thread id if they are running this multithreaded and append that. Need to find out how
-    # this test process runs.
-    from collab_env.data.file_utils import get_project_root, expand_path
-
-    # clear the sim-runs folder from previous tests -- a little dicey
-    sim_runs_path = expand_path("tests/sim-runs", get_project_root())
-    logger.info(f"removing path {sim_runs_path}")
-    shutil.rmtree(sim_runs_path)
-    logger.info(f"making directory {sim_runs_path}")
-    os.mkdir(f"{sim_runs_path}")
+    remote_test = "CI" in os.environ
+    if not remote_test:
+        # Clear the sim-runs folder from previous tests -- a little dicey
+        # If this is a remote test, these files shouldn't be here, so don't bother. They
+        # get cleaned up at the end
+        sim_runs_path = expand_path("sim-output/tests-sim-runs", get_project_root())
+        clean_files(sim_runs_path)
+        # if os.path.isdir(sim_runs_path):
+        #     logger.info(f"removing path {sim_runs_path}")
+        #     shutil.rmtree(sim_runs_path)
+        # logger.info(f"making directory {sim_runs_path}")
+        # os.mkdir(f"{sim_runs_path}")
 
     program_path = expand_path(
         "collab_env/sim/boids/run_boids_simulator.py", get_project_root()
     )
 
     # Test to see that the run_boids_simulator runs successfully with test config file
-    result = os.system(f"python {program_path} -cf tests/sim_test_config.yaml")
+    result = os.system(f"python {program_path} -cf tests/sim_test_1_config.yaml")
     assert result == 0
 
     # Test to see that output folder was created
@@ -63,3 +73,13 @@ def test_sim_files_no_visualizer():
     # Check to see that the log file was created correctly
     result_file_list = glob(f"{folder_list[0]}/*.log")
     assert len(result_file_list) == 1
+
+    if remote_test:
+        # if this is not a remote test, we should clean up the files
+        # clear the sim-runs folder from previous tests
+        clean_files(sim_runs_path)
+        # sim_runs_path = expand_path("sim-output/tests-sim-runs", get_project_root())
+        # logger.info(f"removing path {sim_runs_path}")
+        # shutil.rmtree(sim_runs_path)
+        # logger.info(f"making directory {sim_runs_path}")
+        # os.mkdir(f"{sim_runs_path}")

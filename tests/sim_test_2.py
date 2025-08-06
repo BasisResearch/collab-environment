@@ -1,24 +1,29 @@
 import os
-import shutil
 from glob import glob
 
 # import pandas as pd
 import pyarrow.parquet as pq
-from loguru import logger
 
 # import pyarrow as pa
 from collab_env.data.file_utils import get_project_root, expand_path
 
+from tests.sim_test_1 import clean_files
+
 
 def test_sim_files_visualizer():
+    remote_test = "CI" in os.environ
+
     config_file = "tests/sim_test_2_config.yaml"
 
     # clear the sim-runs folder from previous tests -- a little dicey
-    sim_runs_path = expand_path("tests/sim-runs", get_project_root())
-    logger.info(f"removing path {sim_runs_path}")
-    shutil.rmtree(sim_runs_path)
-    logger.info(f"making directory {sim_runs_path}")
-    os.mkdir(f"{sim_runs_path}")
+    sim_runs_path = expand_path("sim-output/tests-sim-runs", get_project_root())
+    if not remote_test:
+        clean_files(sim_runs_path)
+    # if os.path.isdir(sim_runs_path):
+    #     logger.info(f"removing path {sim_runs_path}")
+    #     shutil.rmtree(sim_runs_path)
+    # logger.info(f"making directory {sim_runs_path}")
+    # os.mkdir(f"{sim_runs_path}")
 
     program_path = expand_path(
         "collab_env/sim/boids/run_boids_simulator.py", get_project_root()
@@ -30,10 +35,12 @@ def test_sim_files_visualizer():
 
     # Test to see that output folder was created
     folder_list = glob(f"{sim_runs_path}/*")
+
     assert len(folder_list) > 0
 
     # Test to see the proper number of episodes were recorded. Should be 3 episodes.
     result_file_list = glob(f"{folder_list[0]}/*.parquet")
+    print(f"parquet folder list for {folder_list[0]} = {result_file_list}")
     assert len(result_file_list) == 1
 
     # Test to see the proper number of frames were recorded for the first episode. Should be 5 frames.
@@ -62,3 +69,9 @@ def test_sim_files_visualizer():
     # set to false in config.
     result_file_list = glob(f"{folder_list[0]}/*.log")
     assert len(result_file_list) == 0
+
+    #
+    # if the test is remote, don't leave the files sitting around.
+    #
+    if remote_test:
+        clean_files(sim_runs_path)
