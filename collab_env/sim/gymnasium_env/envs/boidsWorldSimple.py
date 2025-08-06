@@ -256,16 +256,18 @@ class BoidsWorldSimpleEnv(gym.Env):
         worth it.
         """
         # logger.debug('compute distances(): agent location' + str(self._agent_location))
-        norms = tuple(
-            np.array(
-                [
-                    [np.linalg.norm(a - t) for t in self._target_location]
-                    for a in self._agent_location
-                ],
-                dtype="f",
-            )
+        norms = np.array(
+            # np.array(
+            [
+                [np.linalg.norm(a - t) for t in self._target_location]
+                for a in self._agent_location
+            ],
+            dtype="f",
+            # )
         )
-        logger.debug(f"norms = {norms}")
+        logger.debug(f"norms =\n{norms}")
+        logger.debug(f"norms shape = {norms.shape}")
+
         return norms
 
     def _get_info(self):

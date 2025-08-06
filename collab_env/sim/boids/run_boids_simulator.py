@@ -167,6 +167,20 @@ if __name__ == "__main__":
     #
     # Run the episodes
     #
+    num_targets = config["simulator"]["num_targets"]
+    distance_columns = [f"distance_target_{t}" for t in range(1, num_targets + 1)]
+    pandas_columns = [
+        "id",
+        "type",
+        "time",
+        "x",
+        "y",
+        "z",
+        "v_x",
+        "v_y",
+        "v_z",
+    ] + distance_columns
+
     for episode in tqdm(range(config["simulator"]["num_episodes"])):
         # Start a new episode
 
@@ -177,8 +191,7 @@ if __name__ == "__main__":
 
         # TOC -- 080225 8:58AM
         # create the dataframe for the simulation output
-
-        df = pd.DataFrame(columns=["id", "type", "time", "x", "y", "z"])
+        df = pd.DataFrame(columns=pandas_columns)
 
         done = False
 
@@ -211,7 +224,6 @@ if __name__ == "__main__":
             # TOC -- 080225 8:58AM
             # Record the observation
             df = add_obs_to_df(df, next_obs, time_step=(time_step + 1))
-
             # Observe the next state
             obs = next_obs
 
@@ -219,7 +231,11 @@ if __name__ == "__main__":
             # done = terminated or truncated
             # done = True
 
-        logger.debug(f"episode {episode}: df = {df}")
+        logger.info(f"episode {episode}: df columns = {df.columns}")
+        logger.info(f"positions:\n{df[['x', 'y', 'z']]}")
+        logger.info(f"velocities:\n{df[['v_x', 'v_y', 'v_z']]}")
+        logger.info(f"distances:\n{df[['distance_target_1']]}")
+
         table = pa.Table.from_pandas(df)
         logger.debug(f"table \n {table}")
 
