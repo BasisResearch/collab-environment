@@ -1,4 +1,6 @@
 import json
+from re import U
+from turtle import update
 import numpy as np
 from tqdm import tqdm
 import shutil
@@ -257,7 +259,7 @@ def extract_camera_params(pose):
 ######## Mapping of COLMAP to Nerfstudio camera #########
 #########################################################
 
-def colmap2nerfstudio(preproc_dir, downscale_factor=2.0):
+def colmap2nerfstudio(preproc_dir, downscale_factor=2.0, up='y'):
     """
     Maps the COLMAP camera parameters to the Nerfstudio camera parameters.
     Annoying but necessary as splats are created after processing the cameras
@@ -266,6 +268,13 @@ def colmap2nerfstudio(preproc_dir, downscale_factor=2.0):
     This extrapolates those parameters to the colmap cameras and aligns them
     to the splat.
     """
+
+    if up == 'y':
+        up = np.array([0, 1, 0])
+    elif up == 'z':
+        up = np.array([0, 0, 1])
+    else:
+        raise ValueError(f"Invalid up direction: {up}")
 
     with open(preproc_dir / "transforms.json", "r", encoding="utf-8") as f:
         meta = json.load(f)
@@ -289,10 +298,10 @@ def colmap2nerfstudio(preproc_dir, downscale_factor=2.0):
     translation = mean_origin
 
     # Orient upwards
-    up = np.mean(poses[:, :3, 1], axis=0)
-    up = up / np.linalg.norm(up)
+    camera_up = np.mean(poses[:, :3, 1], axis=0)
+    camera_up = camera_up / np.linalg.norm(camera_up)
 
-    rotation = rotation_matrix_between(up, np.array([0, 0, 1]))
+    rotation = rotation_matrix_between(camera_up, up)
     transform = np.concatenate([rotation, rotation @ -translation[..., None]], axis=-1)
     poses = transform @ poses
 

@@ -336,13 +336,13 @@ def bbox_to_world(camera, bbox, method="bottom_center", bottom_fraction=0.05):
 ################# Movement generator ####################
 #########################################################
 
-# @dataclass
-# class DynamicMovementGenerator:
-#     def __init__(self, mesh: MeshEnvironment, spatial_increment: torch.Tensor):
-#         self.mesh = mesh
-#         assert spatial_increment.shape[-1] == 2, \
-#             f"Spatial increment parameters must have shape (..., 2), but got {spatial_increment.shape}"
-#         self.spatial_increment = spatial_increment
+@dataclass
+class DynamicMovementGenerator:
+    def __init__(self, mesh: MeshEnvironment, spatial_increment: torch.Tensor):
+        self.mesh = mesh
+        assert spatial_increment.shape[-1] == 2, \
+            f"Spatial increment parameters must have shape (..., 2), but got {spatial_increment.shape}"
+        self.spatial_increment = spatial_increment
     
 #     def next_state(self, state: State, ind: int) -> State:
 #         # extract components
