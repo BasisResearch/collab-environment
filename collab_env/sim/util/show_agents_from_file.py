@@ -1,10 +1,8 @@
 """
-TOC
-- 7/21/25 12:29 -- they seem to move together with all weights at 1. Need to bound them inside a cube and play with neighborhood sizes as some of
-them seem to stop -- not sure why that is happening.
-- 7/21/25 -- runs with 5 agents and a moving target but the agents scatter.
-- works as a 2D grid
-- 7/3/25 23:42 the open3D visualizer opens and runs while the environment is running.
+TOC -- 080625 2:51PM
+
+This program will read the agent positions from a file and display them in the viewer and video through time.
+
 """
 
 import argparse
@@ -30,14 +28,8 @@ import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
 from collab_env.data.file_utils import get_project_root, expand_path
 from collab_env.sim.boids.sim_utils import add_obs_to_df, function_filter
 
-# NUM_AGENTS = 40
-# WALKING = False
 
-
-if __name__ == "__main__":
-    #
-    # Get the config file name if specified on the command line
-    #
+def get_config():
     parser = argparse.ArgumentParser(
         prog="run_boids_simulator",
         description="Simulates boids in a 3D environment",
@@ -53,24 +45,10 @@ if __name__ == "__main__":
         )
 
     config = yaml.safe_load(open(config_filename))
+    return config, config_filename
 
-    if config["visuals"]["show_visualizer"]:
-        render_mode = "human"
-    else:
-        render_mode = ""
 
-    # TOC -- 080225 9:15AM
-    # Create the output folder
-    """
-    # TOC -- 080425 1:49PM
-    # Using the time in the folder name seems to be causing a problem for the pytest runs. Furthermore, we could have
-    # multiple runs happening at the same time, so let's try using the process and thread ids to distinguish.  
-    """
-    new_folder_name = f"{config['simulator']['run_main_folder']}/{config['simulator']['run_sub_folder_prefix']}-started-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-
-    new_run_folder = expand_path(new_folder_name, get_project_root())
-    os.mkdir(new_run_folder)
-
+def setup_logging(config, run_folder):
     if not config["logging"]["logging"]:
         logger.disable("")
     else:
@@ -81,9 +59,7 @@ if __name__ == "__main__":
         logger.remove()
         if len(config["logging"]["log_functions"]) > 0:
             logger.add(
-                expand_path(
-                    f"{config['logging']['logfile_prefix']}.log", new_run_folder
-                ),
+                expand_path(f"{config['logging']['logfile_prefix']}.log", run_folder),
                 level=config["logging"]["log_level"],
                 filter=function_filter(
                     function_list=config["logging"]["log_functions"]
@@ -91,11 +67,47 @@ if __name__ == "__main__":
             )
         else:
             logger.add(
-                expand_path(
-                    f"{config['logging']['logfile_prefix']}.log", new_run_folder
-                ),
+                expand_path(f"{config['logging']['logfile_prefix']}.log", run_folder),
                 level=config["logging"]["log_level"],
             )
+
+
+def get_pandas_columns():
+    distance_columns = [f"distance_target_{t}" for t in range(1, num_targets + 1)]
+    pandas_columns = [
+        "id",
+        "type",
+        "time",
+        "x",
+        "y",
+        "z",
+        "v_x",
+        "v_y",
+        "v_z",
+    ] + distance_columns
+    return pandas_columns
+
+
+if __name__ == "__main__":
+    #
+    # Get the config file name if specified on the command line
+    #
+    # TOC -- 080625 2:52PM
+    # Seens like this should go in some sort of util function since we need it for multiple programs -- unless we
+    # combine all of this into one simulator program -- which might be the right idea actually.
+
+    config, config_filename = get_config()
+
+    # TOC -- 080225 9:15AM
+    # Create the output folder
+    new_folder_name = f"{config['simulator']['run_main_folder']}/{config['simulator']['run_sub_folder_prefix']}-started-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    new_run_folder = expand_path(new_folder_name, get_project_root())
+    os.mkdir(new_run_folder)
+
+    #
+    # Set up the logger
+    #
+    setup_logging(config, new_run_folder)
 
     # TOC -- 080225 9:54AM
     # Copy the config file into the run folder to record configuration for the run.
@@ -112,7 +124,20 @@ if __name__ == "__main__":
     )
     logger.debug(f"video path {video_file_path}")
 
+    #
+    # Determine render mode for environment
+    #
+    if config["visuals"]["show_visualizer"]:
+        render_mode = "human"
+    else:
+        render_mode = ""
+
+    #
+    # Stored this since I need to pass it to both the environment and the agent and
+    # want it to be easier to keep in sync if the config format changes.
+    #
     target_creation_time = config["simulator"]["target_creation_time"]
+
     #
     # Create environment and agent
     #
@@ -137,8 +162,6 @@ if __name__ == "__main__":
         target_scale=config["visuals"]["target_scale"],
         agent_mean_init_velocity=config["agent"]["mean_init_velocity"],
         agent_variance_init_velocity=config["agent"]["variance_init_velocity"],
-        agent_init_range_low=config["agent"]["init_range_low"],
-        agent_init_range_high=config["agent"]["init_range_high"],
         box_size=config["environment"]["box_size"],
         scene_scale=config["environment"]["scene_scale"],
         scene_filename=config["meshes"]["mesh_scene"],
@@ -173,92 +196,68 @@ if __name__ == "__main__":
     # Run the episodes
     #
     num_targets = config["simulator"]["num_targets"]
-    distance_columns = [f"distance_target_{t}" for t in range(1, num_targets + 1)]
-    pandas_columns = [
-        "id",
-        "type",
-        "time",
-        "x",
-        "y",
-        "z",
-        "v_x",
-        "v_y",
-        "v_z",
-    ] + distance_columns
+    pandas_columns = get_pandas_columns()
 
-    for episode in tqdm(range(config["simulator"]["num_episodes"])):
-        # Start a new episode
+    # Reset the environment
+    obs, info = env.reset()
 
-        logger.debug(f"main(): starting episode {episode}")
+    # TOC -- 080225 8:58AM
+    # create the dataframe for the simulation output
+    df = pd.DataFrame(columns=pandas_columns)
 
-        # Reset the environment
-        obs, info = env.reset()
+    done = False
+
+    """
+    TOC -- 073125 -- 8:46AM
+    Need to decide on how this is going to end. 
+
+    TOC -- 073124 2:21PM 
+    We are going with a limited number of frames.
+    """
+    # logger.debug('starting main loop ')
+
+    df = pd.read_parquet()
+    trajectory_file = expand_path(
+        config["trajectory_folder"]["trajectory_filename"], get_project_root()
+    )
+    # while not done:
+    for time_step in tqdm(range(config["simulator"]["num_frames"])):
+        # Agent chooses action, which is the velocity
+        action = agent.get_action(obs)
+
+        # Take the action in the environment and observe the result
+        next_obs, reward, terminated, truncated, info = env.step(action)
 
         # TOC -- 080225 8:58AM
-        # create the dataframe for the simulation output
-        df = pd.DataFrame(columns=pandas_columns)
+        # Record the observation
+        df = add_obs_to_df(df, next_obs, time_step=(time_step + 1))
+        # Observe the next state
+        obs = next_obs
 
-        done = False
+        # ignore terminated for now since we are just running for a specified number of frames
+        # done = terminated or truncated
+        # done = True
 
-        """
-        TOC -- 073125 -- 8:46AM
-        Need to decide on how this is going to end. 
+    logger.info(f"df columns = {df.columns}")
+    logger.info(f"positions:\n{df[['x', 'y', 'z']]}")
+    logger.info(f"velocities:\n{df[['v_x', 'v_y', 'v_z']]}")
+    logger.info(f"distances:\n{df[['distance_target_1']]}")
 
-        TOC -- 073124 2:21PM 
-        We are going with a limited number of frames.
-        """
-        # logger.debug('starting main loop ')
+    table = pa.Table.from_pandas(df)
+    logger.debug(f"table \n {table}")
 
-        # while not done:
-        for time_step in tqdm(range(config["simulator"]["num_frames"])):
-            if time_step == target_creation_time:
-                agent.set_target_weight(config["agent"]["target_weight"][0], 0)
-                """
-                TOC -- 080425 2:40PM
-                I can't call this method since the environment is in a wrapper. 
-                I need to understand wrappers better.
-                """
-                # env.create_target()
+    file_path = expand_path(
+        f"episode-completed-{datetime.now().strftime('%Y%m%d-%H%M%S')}.parquet",
+        # f"episode-{episode}.parquet",
+        new_run_folder,
+    )
+    logger.info(f"writing output to {file_path}")
+    pq.write_table(table, file_path)
 
-            # Agent chooses action
-            action = agent.get_action(obs)
-
-            # Take the action in the environment and observe the result
-            next_obs, reward, terminated, truncated, info = env.step(action)
-
-            # TOC -- 080225 8:58AM
-            # Record the observation
-            df = add_obs_to_df(df, next_obs, time_step=(time_step + 1))
-            # Observe the next state
-            obs = next_obs
-
-            # ignore terminated for now since we are just running for a specified number of frames
-            # done = terminated or truncated
-            # done = True
-
-        logger.info(f"episode {episode}: df columns = {df.columns}")
-        logger.info(f"positions:\n{df[['x', 'y', 'z']]}")
-        logger.info(f"velocities:\n{df[['v_x', 'v_y', 'v_z']]}")
-        logger.info(f"distances:\n{df[['distance_target_1']]}")
-
-        table = pa.Table.from_pandas(df)
-        logger.debug(f"table \n {table}")
-
-        file_path = expand_path(
-            f"episode-{episode}-completed-{datetime.now().strftime('%Y%m%d-%H%M%S')}.parquet",
-            # f"episode-{episode}.parquet",
-            new_run_folder,
+    if config["visuals"]["store_video"]:
+        # change the name of the video file to include the episode
+        episode_video_file_path = expand_path(
+            f"video.{config['visuals']['video_file_extension']}", new_run_folder
         )
-        logger.info(f"writing output to {file_path}")
-        pq.write_table(table, file_path)
-
-        if config["visuals"]["store_video"]:
-            # change the name of the video file to include the episode
-            episode_video_file_path = expand_path(
-                f"episode-{episode}-video.{config['visuals']['video_file_extension']}",
-                new_run_folder,
-            )
-            logger.debug(f"episode video path {episode_video_file_path}")
-            shutil.move(video_file_path, episode_video_file_path)
-
-    logger.info("all episodes complete")
+        logger.debug(f"episode video path {episode_video_file_path}")
+        shutil.move(video_file_path, episode_video_file_path)

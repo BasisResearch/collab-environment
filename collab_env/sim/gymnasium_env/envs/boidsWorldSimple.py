@@ -32,6 +32,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         agent_color=[1, 0, 0],
         agent_mean_init_velocity=0.0,
         agent_variance_init_velocity=0.2,
+        agent_init_range_low = 0.1,
+        agent_init_range_high= 0.9,
         box_size=40,
         show_box=False,
         scene_scale=100.0,
@@ -69,6 +71,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.action_scale = agent_scale
         self.agent_mean_init_velocity = agent_mean_init_velocity
         self.agent_variance_init_velocity = agent_variance_init_velocity
+        self.agent_init_range_low = agent_init_range_low
+        self.agent_init_range_high = agent_init_range_high
         self.box_size = box_size  # tne size of the cube boundary around the world
         self.show_box = show_box
         self.walking = walking
@@ -463,11 +467,11 @@ class BoidsWorldSimpleEnv(gym.Env):
                 np.array(
                     [
                         np.random.uniform(
-                            low=0.1 * self.box_size, high=0.9 * self.box_size
+                            low=self.agent_init_range_low * self.box_size, high=self.agent_init_range_high * self.box_size
                         ),
                         0.0,
                         np.random.uniform(
-                            low=0.1 * self.box_size, high=0.9 * self.box_size
+                            low=self.agent_init_range_low * self.box_size, high=self.agent_init_range_high * self.box_size
                         ),
                     ]
                 )
@@ -477,7 +481,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         else:
             self._agent_location = [
                 self.np_random.uniform(
-                    low=0.1 * self.box_size, high=0.9 * self.box_size, size=3
+                    low=self.agent_init_range_low * self.box_size, high=self.agent_init_range_high * self.box_size, size=3
                 )
                 for _ in range(self.num_agents)
             ]

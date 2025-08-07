@@ -4,10 +4,11 @@ simulator:
   num_agents: 20
   num_targets: 1
   num_ground_targets: 1
+  extract_submesh_target: True
   moving_targets: False
   num_episodes: 1
-  num_frames: 10000
-  target_creation_time: 1 # min is 1, which creates the target at the beginning of the episode.
+  num_frames: 1000
+  target_creation_time: 500 # min is 1, which creates the target at the beginning of the episode.
   show_box: True
   # run_main_folder: "collab_env/sim/runs"
   run_main_folder: "sim-output"
@@ -53,6 +54,8 @@ agent:
   max_force: 0.1
   mean_init_velocity: 0.0
   variance_init_velocity: 0.5
+  init_range_low: 0.2
+  init_range_high: 0.7
 
 meshes:
     # mesh_scene: ''
