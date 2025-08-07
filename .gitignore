@@ -93,3 +93,5 @@ out
 /docs/source/.ipynb_checkpoints/
 config-local/
 *preview*.htm*
+/sim-output/
+/good-runs/

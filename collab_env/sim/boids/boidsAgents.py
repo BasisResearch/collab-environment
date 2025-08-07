@@ -193,7 +193,6 @@ class BoidsWorldAgent:
                 align_force = np.zeros(3)
                 separation_force = np.zeros(3)
                 cohesion_force = np.zeros(3)
-                target_force = np.zeros(3)
 
                 # alignment
 
@@ -234,9 +233,12 @@ class BoidsWorldAgent:
                 target_force = 0
                 for t in range(self.num_targets):
                     if self.target_weight[t] > 0.0:
-                        steer = obs["target_loc"][t] - obs["agent_loc"][i]
+                        # TOC -- 080625 9:55PM
+                        # change this to use the closest point rather than center of target mesh
+                        #
+                        # steer = obs["target_loc"][t] - obs["agent_loc"][i]
+                        steer = obs["target_closest_points"][i][t] - obs["agent_loc"][i]
                         logger.debug("target_loc = " + str(obs["target_loc"][t]))
-                        logger.debug("velocity " + str(velocity[i]))
                         logger.debug("steer " + str(steer))
 
                         """
@@ -253,6 +255,7 @@ class BoidsWorldAgent:
                         """
                         # target_force = steer / np.linalg.norm(steer) * self.max_speed
                         target_force += self.target_weight[t] * steer
+
                         logger.debug(f"target force {target_force}")
 
                 # ground

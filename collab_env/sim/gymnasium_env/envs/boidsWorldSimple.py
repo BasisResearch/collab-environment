@@ -87,6 +87,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.vis_height = vis_height
         logger.debug(f"video path is {self.video_file_path}")
         logger.debug(f"store video is {self.store_video}")
+        self.mesh_target = [None] * self.num_targets
 
         self.time_step = 0
         self.observation_space = spaces.Dict(
@@ -94,7 +95,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                 "agent_loc": spaces.Tuple(
                     [
                         spaces.Box(
-                            low=-torch.inf, high=torch.inf, shape=(3,), dtype=np.float64
+                            low=-torch.inf, high=torch.inf, shape=(3,), dtype=np.float32
                         )
                         for _ in range(num_agents)
                     ]
@@ -132,7 +133,39 @@ class BoidsWorldSimpleEnv(gym.Env):
                                     low=-torch.inf,
                                     high=torch.inf,
                                     shape=(1,),
-                                    dtype=np.float64,
+                                    dtype=np.float32,
+                                )
+                                for _ in range(self.num_targets)
+                            ]
+                        )
+                        for _ in range(self.num_agents)
+                    ]
+                ),
+                "distances_to_closest_points": spaces.Tuple(
+                    [
+                        spaces.Tuple(
+                            [
+                                spaces.Box(
+                                    low=-torch.inf,
+                                    high=torch.inf,
+                                    shape=(1,),
+                                    dtype=np.float32,
+                                )
+                                for _ in range(self.num_targets)
+                            ]
+                        )
+                        for _ in range(self.num_agents)
+                    ]
+                ),
+                "target_closest_points": spaces.Tuple(
+                    [
+                        spaces.Tuple(
+                            [
+                                spaces.Box(
+                                    low=-torch.inf,
+                                    high=torch.inf,
+                                    shape=(3,),
+                                    dtype=np.float32,
                                 )
                                 for _ in range(self.num_targets)
                             ]
@@ -192,6 +225,42 @@ class BoidsWorldSimpleEnv(gym.Env):
         return np.array(self._action_to_direction.values())
 
     def _get_obs(self):
+        # TOC -- 080625 9:03PM
+        # Modifying to move to the closest points on the target meshes rather than the
+        # center of the target meshes. This requires a change to the observation space
+        # to include the closest points between agents and targets. This will be an array
+        # of shape (num_agents, num_targets) with each entry being a box of length 3.
+        # TOC -- 080425 7:50PM
+        # distances and closest points should be set to some bogus value when there is no scene
+        # we cannot set them to None, or we will fail the observation space checker in Gymnasium.
+        # This is already done in compute_distance_and_closest_points() but it is better to do
+        # it here rather than making the call for no reason.
+        #
+        if self.mesh_scene is None:
+            scene_distances = -np.ones(self.num_agents)
+            scene_closest_points = -np.ones(self.num_agents)
+        else:
+            scene_distances, scene_closest_points = (
+                self.compute_distance_and_closest_points(
+                    self.mesh_scene, self._agent_location
+                )
+            )
+        distances_to_target_mesh, target_mesh_closest_points = (
+            self.compute_mesh_target_distances()
+        )
+        return {
+            "agent_loc": tuple(self._agent_location),
+            "agent_vel": tuple(self._agent_velocity),
+            "target_loc": (tuple(self._target_location)),
+            # "target_loc":
+            "distances_to_targets": self.compute_target_distances(),
+            "distances_to_closest_points": distances_to_target_mesh,  # modified 080625 9:08PM
+            "target_closest_points": target_mesh_closest_points,  # modified 080625 9:08PM
+            "mesh_distance": scene_distances,
+            "mesh_closest_points": scene_closest_points,
+        }
+
+    def _get_obs_to_target_centers(self):
         #
         # TOC -- 080425 7:50PM
         # distances and closest points should be set to some bogus value when there is no scene
@@ -242,6 +311,47 @@ class BoidsWorldSimpleEnv(gym.Env):
             "mesh_distance": distances,
             "mesh_closest_points": closest_points,
         }
+
+    def compute_mesh_target_distances(self):
+        """
+        Computes the distances from each agent to each target mesh using open3D
+        Returns:
+
+        """
+        print("len ", len(self.mesh_target))
+        distances = []
+        closest_points = []
+        #
+        # TOC -- 080625 10:27PM
+        # There should be a more efficient way to do this without a for loop, but
+        # I don't have time to worry about it right now
+        #
+        for t in self.mesh_target:
+            d, c = self.compute_distance_and_closest_points(t, self._agent_location)
+            distances.append(d)
+            closest_points.append(c)
+
+        distances = np.array(distances).transpose()
+        print("dist ", distances)
+        print("dist shape", distances.shape)
+        closest_points = np.array(closest_points).transpose((1, 0, 2))
+        print("points", closest_points)
+        print("points shape", closest_points.shape)
+
+        # distance_point_matrix = np.array(the_list, dtype=np.float32)
+
+        # switch target and agent axes but leave (distance,closest point) pair alone
+        # result = distance_point_matrix.transpose((1,0,2))
+        #
+        # distances = result[:, :, 0]
+        # closest_points =  result[:, :, 1]
+
+        logger.debug(f"distances =\n{distances}")
+        logger.debug(f"distances shape = {distances.shape}")
+        logger.debug(f"closest_points =\n{closest_points}")
+        logger.debug(f"closest_points shape = {closest_points.shape}")
+
+        return distances, closest_points
 
     def compute_target_distances(self):
         """
@@ -381,7 +491,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             distances, closest_points = self.compute_distance_and_closest_points(
                 self.mesh_scene, self._agent_location
             )
-            self._agent_location = closest_points.numpy()
+            self._agent_location = closest_points
 
         """
         TOC -- 073025 
@@ -561,9 +671,6 @@ class BoidsWorldSimpleEnv(gym.Env):
         #         0, self.size, size=3, dtype=int
         #     )
 
-        observation = self._get_obs()
-        info = self._get_info()
-
         """
         TOC -- 080225 8:08AM
         Why am I setting these to None after I called render_frame() above? 
@@ -579,6 +686,14 @@ class BoidsWorldSimpleEnv(gym.Env):
         # if self.render_mode == "human":
         self._render_frame()
 
+        # TOC -- 080525 9:38PM
+        # These have to be called after render_frame sets up the target meshes.
+        # I don't like this because init doesn't set up all of the instance variables. That
+        # should be fixed -- though this still needs to be done in this order because we
+        # can't compute distances until the target meshes are set up.
+        observation = self._get_obs()
+        info = self._get_info()
+
         return observation, info
 
     def compute_direction(self, action_list):
@@ -588,7 +703,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         distances, closest_points = self.compute_distance_and_closest_points(
             self.mesh_scene, location + velocity
         )
-        new_locations = closest_points.numpy()
+        new_locations = closest_points
         velocity = new_locations - location
         return velocity
 
@@ -919,19 +1034,19 @@ class BoidsWorldSimpleEnv(gym.Env):
         # self.negative_line_set.colors = open3d.utility.Vector3dVector(negative_colors)
         # # self.vis.add_geometry(self.negative_line_set)
 
-    def compute_distance_and_closest_points(self, splat_mesh, agents_loc):
+    def compute_distance_and_closest_points(self, mesh, agents_loc):
         """
         TOC -- 072325
         This should be done more intelligently.
         """
-        if splat_mesh is None:
+        if mesh is None:
             return np.zeros(self.num_agents), np.zeros(self.num_agents)
 
         """
         TOC -- 073125 
         This Raycasting setup shouldn't be redone everytime we need to calculate distances. 
         """
-        mesh_scene = open3d.t.geometry.TriangleMesh.from_legacy(splat_mesh)
+        mesh_scene = open3d.t.geometry.TriangleMesh.from_legacy(mesh)
 
         # Create a scene and add the triangle mesh
         scene = open3d.t.geometry.RaycastingScene()
@@ -954,7 +1069,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         logger.debug(f"unsigned distance {unsigned_distance.numpy()}")
         logger.debug(f"signed_distance {signed_distance.numpy()}")
         logger.debug(f"occupancy {occupancy.numpy()}")
-        return unsigned_distance.numpy(), closest_points_dict["points"]
+        return unsigned_distance.numpy(), closest_points_dict["points"].numpy()
 
     def move_agent_meshes(self):
         # Reset to home position
@@ -1121,7 +1236,12 @@ class BoidsWorldSimpleEnv(gym.Env):
             distances, closest_points = self.compute_distance_and_closest_points(
                 self.mesh_scene, self._agent_location
             )
-            self._agent_location = closest_points.numpy()
+            #
+            # TOC -- 080625 10:49PM
+            # closest points is now already converted to numpy so don't need to do that
+            # any more.
+            #
+            self._agent_location = closest_points
 
         # self.mesh_sphere_agent = [None] * self.num_agents
         self.mesh_agent = [None] * self.num_agents
@@ -1202,7 +1322,12 @@ class BoidsWorldSimpleEnv(gym.Env):
                     [self._target_location[i]],
                 )
                 # self.mesh_sphere_target.translate(closest_points.numpy()[0] - self._target_location)
-                self._target_location[i] = closest_points.numpy()[0]
+                #
+                # TOC -- 080625 10:38PM
+                # In the new mesh target distance calculation, closest_points is already converted to
+                # numpy. Make sure this is consistent throughout the different configurations.
+                #
+                self._target_location[i] = closest_points[0]
 
             """
             TOC -- 073125 -- 7:30AM 

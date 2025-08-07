@@ -1,12 +1,12 @@
 
 simulator:
-  walking: True
+  walking: False
   num_agents: 20
-  num_targets: 5
-  num_ground_targets: 2
+  num_targets: 1
+  num_ground_targets: 1
   moving_targets: False
   num_episodes: 1
-  num_frames: 1
+  num_frames: 10000
   target_creation_time: 1 # min is 1, which creates the target at the beginning of the episode.
   show_box: True
   # run_main_folder: "collab_env/sim/runs"
@@ -16,11 +16,11 @@ simulator:
 logging:
   logfile_prefix: 'logfile'
   log_level: 'DEBUG'
-  logging: False
-  log_functions: ['compute_target_distances']
+  logging: True
+  log_functions: []
 
 visuals:
-  store_video: False
+  store_video: True
   show_visualizer: True
   width: 1920
   height: 1280
@@ -30,7 +30,7 @@ visuals:
   agent_shape: 'sphere'
   agent_color: [1, 0, 0]
   agent_scale: 5.0
-  target_scale: 2.0
+  target_scale: 20.0
 
 environment:
   max_dist_from_center: 3
@@ -47,7 +47,7 @@ agent:
   alignment_weight: 1.0
   cohesion_weight: 0.5
   ground_weight: 0.0
-  target_weight: [1.0, 1.0, 1.0, 1.0, 1.0]
+  target_weight: [1.0]
   max_speed: 1.0
   min_speed: 0.1
   max_force: 0.1
@@ -56,11 +56,14 @@ agent:
 
 meshes:
     # mesh_scene: ''
-    # mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
+    mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
     # mesh_scene: 'meshes/query-tree.ply'
-    # scene_angle: [-90.0, 0.0, 0.0]
-    mesh_scene: 'meshes/example_mesh.ply'
-    scene_angle: [-10.0, 0.0, -115.0]
+    scene_angle: [-90.0, 0.0, 0.0]
+    # scene_angle: [0.0, 0.0, 0.0]
+    # mesh_scene: 'meshes/example_mesh.ply'
+    # scene_angle: [-10.0, 0.0, -115.0]
 
 files:
     output_folder_prefix: 'boids_sim_runs' # which of these am I using?
+    trajectory_file:  'episode-0-completed-20250806-151621.parquet'
+    trajectory_folder: 'sim-output/boids_sim_run-started-20250806-151619'

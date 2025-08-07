@@ -158,7 +158,10 @@ if __name__ == "__main__":
         separation_weight=config["agent"]["separation_weight"],
         alignment_weight=config["agent"]["alignment_weight"],
         cohesion_weight=config["agent"]["cohesion_weight"],
-        target_weight=config["agent"]["target_weight"],
+        target_weight=[0.0]
+        * config["simulator"][
+            "num_targets"
+        ],  # start at all 0's and add weights when created -- not a great design.
         max_speed=config["agent"]["max_speed"],
         min_speed=config["agent"]["min_speed"],
         max_force=config["agent"]["max_force"],
@@ -250,7 +253,8 @@ if __name__ == "__main__":
         if config["visuals"]["store_video"]:
             # change the name of the video file to include the episode
             episode_video_file_path = expand_path(
-                f"episode-{episode}-video.mp4", new_run_folder
+                f"episode-{episode}-video.{config['visuals']['video_file_extension']}",
+                new_run_folder,
             )
             logger.debug(f"episode video path {episode_video_file_path}")
             shutil.move(video_file_path, episode_video_file_path)
