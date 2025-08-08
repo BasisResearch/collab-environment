@@ -10,6 +10,7 @@ simulator:
   show_box: True
   run_main_folder: "sim-output/tests-sim-runs"
   run_sub_folder_prefix: "boids_sim_run-1"
+  show_trajectories: False
 
 
 logging:
@@ -37,6 +38,9 @@ environment:
   scene_scale: 200.0
   target_speed: 0.1
   scene_position: [175, 20, 175]
+  init_range_low: 0.4
+  init_range_high: 0.6
+  height_init_max: 500
 
 
 agent:
@@ -53,6 +57,9 @@ agent:
   max_force: 0.1
   mean_init_velocity: 1.0
   variance_init_velocity: 0.2
+  init_range_low: 0.2
+  init_range_high: 0.7
+  height_init_max: 750
 
 meshes:
     # mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'

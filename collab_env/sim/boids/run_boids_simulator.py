@@ -34,6 +34,46 @@ from collab_env.sim.boids.sim_utils import add_obs_to_df, function_filter
 # WALKING = False
 
 
+"""
+TOC -- 080825 10:10AM
+This needs to be done much more efficiently.  
+"""
+
+
+def plot_trajectories(df):
+    # get the
+    num_time_steps = df["time"].max()
+    num_agents = df.loc[df["type"] == "agent"]["id"].max()
+    agent_trajectories = []  # = np.zeros((num_time_steps+1, num_agents, 3))
+    for i in range(num_agents):
+        trajectory = []
+        """
+        TOC -- 080825 11:58 AM
+        Fix this. I stop at -1 because I am apparently missing a time step. 
+        """
+        for t in range(num_time_steps):
+            temp = df.loc[
+                (df["type"] == "agent") & (df["time"] == t) & (df["id"] == (i + 1))
+            ]
+            trajectory.append(temp[["x", "y", "z"]].to_numpy()[0])
+        agent_trajectories.append(trajectory)
+
+    agent_trajectories = np.array(agent_trajectories)
+
+    #
+    # TOC -- 080825 9:56AM
+    # Call reset with options set to plot the trajectories. This is a horrible design
+    # that needs to be changed. I am doing this now to get a figure for the paper.
+    # Later we will separate the rendering from the Gymnasium environment and be able
+    # to call the renderer directly. Gymnasium has some restrictions because the
+    # environment is in a wrapper -- need to understand wrappers better.
+    #
+
+    _, _ = env.reset(options=agent_trajectories)
+    while True:
+        env.step(np.zeros((num_agents, 3)))
+
+
 if __name__ == "__main__":
     #
     # Get the config file name if specified on the command line
@@ -139,6 +179,10 @@ if __name__ == "__main__":
         agent_variance_init_velocity=config["agent"]["variance_init_velocity"],
         agent_init_range_low=config["agent"]["init_range_low"],
         agent_init_range_high=config["agent"]["init_range_high"],
+        height_init_max=config["agent"]["height_init_max"],
+        target_init_range_low=config["environment"]["init_range_low"],
+        target_init_range_high=config["environment"]["init_range_high"],
+        target_height_init_max=config["environment"]["height_init_max"],
         box_size=config["environment"]["box_size"],
         scene_scale=config["environment"]["scene_scale"],
         scene_filename=config["meshes"]["mesh_scene"],
@@ -198,18 +242,11 @@ if __name__ == "__main__":
         # create the dataframe for the simulation output
         df = pd.DataFrame(columns=pandas_columns)
 
+        # TOC -- 080725 10:45PM
+        # Add the initial positions to the dataframe
+        df = add_obs_to_df(df, obs, time_step=0)
         done = False
 
-        """
-        TOC -- 073125 -- 8:46AM
-        Need to decide on how this is going to end. 
-
-        TOC -- 073124 2:21PM 
-        We are going with a limited number of frames.
-        """
-        # logger.debug('starting main loop ')
-
-        # while not done:
         for time_step in tqdm(range(config["simulator"]["num_frames"])):
             if time_step == target_creation_time:
                 agent.set_target_weight(config["agent"]["target_weight"][0], 0)
@@ -240,6 +277,9 @@ if __name__ == "__main__":
         logger.info(f"positions:\n{df[['x', 'y', 'z']]}")
         logger.info(f"velocities:\n{df[['v_x', 'v_y', 'v_z']]}")
         logger.info(f"distances:\n{df[['distance_target_1']]}")
+
+        if config["simulator"]["show_trajectories"]:
+            plot_trajectories(df)
 
         table = pa.Table.from_pandas(df)
         logger.debug(f"table \n {table}")

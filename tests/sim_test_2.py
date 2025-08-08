@@ -48,8 +48,8 @@ def test_sim_files_visualizer():
     assert df.max(axis=0)["time"] == 5
 
     # Test to see the proper number of agents were recorded for the first episode.
-    # Should be 20 agents over 5 agents, so agent should appear 50 times.
-    assert df["type"].value_counts().get("agent", 0) == 5 * 20
+    # Should be 20 agents over 5 time steps (including 0), so agent should appear 120 times.
+    assert df["type"].value_counts().get("agent", 0) == 6 * 20
 
     # Test to see that a video is stored in the run folder for each episode
     result_file_list = glob(f"{folder_list[0]}/*.mp4")

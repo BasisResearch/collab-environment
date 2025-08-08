@@ -4,15 +4,16 @@ simulator:
   num_agents: 20
   num_targets: 1
   num_ground_targets: 1
-  extract_submesh_target: True
+  extract_submesh_target: False
   moving_targets: False
   num_episodes: 1
   num_frames: 1000
-  target_creation_time: 500 # min is 1, which creates the target at the beginning of the episode.
-  show_box: True
+  target_creation_time: 350 # min is 1, which creates the target at the beginning of the episode.
+  show_box: False
   # run_main_folder: "collab_env/sim/runs"
   run_main_folder: "sim-output"
   run_sub_folder_prefix: "boids_sim_run"
+  show_trajectories: True
 
 logging:
   logfile_prefix: 'logfile'
@@ -31,14 +32,17 @@ visuals:
   agent_shape: 'sphere'
   agent_color: [1, 0, 0]
   agent_scale: 5.0
-  target_scale: 20.0
+  target_scale: 2.0
 
 environment:
   max_dist_from_center: 3
-  box_size: 500
+  box_size: 1500
   scene_scale: 300.0
-  scene_position: [250, 20, 250]
+  scene_position: [750, 20, 750]
   target_speed: 0.0
+  init_range_low: 0.4
+  init_range_high: 0.6
+  height_init_max: 500
 
 agent:
   min_ground_separation: 5.0
@@ -54,11 +58,14 @@ agent:
   max_force: 0.1
   mean_init_velocity: 0.0
   variance_init_velocity: 0.5
-  init_range_low: 0.2
-  init_range_high: 0.7
+  init_range_low: 0.4
+  init_range_high: 0.6
+  height_init_max: 750
 
 meshes:
     # mesh_scene: ''
+    # mesh_scene: 'meshes/labeled_meshes/query-tree_top-cluster.ply'
+    # scene_angle: [0.0, 0.0, 0.0]
     mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
     # mesh_scene: 'meshes/query-tree.ply'
     scene_angle: [-90.0, 0.0, 0.0]
