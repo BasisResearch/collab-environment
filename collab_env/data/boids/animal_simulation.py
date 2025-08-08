@@ -134,7 +134,8 @@ def visualize_pair(p1, p2, v1 = None, v2 = None, starting_frame = 0,
     
 
 
-def visualize_graph(batch,
+def visualize_graph(p, v,
+                    batch = None,
                     starting_frame = 0,
                     file_id = 0,
                     model = None,
@@ -144,9 +145,15 @@ def visualize_graph(batch,
     """
     model = model.to(device) if model else None
 
-    p, species = batch
-    p0 = p[file_id, starting_frame:,]
-    N = p0.shape[1]
+    if batch is not None:
+        p, species = batch
+        p = p[file_id]
+
+
+    p0 = p[starting_frame]
+    N = p0.shape[0]
+    print("p0 shape", p0.shape)
+    print("p shape", p.shape)
     colors = ["C"+str(n%10) for n in range(N)]
 
     # Create the figure and axes
@@ -158,15 +165,25 @@ def visualize_graph(batch,
 
     # Initialization function: plot the background of each frame
     def init():
-        ax.scatter(p0[file_id,:,0], p0[file_id,:,1], c = colors)
+        ax.scatter(p0[:,0], p0[:,1],color = colors)
+        if v is not None:
+            ax.quiver(p0[:,0], p0[:,1],
+                    v[starting_frame,:,0] * 10, v[starting_frame,:,1] * 10,
+                    color = colors, scale_units='xy', scale=1, alpha = 0.5)
         #ax.plot([pos[0]+vel[0],pos[0]+vel[0]],[pos[0]+vel[0],pos[0]+vel[0]])
 
     def animate(i):
-        ax.scatter(p[file_id,i,:,0],p[file_id,i,:,1], c = colors)
+        ax.clear()
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.scatter(p[i,:,0],p[i,:,1], color = colors)
+        if v is not None:
+            ax.quiver(p[i,:,0], p[i,:,1], v[i+1,:,0] * 10, v[i+1,:,1] * 10, scale_units='xy', scale=1)
         ax.set_title("Frame" + str(i))
+        
 
     ani = animation.FuncAnimation(fig, animate, init_func = init,
-                              frames = np.arange(starting_frame + 1,p.shape[1]), interval=5,repeat = False, blit=False)
+                              frames = np.arange(starting_frame + 1,p.shape[0]-1), interval=5,repeat = False, blit=False)
 
     # To save the animation as a GIF (requires ImageMagick or Pillow)
     #ani.save('flocking_test.gif', writer='imagemagick', fps=30)
@@ -174,4 +191,70 @@ def visualize_graph(batch,
     plt.show()
     return ani, ax
     
+def visualize_graph_2sets(p, v, p2, v2,
+                    starting_frame = 0,
+                    ending_frame = None,
+                    file_id = 0,
+                    model = None,
+                    device = None):
+    """
+
+    """
+    model = model.to(device) if model else None
+
+    p0 = p[starting_frame]
+    p0_2 = p2[starting_frame]
+    N = p0.shape[0]
+    print("p0 shape", p0.shape)
+    print("p shape", p.shape)
+    colors = ["C"+str(n%10) for n in range(N)]
+
+    # Create the figure and axes
+    fig, ax = plt.subplots()
+
+    # Set plot limits
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+
+    # Initialization function: plot the background of each frame
+    def init():
+        ax.scatter(p0[:,0], p0[:,1],color = "C0")
+        ax.scatter(p0_2[:,0], p0_2[:,1],color = "C1", alpha = 0.5)
+
+        if v is not None:
+            ax.quiver(p0[:,0], p0[:,1],
+                    v[starting_frame,:,0] * 10, v[starting_frame,:,1] * 10,
+                    color = "C0", scale_units='xy', scale=1, alpha = 0.5)
+
+            ax.quiver(p0_2[:,0], p0_2[:,1],
+                    v2[starting_frame,:,0] * 10, v2[starting_frame,:,1] * 10,
+                    color = "C1", scale_units='xy', scale=1, alpha = 0.5)
+ 
+        #ax.plot([pos[0]+vel[0],pos[0]+vel[0]],[pos[0]+vel[0],pos[0]+vel[0]])
+
+    def animate(i):
+        ax.clear()
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.scatter(p[i,:,0],p[i,:,1], color = "C0")
+        ax.scatter(p2[i,:,0],p2[i,:,1], color = "C1", alpha = 0.5)
+        if v is not None:
+            ax.quiver(p[i,:,0], p[i,:,1], v[i+1,:,0] * 10, v[i+1,:,1] * 10,
+                        color = 'C0', alpha = 0.5,
+                        scale_units='xy', scale=1)
+            ax.quiver(p2[i,:,0], p2[i,:,1], v2[i+1,:,0] * 10, v2[i+1,:,1] * 10,
+                        color = 'C1', alpha = 0.5,
+                        scale_units='xy', scale=1)
+        ax.set_title("Frame" + str(i))
+        
+    if ending_frame is None:
+        ending_frame = p.shape[0]-1
+    ani = animation.FuncAnimation(fig, animate, init_func = init,
+                              frames = np.arange(starting_frame + 1,ending_frame), interval=5,repeat = False, blit=False)
+
+    # To save the animation as a GIF (requires ImageMagick or Pillow)
+    #ani.save('flocking_test.gif', writer='imagemagick', fps=30)
+
+    plt.show()
+    return ani, ax
 

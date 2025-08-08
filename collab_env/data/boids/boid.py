@@ -17,19 +17,47 @@ def update_boids(boids, width, height, species_configs):
     for b in boids: #update all birds at the same time
         b['x'] += b['dx']; b['y'] += b['dy']
 
+def update_boids_with_food(boids, width, height, species_configs):
+    for b in boids:
+        cfg = species_configs[b['species']]
+        if b['perching']:
+            b['perching_time'] -= 1
+        else:
+            fly_towards_center(b,boids,cfg) # Rule1
+            avoid_others(b,boids,cfg) # Rule2
+            match_velocity(b,boids,cfg) # Rule3
+            approach_food(b,boids,cfg)
+            keep_within_bounds(b,width,height,cfg) #optional
+            limit_speed(b,cfg) #optional, has to be applied last.
+            
+        perch(b,boids,cfg) #food is on the ground
+        
+
+    for b in boids: #update all birds at the same time
+        if not b['perching']:
+            b['x'] += b['dx']; b['y'] += b['dy']
+        else:
+            b['y'] = 0
+            b['dy'] = 0
+
+
 def init_multi_species_boids(species_configs, species_counts, width, height,
                              velocity_scale = 10,
                              seed = 2025):
     np.random.seed(seed)
     boids = []
     for species, count in species_counts.items():
+        if species == 'food':
+            continue
         for _ in range(count):
             boids.append({
                 'x': random.random() * width,
                 'y': random.random() * height,
                 'dx': random.random() * velocity_scale,
                 'dy': random.random() * velocity_scale,
-                'species': species
+                'species': species,
+                'perching': np.random.binomial(n=1, p=0.2),
+                'perching_time': 0
             })
     return boids
 
@@ -94,11 +122,39 @@ def match_velocity(boid, boids, cfg):
         boid['dx'] += ((avx/cnt)-boid['dx'])*cfg['matching_factor']
         boid['dy'] += ((avy/cnt)-boid['dy'])*cfg['matching_factor']
 
+def perch(boid, boids, cfg):
+    if boid['y'] < 0 and not boid['perching']:
+        boid['y'] = 0
+        boid['dy'] = 0
+        boid['perching'] = 1
+        boid['perching_time'] = random.random() * cfg['perching_time']
+    elif boid['perching'] and boid['perching_time'] < 0:
+        boid['perching'] = 0
+        boid['dx'] += 20
+        boid['dy'] += 20
+    elif boid['perching'] and boid['perching_time'] > 0:
+        pass
+    else
+        boid['perching'] = 0
+        
+
+def approach_food(boid, boids, cfg):
+    x_food = cfg['food']['x'] #scalar for now
+    y_food = cfg['food']['y'] #scalar for now
+    gamma = cfg['food_factor']
+    dx = x_food - boid['x']
+    dy = y_food - boid['y']
+    d = np.sqrt(dx ** 2 + dy ** 2)
+    if d <= cfg["visual_range"] * 2:
+        boid['dx'] += dx * gamma
+        boid['dy'] += dy * gamma
+
 def keep_within_bounds(boid, width, height, cfg):
     m, t = cfg['margin'], cfg['turn_factor']
     if boid['x']<m:           boid['dx'] += t
     if boid['x']>width-m:     boid['dx'] -= t
-    if boid['y']<m:           boid['dy'] += t
+    if boid['y']<m and not boid['perching']:
+        boid['dy'] += t
     if boid['y']>height-m:    boid['dy'] -= t
 
 def limit_speed(boid, cfg):

@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from utility import handle_discrete_data, v_function_2_vminushalf
 import gc
+from gnn_definition import GNN, Lazy
 
 def build_edge_index(positions, visual_range):
     """
@@ -51,7 +52,7 @@ def node_feature_vel(past_p,past_v,past_a,species_idx,species_dim):
     # Flatten
     x_vel = init_v.view(S * N, dim)
     x_pos = init_p.view(S * N, dim)
-    x_pos_boundary = np.maximum( 1 - x_pos, np.ones_like(x_pos) * 0.5 ) #as in Allen et al., CoRL 2022
+    x_pos_boundary = torch.maximum( 1 - x_pos, torch.ones_like(x_pos) * 0.5 ) #as in Allen et al., CoRL 2022
     x_species = species_idx.view(S * N)
     species_onehot = functional.one_hot(x_species, num_classes=species_dim).float()
     x_input = torch.cat([x_vel, x_pos_boundary, species_onehot], dim=-1)  # [S*N, in_node_dim]
@@ -117,7 +118,8 @@ def node_feature_vel_plus_pos_plus(past_p,past_v,past_a,
     # Flatten
     x_vel = past_v.reshape((S * N, past_time * dim))
     x_pos = past_p.reshape((S * N, past_time * dim))
-    x_pos_boundary = np.maximum( 1 - x_pos, np.ones_like(x_pos) * 0.5 ) #as in Allen et al., CoRL 2022
+    x_pos_boundary = torch.maximum( 1 - x_pos, torch.ones_like(x_pos) * 0.5 ) 
+    #x_pos_boundary = np.maximum( 1 - x_pos, np.ones_like(x_pos) * 0.5 ) #as in Allen et al., CoRL 2022
 
     x_species = species_idx.view(S * N)
     species_onehot = functional.one_hot(x_species, num_classes=species_dim).float()
@@ -187,6 +189,26 @@ def normalize_by_col(N, edge_index, return_matrix = False):
 
     return np.array(weight)
 
+def identify_frames(pos, vel):
+    # construct lazy model prediction error
+    actual = pos[:,1:]
+    predicted = pos[:,:-1] + vel[:,:-1]
+    loss = [functional.mse_loss(actual[:,f],predicted[:,f]) for f in range(actual.shape[1])]
+
+    # polarity
+    polarity = torch.norm(torch.mean(vel[0],axis = 1), dim = 1)
+    polarity_diff = torch.abs(torch.diff(polarity)).cpu().numpy()
+    threshold = np.mean(polarity_diff) + np.std(polarity_diff)
+    diff_ind = np.argwhere(polarity_diff >= threshold).ravel()
+    candidate_frames = np.unique(np.concatenate([(d-2, d-1, d, d+1, d+2) for d in diff_ind]))
+    candidate_frames = candidate_frames[candidate_frames >= 0]
+    
+    return candidate_frames
+
+def add_noise(x_input, sigma = 0.001):
+    noise = torch.normal(0, torch.ones_like(x_input) * sigma)
+    return x_input + noise
+
 def run_gnn_frame(model, edge_index, edge_weight,
                     past_p, past_v, past_a, v_minushalf, delta_t,
                     species_idx, species_dim):
@@ -219,8 +241,9 @@ def run_gnn_frame(model, edge_index, edge_weight,
         node_feature = node_feature_vel_pos_plus
     elif node_feature_function == "vel_plus_pos_plus":
         node_feature = node_feature_vel_plus_pos_plus
-
+    
     x_input = node_feature(past_p, past_v, past_a, species_idx, species_dim)
+    
     x_input = x_input.to(device)
     v_minushalf = torch.tensor(v_minushalf).to(device)
 
@@ -267,9 +290,11 @@ def run_gnn_frame(model, edge_index, edge_weight,
 def run_gnn(model,
             position, species_idx, species_dim,
             visual_range = 0.5,
+            sigma = 0.001,
             device = None,
             training = True, lr = 1e-3,
             debug_result = None,
+            full_frames = False,
             rollout = -1,
             rollout_everyother = -1):
     """
@@ -316,14 +341,24 @@ def run_gnn(model,
         roll_out_flag[::rollout_everyother] = 0
     
     device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    frames = identify_frames(pos, vel)     
+    if full_frames:
+        frames = np.arange(Frame-1)
     
-    for frame in range(Frame-1): #since we are predicting frame + 1, we have to stop 1 frame earlier
+    for frame_ind in range(len(frames)-1): #range(Frame-1): #since we are predicting frame + 1, we have to stop 1 frame earlier
+        frame = frames[frame_ind]
+        if frame_ind == 0:
+            frame_prev = None
+        else:
+            frame_prev = frames[frame_ind - 1]
+        frame_next = frames[frame_ind + 1]
 
         #have to be this convoluted instead of a simple :(frame+1) because we will want to replace p,v,a with rollout predicted value.
-        if frame == 0:
-            past_p = pos[:,0,:,:] #include the current frame
-            past_v = vel[:,0,:,:] #include the current frame
-            past_a = acc[:,0,:,:] #include the current frame
+        if frame == 0 or frame_prev != frame - 1: #not continuous!
+            past_p = pos[:,frame,:,:] #include the current frame
+            past_v = vel[:,frame,:,:] #include the current frame
+            past_a = acc[:,frame,:,:] #include the current frame
 
             past_p = past_p[:, None, :, :]
             past_v = past_v[:, None, :, :]
@@ -334,25 +369,30 @@ def run_gnn(model,
             past_a = torch.cat([past_a, a[:, None, :, :]], axis = 1)
 
 
-        if frame < start_frame:
-            v = vel[:, frame + 1]  # 1 step ahead
-            p = pos[:, frame + 1]  # 1 step ahead
-            a = acc[:, frame + 1]  # 1 step ahead
+        if past_p.shape[1] < start_frame:
+            v = vel[:, frame_next]  # 1 step ahead
+            p = pos[:, frame_next]  # 1 step ahead
+            a = acc[:, frame_next]  # 1 step ahead
             vminushalf = v_function_2_vminushalf(v_function, frame) #v_t-1/2
+            vminushalf = torch.tensor(vminushalf).to(device)
+            if training:
+                p,v,a = add_noise(p, sigma), add_noise(v, sigma), add_noise(a, sigma)
+                vminushalf = add_noise(vminushalf, sigma)
             continue
 
-        target_pos = pos[:, frame + 1]  # 1 step ahead/next frame
-        target_acc = acc[:, frame + 1]
+        target_pos = pos[:, frame_next]  # 1 step ahead/next frame
+        target_acc = acc[:, frame_next]
         species_idx = species_idx.to(device)    # [S, N]
 
         # build graph
-        edge_index = build_edge_index(past_p[:, -1, :, :], visual_range=visual_range)
+        edge_index = build_edge_index(past_p[:, -1, :, :], visual_range = visual_range)
         edge_weight = normalize_by_col(N,edge_index)
 
         edge_index = torch.tensor(edge_index).to(device)
-        edge_weight = torch.tensor(edge_weight).to(device)       
+        edge_weight = torch.tensor(edge_weight).to(device)     
 
-        (pred_pos, pred_vel, pred_acc, pred_vplushalf, W) = run_gnn_frame(model, edge_index, edge_weight,
+        (pred_pos, pred_vel, pred_acc, pred_vplushalf, W) = run_gnn_frame(
+                        model, edge_index, edge_weight,
                         past_p, past_v, past_a, vminushalf, delta_t,
                         species_idx, species_dim)
         #print("pred_pos.shape", pred_pos.shape)
@@ -367,9 +407,8 @@ def run_gnn(model,
         if pred_acc is not None:
             pred_acc_ = pred_acc.detach().clone().to(device)
         loss = functional.mse_loss(pred_acc, target_acc) #+ 0.1 * torch.sum(edge_weight)
-        #loss = functional.mse_loss(pred_pos, target_pos) #+ 0.1 * torch.sum(edge_weight)
 
-        if training:
+        if lr is not None:
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -377,20 +416,24 @@ def run_gnn(model,
         batch_loss += loss.item()
 
         # update frame information
-        if roll_out_flag[frame + 1]:
+        if roll_out_flag[frame_next]:
             v = pred_vel_
             p = pred_pos_
             a = pred_acc_
-            vminushalf = pred_vplushalf
+            vminushalf = pred_vel_
             if training: #protect transient training dynamics
                 delat_p = bound_location(p, B = 2) #prevent blowing up
                 p += delat_p
         else:
-            v = vel[:, frame + 1]  # 1 step ahead
-            p = pos[:, frame + 1]  # 1 step ahead
-            a = acc[:, frame + 1]  # 1 step ahead
+            v = vel[:, frame_next]  # 1 step ahead
+            p = pos[:, frame_next]  # 1 step ahead
+            a = acc[:, frame_next]  # 1 step ahead
             vminushalf = v_function_2_vminushalf(v_function, frame)
             vminushalf = torch.tensor(vminushalf).to(device) #v_t-1/2
+        
+        if training:
+            p,v,a = add_noise(p, sigma), add_noise(v, sigma), add_noise(a, sigma)
+            vminushalf = add_noise(vminushalf, sigma)
             
         # # Debug: show sample boid before/after
         debug_result["actual"].append(target_pos.detach().cpu().numpy())
@@ -419,7 +462,9 @@ def train_rules_gnn(model, dataloader,
                     epochs = 300,
                     lr=1e-3,
                     training = True,
+                    full_frames = True,
                     species_dim = 1,
+                    sigma = 0.001,
                     device = None,
                     aux_data = None,
                     rollout = -1,
@@ -452,9 +497,11 @@ def train_rules_gnn(model, dataloader,
             (loss, debug_result_all[ep][batch_idx], model) = run_gnn(
                                         model, position, species_idx, species_dim,
                                         visual_range = visual_range,
+                                        sigma = sigma,
                                         device = device,
                                         training = training,
                                         lr = lr,
+                                        full_frames = full_frames,
                                         rollout = rollout,
                                         rollout_everyother = rollout_everyother)
 
@@ -557,3 +604,70 @@ def plot_log_loss(train_losses, labels = None,
     #plt.show()
 
     return ax
+
+from itertools import groupby
+
+def find_frame_sets(lst):
+    
+    out = []
+    for _, g in groupby(enumerate(lst), lambda k: k[0] - k[1]):
+        start = next(g)[1]
+        end = list(v for _, v in g) or [start]
+        out.append(np.arange(start, end[-1] + 1))
+    
+    return out
+
+def load_model(name, model_path):
+
+    # Create an instance of the model (with the same architecture)
+    models = {}
+    models["name"] = name
+    models["node_feature_function"] = "vel_plus_pos_plus"
+    models["node_prediction"] = "acc"  # predict model acceleration
+    models["prediction_integration"] = "Euler"  # predict model acceleration
+    models["input_differentiation"] = "finite"
+    models["in_node_dim"] = 6 + 6 + 6 + 1
+    models["start_frame"] = 3
+    models["lr"] = 1e-3
+
+
+    node_feature_function = models["node_feature_function"]
+    node_prediction = models["node_prediction"]
+    in_node_dim = models["in_node_dim"]
+    start_frame = models["start_frame"]
+        
+    gnn_model = GNN(model_name = name,
+                    node_feature_function = node_feature_function,
+                    node_prediction = node_prediction, start_frame = start_frame,
+                    heads = 1, in_node_dim = in_node_dim)
+    
+    # load model
+    # Load the state dictionary
+    gnn_model.load_state_dict(torch.load(model_path))
+    
+    # Set the model to evaluation mode (important for inference)
+    gnn_model.eval()
+    
+    models["model"] = gnn_model
+
+    return models
+
+def debug_result2prediction(rollout_debug_result, file_id,epoch_num):
+    
+    actual = np.concatenate(rollout_debug_result[epoch_num][file_id]["actual"], axis=0)
+
+    predicted = np.concatenate(
+        rollout_debug_result[epoch_num][file_id]["predicted"], axis=0
+    )
+        
+    loss_acc_gnn = np.array(rollout_debug_result[epoch_num][file_id]["loss"])
+
+    pos_gnn, vel_gnn, acc_gnn, v_function = handle_discrete_data(
+        torch.tensor(predicted[np.newaxis, :]), "Euler")
+    pos, vel, acc, v_function = handle_discrete_data(
+        torch.tensor(actual[np.newaxis, :]), "Euler")
+    
+    frames = identify_frames(pos, vel)
+    frame_sets = find_frame_sets(frames)
+
+    return pos, vel, acc, pos_gnn, vel_gnn, acc_gnn, frame_sets
