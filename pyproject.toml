@@ -3,7 +3,7 @@ name = "collab_env"
 version = "0.0.1"
 description = "Basic scientific computing and deep learning environment with CUDA support"
 readme = "README.rst"
-requires-python = ">=3.8,<=3.11"
+requires-python = ">=3.8,<3.12"
 license = { text = "Apache-2.0" }
 keywords = ["scientific computing", "deep learning", "CUDA", "data processing", "plotting"]
 authors = [{ name = "Basis" }]
@@ -15,7 +15,8 @@ classifiers = [
 ]
 
 dependencies = [
-  "torch==2.1.2",
+  "numpy<2",
+  "torch",
   "torchvision",
   "pyro-ppl",
   "numpy",
@@ -36,6 +37,11 @@ dependencies = [
   "dotenv",
   "gcsfs",
   "loguru",
+  "open3d",
+  "gymnasium",
+  "scipy",
+  "torch_geometric",
+  "ipympl",
 ]
 
 [tool.setuptools]                         # NEW
