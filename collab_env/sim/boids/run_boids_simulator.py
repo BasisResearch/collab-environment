@@ -211,6 +211,7 @@ if __name__ == "__main__":
         max_speed=config["agent"]["max_speed"],
         min_speed=config["agent"]["min_speed"],
         max_force=config["agent"]["max_force"],
+        random_walk=config["agent"]["random_walk"],
     )
 
     #
@@ -278,8 +279,7 @@ if __name__ == "__main__":
         logger.info(f"velocities:\n{df[['v_x', 'v_y', 'v_z']]}")
         logger.info(f"distances:\n{df[['distance_target_1']]}")
 
-        if config["simulator"]["show_trajectories"]:
-            plot_trajectories(df)
+
 
         table = pa.Table.from_pandas(df)
         logger.debug(f"table \n {table}")
@@ -291,6 +291,9 @@ if __name__ == "__main__":
         )
         logger.info(f"writing output to {file_path}")
         pq.write_table(table, file_path)
+
+        if config["simulator"]["show_trajectories"]:
+            plot_trajectories(df)
 
         if config["visuals"]["store_video"]:
             # change the name of the video file to include the episode

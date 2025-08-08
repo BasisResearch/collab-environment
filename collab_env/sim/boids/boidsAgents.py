@@ -30,6 +30,7 @@ class BoidsWorldAgent:
         max_force=0.1,  # maximum steering force
         walking=True,
         has_mesh_scene=True,
+        random_walk=False,
     ):
         """Initialize a Q-Learning agent.
 
@@ -51,6 +52,7 @@ class BoidsWorldAgent:
         self.separation_weight = separation_weight
         self.alignment_weight = alignment_weight
         self.cohesion_weight = cohesion_weight
+        self.random_walk = random_walk
 
         if target_weight is None:
             self.target_weight = np.zeros(self.num_targets)
@@ -109,7 +111,85 @@ class BoidsWorldAgent:
     This function is way too long. 
     """
 
-    def simpleBoidsAction(self, obs):
+    def random_action(self, obs):
+        velocity = np.array(obs["agent_vel"])  # using ADP style
+        # location = np.array(obs["agent_loc"])
+        for i in range(self.num_agents):
+            """
+            TOC -- 080825 3:53PM
+            Duplicates code in SBA for ground response. Need to do that better.  
+            """
+            if (
+                (not self.walking)
+                and self.env_has_mesh_scene
+                and (obs["mesh_distance"][i] < self.min_ground_separation)
+            ):
+                # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
+                # velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
+                velocity[i] = velocity[i] + np.random.normal(1, 0.01, 3) * 0.1
+
+            else:
+                total_force = np.random.normal(0, 0.1, size=3)
+                target_force = self.calc_target_force(obs, i)
+                total_force += target_force
+                self.cap_force_and_apply(total_force, velocity, i)
+        return velocity
+
+    def calc_target_force(self, obs, agent_index):
+        target_force = 0
+        for t in range(self.num_targets):
+            if self.target_weight[t] > 0.0:
+                # TOC -- 080625 9:55PM
+                # change this to use the closest point rather than center of target mesh
+                #
+                # steer = obs["target_loc"][t] - obs["agent_loc"][i]
+                steer = obs["target_closest_points"][agent_index][t] - obs["agent_loc"][agent_index]
+                logger.debug("target_loc = " + str(obs["target_loc"][t]))
+                logger.debug("steer " + str(steer))
+
+                """
+                TOC -- 072925 10:10AM
+                Change this to just use the full force computed to steer rather than pushing it 
+                to max_force, which doesn't make sense. We will limit to max_force when we 
+                accumulate all of the forces. This is different from the way Shiffman does it -- 
+                not sure if he is doing it that way for pedagogical reasons. 
+
+                TOC -- 073125 8:58AM
+                I think Shiffman uses max_speed. We should probably treat the forces consistently and 
+                make everyone move at max_speed and then limit the total steering force. This seem to 
+                cause problems with everyone going to the walls, so took it out. 
+                """
+                # target_force = steer / np.linalg.norm(steer) * self.max_speed
+                target_force += self.target_weight[t] * steer
+
+                logger.debug(f"target force {target_force}")
+
+        return target_force
+
+    def cap_force_and_apply(self, total_force, velocity, agent_index):
+        norm_total_force = np.linalg.norm(total_force)
+        if norm_total_force > self.max_force:
+            total_force = total_force / norm_total_force * self.max_force
+            logger.debug(f"adjusted total force: {total_force}")
+
+        # apply force
+        if np.linalg.norm(total_force) > 0:
+            """
+            TOC -- 072225 10:29AM -- Why was this subtraction? Oops. That fixed a lot of problems.   
+            """
+            velocity[agent_index] = total_force + velocity[agent_index]
+
+        norm_velocity = np.linalg.norm(velocity[agent_index])
+        if norm_velocity > self.max_speed:
+            velocity[agent_index] = (
+                velocity[agent_index] / norm_velocity * self.max_speed
+            )
+        elif norm_velocity < self.min_speed:
+            velocity[agent_index] = (
+                velocity[agent_index] / norm_velocity * self.min_speed
+            )
+
+    def simpleBoidsAction(self, obs, random_walk=False):
         # logger.debug(f"called with obs: {obs}")
         velocity = np.array(obs["agent_vel"])  # using ADP style
         location = np.array(obs["agent_loc"])
@@ -134,6 +214,7 @@ class BoidsWorldAgent:
                 # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
                 # velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
                 velocity[i] = velocity[i] + np.random.normal(1, 0.01, 3) * 0.1
+
             else:
                 # velocity[i] = vel # not sure which is faster, getting the whole thing before or walking through
                 sum_separation_vector = np.zeros(3)
@@ -259,6 +340,11 @@ class BoidsWorldAgent:
                         logger.debug(f"target force {target_force}")
 
                 # ground
+                """
+                TOC -- 080825 3:28PM
+                I seem to be dealing with the ground in two different ways. The condition at the beginning seems to
+                take precedence.
+                """
                 if (
                     not self.walking
                     and obs["mesh_distance"][i] < self.min_ground_separation
@@ -295,11 +381,11 @@ class BoidsWorldAgent:
                 logger.debug(f"total force: {total_force}")
 
                 """
-                TOC -- 073125 9:00AM
-                I am second guessing applying max force limit at the end rather than for each force individually. It
-                may be that we want some of the forces not to be limited and so having an option for finer granularity 
-                may be important. 
-                """
+                        TOC -- 073125 9:00AM
+                        I am second guessing applying max force limit at the end rather than for each force individually. It
+                        may be that we want some of the forces not to be limited and so having an option for finer granularity 
+                        may be important. 
+                        """
                 norm_total_force = np.linalg.norm(total_force)
                 if norm_total_force > self.max_force:
                     total_force = total_force / norm_total_force * self.max_force
@@ -311,16 +397,6 @@ class BoidsWorldAgent:
                     TOC -- 072225 10:29AM -- Why was this subtraction? Oops. That fixed a lot of problems.   
                     """
                     velocity[i] = total_force + velocity[i]
-
-                    """
-                    TOC -- 072226 10:41AM -- Adding this code caused the boids to freeze and convulse with separation 
-                    and alignment in play. Increasing the max_speed from 0.1 to 0.5 seems to have fixed it. I couldn't 
-                    tell if any boids flew off the screen, because the simulation moved too fast. This may have fixed 
-                    the problem of flying off the screen at warp speed. No, flying off the screen at warp speed was
-                    due to the fact that I was multiply the acceleration by 2 every time it touched a wall. 
-                    """
-                    # if np.linalg.norm(velocity[i]) > self.max_speed:
-                    #    velocity[i] = velocity[i] / np.linalg.norm(velocity[i]) * self.max_speed
 
                 norm_velocity = np.linalg.norm(velocity[i])
                 if norm_velocity > self.max_speed:
@@ -336,7 +412,10 @@ class BoidsWorldAgent:
     """
 
     def get_action(self, obs):
-        return self.simpleBoidsAction(obs)
+        if self.random_walk:
+            return self.random_action(obs)
+        else:
+            return self.simpleBoidsAction(obs)
 
     def update(self, obs, action: int, reward: float, terminated: bool, next_obs):
         pass

@@ -61,17 +61,18 @@ agent:
   init_range_low: 0.4
   init_range_high: 0.6
   height_init_max: 750
+  random_walk: True
 
 meshes:
     # mesh_scene: ''
     # mesh_scene: 'meshes/labeled_meshes/query-tree_top-cluster.ply'
     # scene_angle: [0.0, 0.0, 0.0]
-    mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
+    # mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
     # mesh_scene: 'meshes/query-tree.ply'
-    scene_angle: [-90.0, 0.0, 0.0]
+    # scene_angle: [-90.0, 0.0, 0.0]
     # scene_angle: [0.0, 0.0, 0.0]
-    # mesh_scene: 'meshes/example_mesh.ply'
-    # scene_angle: [-10.0, 0.0, -115.0]
+    mesh_scene: 'meshes/example_mesh.ply'
+    scene_angle: [-10.0, 0.0, -115.0]
 
 files:
     output_folder_prefix: 'boids_sim_runs' # which of these am I using?
