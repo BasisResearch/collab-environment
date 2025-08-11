@@ -8,7 +8,7 @@ from tqdm import tqdm
 from ultralytics import YOLO
 import torch
 
-def infer_with_yolo(video_path):
+def infer_with_yolo(video_path, model_path, output_csv_path="output_results.csv"):
     """
     Perform inference on a video using the YOLO model and save results to a CSV file.
     
@@ -18,8 +18,7 @@ def infer_with_yolo(video_path):
     """
 
     # Load the YOLO model
-    MODEL_WEIGHTS_PATH = "/Users/inesaitsahalia/Desktop/labeling_data/pipeline_code_out_of_the_box/scripts/model/weights_yolo.pt"
-    model = YOLO(MODEL_WEIGHTS_PATH)  # pretrained YOLO11n model # Automatically loads the model
+    model = YOLO(model_path)  # pretrained YOLO11n model # Automatically loads the model
     print("Model loaded successfully for inference!")
 
     # Open video file
@@ -31,7 +30,6 @@ def infer_with_yolo(video_path):
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     print(f"Total frames in video: {total_frames}")
 
-    output_csv_path = video_path.replace(".mp4", "_inference_results.csv")
     # Write header to CSV if it doesn't exist
     if not os.path.exists(output_csv_path):
         with open(output_csv_path, "w", newline="") as f:
