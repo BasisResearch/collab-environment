@@ -124,6 +124,11 @@ class BoidsWorldAgent:
                 and self.env_has_mesh_scene
                 and (obs["mesh_distance"][i] < self.min_ground_separation)
             ):
+
+                '''
+                TOC -- 081125 
+                These constants need to be configurable. 
+                '''
                 # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
                 # velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
                 velocity[i] = velocity[i] + np.random.normal(1, 0.01, 3) * 0.1
@@ -133,8 +138,13 @@ class BoidsWorldAgent:
                 target_force = self.calc_target_force(obs, i)
                 total_force += target_force
                 self.cap_force_and_apply(total_force, velocity, i)
+
         return velocity
 
+    '''
+    TOC -- 081125 2:49PM
+    Shijie suggested adding a sensing range for the targets. 
+    '''
     def calc_target_force(self, obs, agent_index):
         target_force = 0
         for t in range(self.num_targets):
@@ -189,7 +199,7 @@ class BoidsWorldAgent:
                 velocity[agent_index] / norm_velocity * self.min_speed
             )
 
-    def simpleBoidsAction(self, obs, random_walk=False):
+    def simple_boids_action(self, obs, random_walk=False):
         # logger.debug(f"called with obs: {obs}")
         velocity = np.array(obs["agent_vel"])  # using ADP style
         location = np.array(obs["agent_loc"])
@@ -203,7 +213,7 @@ class BoidsWorldAgent:
             Add a turning factor to make this less abrupt instead of just turning directly around (vanhunteradams uses this)
             
             TOC -- 080425 -- 9:44PM
-            Only do the ground separation if there is a scene to hit the ground on. This grond thins 
+            Only do the ground separation if there is a scene to hit the ground on. This ground thing 
             needs a more intelligent solution.   
             """
             if (
@@ -211,6 +221,10 @@ class BoidsWorldAgent:
                 and self.env_has_mesh_scene
                 and (obs["mesh_distance"][i] < self.min_ground_separation)
             ):
+                '''
+                TOC -- 081125 -- 9:44AM
+                These numbers need to be configurable.  
+                '''
                 # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
                 # velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
                 velocity[i] = velocity[i] + np.random.normal(1, 0.01, 3) * 0.1
@@ -233,11 +247,14 @@ class BoidsWorldAgent:
                             sum_separation_vector += diff_vector / (dist**2)
                             num_close += 1
 
-                        # align and cohesion
+                        # alignment and cohesion
                         # TODO: Do this with numpy array condition and np.sum instead
                         # logger.debug(f"neighborhood dist: {self.neighborhood_dist}")
+                        '''
+                        TOC -- 081125 9:51AM
+                        Need to have different neighborhood distances for align and cohesion
+                        '''
                         if dist < self.neighborhood_dist:
-                            # need velocities in the observation
                             sum_align_vector += velocity[other]
                             sum_cohesion_vector += location[other]
                             num_neighbors += 1
@@ -251,12 +268,7 @@ class BoidsWorldAgent:
                 else:
                     avg_sep_vector = np.zeros(3)
 
-                """
-                TOC -- 073125 -- 10:20AM 
-                Interesting that I am using max_speed here but nowhere else. Perhaps I should set everyone to max_speed
-                like Shiffman does. That didn't work, so I ditched it. Caused everyone to push to the walls -- not 
-                entirely sure why.  
-                """
+
                 if num_neighbors > 0:
                     avg_align_vector = sum_align_vector / num_neighbors
                     # avg_align_vector = avg_align_vector / np.linalg.norm(avg_align_vector) * self.max_speed
@@ -311,33 +323,34 @@ class BoidsWorldAgent:
                 TOC -- 080525 
                 This needs to be a separate configurable weight for each target 
                 """
-                target_force = 0
-                for t in range(self.num_targets):
-                    if self.target_weight[t] > 0.0:
-                        # TOC -- 080625 9:55PM
-                        # change this to use the closest point rather than center of target mesh
-                        #
-                        # steer = obs["target_loc"][t] - obs["agent_loc"][i]
-                        steer = obs["target_closest_points"][i][t] - obs["agent_loc"][i]
-                        logger.debug("target_loc = " + str(obs["target_loc"][t]))
-                        logger.debug("steer " + str(steer))
-
-                        """
-                        TOC -- 072925 10:10AM
-                        Change this to just use the full force computed to steer rather than pushing it 
-                        to max_force, which doesn't make sense. We will limit to max_force when we 
-                        accumulate all of the forces. This is different from the way Shiffman does it -- 
-                        not sure if he is doing it that way for pedagogical reasons. 
-                        
-                        TOC -- 073125 8:58AM
-                        I think Shiffman uses max_speed. We should probably treat the forces consistently and 
-                        make everyone move at max_speed and then limit the total steering force. This seem to 
-                        cause problems with everyone going to the walls, so took it out. 
-                        """
-                        # target_force = steer / np.linalg.norm(steer) * self.max_speed
-                        target_force += self.target_weight[t] * steer
-
-                        logger.debug(f"target force {target_force}")
+                target_force = self.calc_target_force(obs, agent_index=i)
+                # target_force = 0
+                # for t in range(self.num_targets):
+                #     if self.target_weight[t] > 0.0:
+                #         # TOC -- 080625 9:55PM
+                #         # change this to use the closest point rather than center of target mesh
+                #         #
+                #         # steer = obs["target_loc"][t] - obs["agent_loc"][i]
+                #         steer = obs["target_closest_points"][i][t] - obs["agent_loc"][i]
+                #         logger.debug("target_loc = " + str(obs["target_loc"][t]))
+                #         logger.debug("steer " + str(steer))
+                #
+                #         """
+                #         TOC -- 072925 10:10AM
+                #         Change this to just use the full force computed to steer rather than pushing it
+                #         to max_force, which doesn't make sense. We will limit to max_force when we
+                #         accumulate all of the forces. This is different from the way Shiffman does it --
+                #         not sure if he is doing it that way for pedagogical reasons.
+                #
+                #         TOC -- 073125 8:58AM
+                #         I think Shiffman uses max_speed. We should probably treat the forces consistently and
+                #         make everyone move at max_speed and then limit the total steering force. This seem to
+                #         cause problems with everyone going to the walls, so took it out.
+                #         """
+                #         # target_force = steer / np.linalg.norm(steer) * self.max_speed
+                #         target_force += self.target_weight[t] * steer
+                #
+                #         logger.debug(f"target force {target_force}")
 
                 # ground
                 """
@@ -381,11 +394,11 @@ class BoidsWorldAgent:
                 logger.debug(f"total force: {total_force}")
 
                 """
-                        TOC -- 073125 9:00AM
-                        I am second guessing applying max force limit at the end rather than for each force individually. It
-                        may be that we want some of the forces not to be limited and so having an option for finer granularity 
-                        may be important. 
-                        """
+                TOC -- 073125 9:00AM
+                I am second guessing applying max force limit at the end rather than for each force individually. It
+                may be that we want some of the forces not to be limited and so having an option for finer granularity 
+                may be important. 
+                """
                 norm_total_force = np.linalg.norm(total_force)
                 if norm_total_force > self.max_force:
                     total_force = total_force / norm_total_force * self.max_force
@@ -408,51 +421,12 @@ class BoidsWorldAgent:
         return velocity
 
     """
-    Returns the velocity for each agent. 
+    Returns the new velocity for each agent. 
     """
 
     def get_action(self, obs):
         if self.random_walk:
             return self.random_action(obs)
         else:
-            return self.simpleBoidsAction(obs)
+            return self.simple_boids_action(obs)
 
-    def update(self, obs, action: int, reward: float, terminated: bool, next_obs):
-        pass
-        """
-        This shouldn't need to be called for the simple model with no learning. If we add learning, 
-        then this needs to be written. 
-        :param obs: 
-        :param action: 
-        :param reward: 
-        :param terminated: 
-        :param next_obs: 
-        :return: 
-        """
-
-        """Update Q-value based on experience.
-        
-        This is the heart of Q-learning: learn from (state, action, reward, next_state)
-        """
-        # What's the best we could do from the next state?
-        # (Zero if episode terminated - no future rewards possible)
-        # future_q_value = (not terminated) * np.max(self.q_distances(next_obs))
-
-        # What should the Q-value be? (Bellman equation)
-        # target = reward + self.discount_factor * future_q_value
-        # logger.debug('target: ' + str(target))
-        # How wrong was our current estimate?
-        # temporal_difference = target - self.q_distances(obs, action)
-
-        """
-        TOC 
-        Skipping this since are q_distances just reflect the true distance to the target. 
-        """
-        # Update our estimate in the direction of the error
-        # Learning rate controls how big steps we take
-        #  self.q_values[obs][action] = (
-        #     self.q_values[obs][action] + self.lr * temporal_difference
-        # )
-
-        # Track learning progress (useful for debugging)
-        # self.training_error.append(temporal_difference)

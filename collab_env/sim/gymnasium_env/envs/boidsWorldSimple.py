@@ -38,6 +38,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         target_init_range_low=0.1,
         target_init_range_high=0.9,
         target_height_init_max=40,
+        target_positions=None,
         box_size=40,
         show_box=False,
         scene_scale=100.0,
@@ -56,6 +57,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         target_trajectories=None,
         run_trajectories=False,  # run trajectories is for actually moving the agent meshes
         show_trajectory_lines=False,  # show the trajectory lines for the agent
+        save_image=False,
     ):
         self.box_line_set = None
         self.size = size  # The size of the square grid
@@ -68,6 +70,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.ground_target_first_index = num_targets - num_ground_targets
         self._agent_location = None  # initialized by reset()
         self._agent_velocity = None  # initialized by reset()
+        self.specified_target_position = target_positions
         self._target_location = None  # initialized by reset()
         self._target_velocity = None  # initialized by reset()
         self._ground_target_location = None
@@ -109,6 +112,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.target_trajectories = target_trajectories
         self.run_trajectories = run_trajectories
         self.show_trajectory_lines = show_trajectory_lines
+        self.save_image=save_image
 
         self.trajectory_line_set = None
 
@@ -229,7 +233,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
         TOC -- 080125 1154PM 
         What is this? This must be from the original gymnasium example.
-        Maybe this is standard Gymnasium stuff that we should stick to.  
+        Maybe this is standard Gymnasium stuff that we should stick to, but take
+        it out for now.  
         """
         # assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
@@ -285,13 +290,19 @@ class BoidsWorldSimpleEnv(gym.Env):
         }
 
     def _get_obs_to_target_centers(self):
+        '''
+        '''
+
+        '''
         #
         # TOC -- 080425 7:50PM
-        # distances and closest points should be set to some bogus value when there is no scene
-        # we cannot set them to None, or we will fail the observation space checker in Gymnasium.
+        # distances and closest points should be set to some bogus value when there is no scene.
+        # We cannot set them to None, or we will fail the observation space checker in Gymnasium.
         # This is already done in compute_distance_and_closest_points() but it is better to do
         # it here rather than making the call for no reason.
         #
+        '''
+
         if self.mesh_scene is None:
             distances = -np.ones(self.num_agents)
             closest_points = -np.ones(self.num_agents)
@@ -433,38 +444,66 @@ class BoidsWorldSimpleEnv(gym.Env):
             else:
                 self._target_location = np.zeros((self.num_targets, 3))
         else:
-            """
-            initialize list of targets with random positions
-            """
-            self._target_location = self.np_random.uniform(
-                low=0.1 * self.box_size,
-                high=0.9 * self.box_size,
-                size=(self.num_targets, 3),
-            )
 
-            self._target_location = np.array(
-                [
-                    np.array(
-                        [
-                            np.random.uniform(
-                                low=self.target_init_range_low * self.box_size,
-                                high=self.target_init_range_high * self.box_size,
-                            ),
-                            np.random.uniform(
-                                low=self.target_init_range_low
-                                * self.target_height_init_max,
-                                high=self.target_init_range_high
-                                * self.target_height_init_max,
-                            ),
-                            np.random.uniform(
-                                low=self.target_init_range_low * self.box_size,
-                                high=self.target_init_range_high * self.box_size,
-                            ),
-                        ]
-                    )
-                    for _ in range(self.num_targets)
-                ]
-            )
+            """
+            TOC -- 081125 7:00PM
+            If we do not have a fixed target location, initialize list of targets with random positions
+            We know we have a fixed location for a target if the user specified a non-empty list for the target.  
+            """
+            # self._target_location = self.np_random.uniform(
+            #     low=0.1 * self.box_size,
+            #     high=0.9 * self.box_size,
+            #     size=(self.num_targets, 3),
+            # )
+            if self.specified_target_position is not None:
+                self._target_location = np.zeros((self.num_targets, 3))
+                for i in range(self.num_targets):
+                    if len(self.specified_target_position[i]) > 0:
+                        self._target_location[i] = np.array(self.specified_target_position[i])
+                    else:
+                        self._target_location[i] = np.array(
+                                    [
+                                        np.random.uniform(
+                                            low=self.target_init_range_low * self.box_size,
+                                            high=self.target_init_range_high * self.box_size,
+                                        ),
+                                        np.random.uniform(
+                                            low=self.target_init_range_low
+                                            * self.target_height_init_max,
+                                            high=self.target_init_range_high
+                                            * self.target_height_init_max,
+                                        ),
+                                        np.random.uniform(
+                                            low=self.target_init_range_low * self.box_size,
+                                            high=self.target_init_range_high * self.box_size,
+                                        ),
+                                    ]
+                                )
+
+            else:
+                self._target_location = np.array(
+                    [
+                        np.array(
+                            [
+                                np.random.uniform(
+                                    low=self.target_init_range_low * self.box_size,
+                                    high=self.target_init_range_high * self.box_size,
+                                ),
+                                np.random.uniform(
+                                    low=self.target_init_range_low
+                                    * self.target_height_init_max,
+                                    high=self.target_init_range_high
+                                    * self.target_height_init_max,
+                                ),
+                                np.random.uniform(
+                                    low=self.target_init_range_low * self.box_size,
+                                    high=self.target_init_range_high * self.box_size,
+                                ),
+                            ]
+                        )
+                        for _ in range(self.num_targets)
+                    ]
+                )
             # print(self._target_location.shape)
             # assert(False)
 
@@ -574,7 +613,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         for agent_index in range(self.num_agents):
             points = self.agent_trajectories[agent_index]
             # Create a LineSet
-            lines = [[i, i + 1] for i in range(len(points) - 1)]
+            lines = [[t, t + 1] for t in range(len(points) - 1)]
             line_set = open3d.geometry.LineSet(
                 points=open3d.utility.Vector3dVector(points),
                 lines=open3d.utility.Vector2iVector(lines),
@@ -583,6 +622,11 @@ class BoidsWorldSimpleEnv(gym.Env):
             """
             TOC -- 080825 12:05PM 
             Make these colors configurable.
+            
+            TOC -- 081125 3:18PM
+            The colors need to change through time, so I think I am going to have
+            to split these up into groups of lines sets based on time step and 
+            color the groups. 
             """
             colors = [
                 [
@@ -1133,6 +1177,12 @@ class BoidsWorldSimpleEnv(gym.Env):
             # This file type should be configurable.
             #
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+
+            '''
+            TOC -- 080925 4:10PM
+            I think this needs to use the expand path function to find the correct
+            path to the output folder.
+            '''
             self.video_out = cv2.VideoWriter(
                 str(self.video_file_path),
                 fourcc,
@@ -1324,7 +1374,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         # self.vis.add_geometry(self.mesh_top_corner)
 
-        self.vis.add_geometry(self.mesh_sphere_world1)
+        # self.vis.add_geometry(self.mesh_sphere_world1)
         # self.vis.add_geometry(self.mesh_sphere_center)
         # self.vis.add_geometry(self.mesh_sphere_start)
 
@@ -1377,6 +1427,15 @@ class BoidsWorldSimpleEnv(gym.Env):
             # Capture video
             img = self.vis.capture_screen_float_buffer()
             # logger.debug(f'img is {img}')
+
+            #
+            # TOC -- 080925 4:03PM
+            # Save the image to a file when user requests. Then reset the save flag
+            # so we don't keep saving images.
+            if self.save_image:
+                self.image_count += 1
+                cv2.imwrite(f'image-{self.image_count}')
+
             img = (255 * np.asarray(img)).astype(np.uint8)
             # logger.debug(f'after astype {img}')
             img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)

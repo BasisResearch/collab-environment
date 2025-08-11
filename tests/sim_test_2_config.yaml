@@ -58,6 +58,7 @@ agent:
   init_range_low: 0.2
   init_range_high: 0.7
   height_init_max: 750
+  random_walk: False
 
 meshes:
     # mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'

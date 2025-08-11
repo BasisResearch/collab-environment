@@ -49,7 +49,10 @@ def plot_trajectories(df):
         trajectory = []
         """
         TOC -- 080825 11:58 AM
-        Fix this. I stop at -1 because I am apparently missing a time step. 
+        Fix this. I stop at -1 because I am apparently missing a time step.
+        
+        TOC -- 081125 2:30PM
+        I think this got fixed.  
         """
         for t in range(num_time_steps):
             temp = df.loc[
@@ -146,13 +149,20 @@ if __name__ == "__main__":
     shutil.copy(config_filename, copied_config_file_path)
 
     # TOC -- 080225
-    # Find the part for the video in the run folder.
+    # Find the path for the video in the run folder.
     video_file_path = expand_path(
         f"video.{config['visuals']['video_file_extension']}", new_run_folder
     )
     logger.debug(f"video path {video_file_path}")
 
     target_creation_time = config["simulator"]["target_creation_time"]
+    ''' 
+    TOC -- 080825 7:15PM
+    If no fixed target positions were specified, we should pass None to the environment
+    '''
+    fixed_target_position = config["environment"]["target_position"]
+    if len(fixed_target_position) == 0:
+        fixed_target_position = None
     #
     # Create environment and agent
     #
@@ -189,6 +199,7 @@ if __name__ == "__main__":
         scene_position=config["environment"]["scene_position"],
         scene_angle=np.pi * np.array(config["meshes"]["scene_angle"]) / 180.0,
         target_creation_time=target_creation_time,
+        target_positions=fixed_target_position
     )
 
     agent = BoidsWorldAgent(
@@ -214,9 +225,7 @@ if __name__ == "__main__":
         random_walk=config["agent"]["random_walk"],
     )
 
-    #
-    # Run the episodes
-    #
+
     num_targets = config["simulator"]["num_targets"]
     distance_columns = [f"distance_target_{t}" for t in range(1, num_targets + 1)]
     pandas_columns = [
@@ -231,6 +240,10 @@ if __name__ == "__main__":
         "v_z",
     ] + distance_columns
 
+
+    #
+    # Run the episodes
+    #
     for episode in tqdm(range(config["simulator"]["num_episodes"])):
         # Start a new episode
 
@@ -247,6 +260,10 @@ if __name__ == "__main__":
         # Add the initial positions to the dataframe
         df = add_obs_to_df(df, obs, time_step=0)
         done = False
+
+        #
+        # MAIN LOOP
+        #
 
         for time_step in tqdm(range(config["simulator"]["num_frames"])):
             if time_step == target_creation_time:
@@ -267,6 +284,7 @@ if __name__ == "__main__":
             # TOC -- 080225 8:58AM
             # Record the observation
             df = add_obs_to_df(df, next_obs, time_step=(time_step + 1))
+
             # Observe the next state
             obs = next_obs
 
@@ -279,8 +297,9 @@ if __name__ == "__main__":
         logger.info(f"velocities:\n{df[['v_x', 'v_y', 'v_z']]}")
         logger.info(f"distances:\n{df[['distance_target_1']]}")
 
-
-
+        #
+        # Dump data to output file
+        #
         table = pa.Table.from_pandas(df)
         logger.debug(f"table \n {table}")
 
@@ -292,9 +311,26 @@ if __name__ == "__main__":
         logger.info(f"writing output to {file_path}")
         pq.write_table(table, file_path)
 
+
+        '''
+        TOC -- 080825
+        plot the trajectories for the paper figures. This need to be redesigned
+        so that plotting trajectories is in a separate program that is run on 
+        the parquet file rather than with the main simulator. Needs to be able
+        to display the agents in the visualizer without storing video and with the 
+        ability to snap pictures based on keyboard presses so that users can 
+        adjust the camera view and zoom on the visualizer to get the figures they 
+        want.  
+        '''
         if config["simulator"]["show_trajectories"]:
             plot_trajectories(df)
 
+
+        '''
+        TOC -- 081125 3:37PM
+        How is this working? It looks like I am moving the file while the rendering is 
+        still writing to it. 
+        '''
         if config["visuals"]["store_video"]:
             # change the name of the video file to include the episode
             episode_video_file_path = expand_path(
