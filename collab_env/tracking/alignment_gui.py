@@ -504,7 +504,10 @@ def manual_temporal_alignment(
             print(f"Alpha increased to {alpha:.1f}")
         cv2.waitKey(3)
 
-    cv2.destroyAllWindows()
+    cv2.destroyAllWindows()  # Ensure all windows are closed
+    rgb_cap.release()
+    thm_cap.release()
+
 
 
 ### steps to run the full alignment pipeline
