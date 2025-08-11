@@ -124,11 +124,10 @@ class BoidsWorldAgent:
                 and self.env_has_mesh_scene
                 and (obs["mesh_distance"][i] < self.min_ground_separation)
             ):
-
-                '''
+                """
                 TOC -- 081125 
                 These constants need to be configurable. 
-                '''
+                """
                 # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
                 # velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
                 velocity[i] = velocity[i] + np.random.normal(1, 0.01, 3) * 0.1
@@ -141,10 +140,11 @@ class BoidsWorldAgent:
 
         return velocity
 
-    '''
+    """
     TOC -- 081125 2:49PM
     Shijie suggested adding a sensing range for the targets. 
-    '''
+    """
+
     def calc_target_force(self, obs, agent_index):
         target_force = 0
         for t in range(self.num_targets):
@@ -153,7 +153,10 @@ class BoidsWorldAgent:
                 # change this to use the closest point rather than center of target mesh
                 #
                 # steer = obs["target_loc"][t] - obs["agent_loc"][i]
-                steer = obs["target_closest_points"][agent_index][t] - obs["agent_loc"][agent_index]
+                steer = (
+                    obs["target_closest_points"][agent_index][t]
+                    - obs["agent_loc"][agent_index]
+                )
                 logger.debug("target_loc = " + str(obs["target_loc"][t]))
                 logger.debug("steer " + str(steer))
 
@@ -221,10 +224,10 @@ class BoidsWorldAgent:
                 and self.env_has_mesh_scene
                 and (obs["mesh_distance"][i] < self.min_ground_separation)
             ):
-                '''
+                """
                 TOC -- 081125 -- 9:44AM
                 These numbers need to be configurable.  
-                '''
+                """
                 # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
                 # velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
                 velocity[i] = velocity[i] + np.random.normal(1, 0.01, 3) * 0.1
@@ -250,10 +253,10 @@ class BoidsWorldAgent:
                         # alignment and cohesion
                         # TODO: Do this with numpy array condition and np.sum instead
                         # logger.debug(f"neighborhood dist: {self.neighborhood_dist}")
-                        '''
+                        """
                         TOC -- 081125 9:51AM
                         Need to have different neighborhood distances for align and cohesion
-                        '''
+                        """
                         if dist < self.neighborhood_dist:
                             sum_align_vector += velocity[other]
                             sum_cohesion_vector += location[other]
@@ -267,7 +270,6 @@ class BoidsWorldAgent:
                     # avg_sep_vector = avg_sep_vector / np.linalg.norm(avg_sep_vector) * self.max_speed
                 else:
                     avg_sep_vector = np.zeros(3)
-
 
                 if num_neighbors > 0:
                     avg_align_vector = sum_align_vector / num_neighbors
@@ -429,4 +431,3 @@ class BoidsWorldAgent:
             return self.random_action(obs)
         else:
             return self.simple_boids_action(obs)
-

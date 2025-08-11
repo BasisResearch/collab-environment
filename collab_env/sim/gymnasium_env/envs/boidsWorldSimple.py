@@ -112,7 +112,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.target_trajectories = target_trajectories
         self.run_trajectories = run_trajectories
         self.show_trajectory_lines = show_trajectory_lines
-        self.save_image=save_image
+        self.save_image = save_image
 
         self.trajectory_line_set = None
 
@@ -290,10 +290,9 @@ class BoidsWorldSimpleEnv(gym.Env):
         }
 
     def _get_obs_to_target_centers(self):
-        '''
-        '''
+        """ """
 
-        '''
+        """
         #
         # TOC -- 080425 7:50PM
         # distances and closest points should be set to some bogus value when there is no scene.
@@ -301,7 +300,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         # This is already done in compute_distance_and_closest_points() but it is better to do
         # it here rather than making the call for no reason.
         #
-        '''
+        """
 
         if self.mesh_scene is None:
             distances = -np.ones(self.num_agents)
@@ -444,7 +443,6 @@ class BoidsWorldSimpleEnv(gym.Env):
             else:
                 self._target_location = np.zeros((self.num_targets, 3))
         else:
-
             """
             TOC -- 081125 7:00PM
             If we do not have a fixed target location, initialize list of targets with random positions
@@ -459,26 +457,28 @@ class BoidsWorldSimpleEnv(gym.Env):
                 self._target_location = np.zeros((self.num_targets, 3))
                 for i in range(self.num_targets):
                     if len(self.specified_target_position[i]) > 0:
-                        self._target_location[i] = np.array(self.specified_target_position[i])
+                        self._target_location[i] = np.array(
+                            self.specified_target_position[i]
+                        )
                     else:
                         self._target_location[i] = np.array(
-                                    [
-                                        np.random.uniform(
-                                            low=self.target_init_range_low * self.box_size,
-                                            high=self.target_init_range_high * self.box_size,
-                                        ),
-                                        np.random.uniform(
-                                            low=self.target_init_range_low
-                                            * self.target_height_init_max,
-                                            high=self.target_init_range_high
-                                            * self.target_height_init_max,
-                                        ),
-                                        np.random.uniform(
-                                            low=self.target_init_range_low * self.box_size,
-                                            high=self.target_init_range_high * self.box_size,
-                                        ),
-                                    ]
-                                )
+                            [
+                                np.random.uniform(
+                                    low=self.target_init_range_low * self.box_size,
+                                    high=self.target_init_range_high * self.box_size,
+                                ),
+                                np.random.uniform(
+                                    low=self.target_init_range_low
+                                    * self.target_height_init_max,
+                                    high=self.target_init_range_high
+                                    * self.target_height_init_max,
+                                ),
+                                np.random.uniform(
+                                    low=self.target_init_range_low * self.box_size,
+                                    high=self.target_init_range_high * self.box_size,
+                                ),
+                            ]
+                        )
 
             else:
                 self._target_location = np.array(
@@ -1178,11 +1178,11 @@ class BoidsWorldSimpleEnv(gym.Env):
             #
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 
-            '''
+            """
             TOC -- 080925 4:10PM
             I think this needs to use the expand path function to find the correct
             path to the output folder.
-            '''
+            """
             self.video_out = cv2.VideoWriter(
                 str(self.video_file_path),
                 fourcc,
@@ -1434,7 +1434,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             # so we don't keep saving images.
             if self.save_image:
                 self.image_count += 1
-                cv2.imwrite(f'image-{self.image_count}')
+                cv2.imwrite(f"image-{self.image_count}")
 
             img = (255 * np.asarray(img)).astype(np.uint8)
             # logger.debug(f'after astype {img}')

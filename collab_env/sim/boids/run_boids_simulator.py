@@ -156,10 +156,10 @@ if __name__ == "__main__":
     logger.debug(f"video path {video_file_path}")
 
     target_creation_time = config["simulator"]["target_creation_time"]
-    ''' 
+    """ 
     TOC -- 080825 7:15PM
     If no fixed target positions were specified, we should pass None to the environment
-    '''
+    """
     fixed_target_position = config["environment"]["target_position"]
     if len(fixed_target_position) == 0:
         fixed_target_position = None
@@ -199,7 +199,7 @@ if __name__ == "__main__":
         scene_position=config["environment"]["scene_position"],
         scene_angle=np.pi * np.array(config["meshes"]["scene_angle"]) / 180.0,
         target_creation_time=target_creation_time,
-        target_positions=fixed_target_position
+        target_positions=fixed_target_position,
     )
 
     agent = BoidsWorldAgent(
@@ -225,7 +225,6 @@ if __name__ == "__main__":
         random_walk=config["agent"]["random_walk"],
     )
 
-
     num_targets = config["simulator"]["num_targets"]
     distance_columns = [f"distance_target_{t}" for t in range(1, num_targets + 1)]
     pandas_columns = [
@@ -239,7 +238,6 @@ if __name__ == "__main__":
         "v_y",
         "v_z",
     ] + distance_columns
-
 
     #
     # Run the episodes
@@ -311,8 +309,7 @@ if __name__ == "__main__":
         logger.info(f"writing output to {file_path}")
         pq.write_table(table, file_path)
 
-
-        '''
+        """
         TOC -- 080825
         plot the trajectories for the paper figures. This need to be redesigned
         so that plotting trajectories is in a separate program that is run on 
@@ -321,16 +318,15 @@ if __name__ == "__main__":
         ability to snap pictures based on keyboard presses so that users can 
         adjust the camera view and zoom on the visualizer to get the figures they 
         want.  
-        '''
+        """
         if config["simulator"]["show_trajectories"]:
             plot_trajectories(df)
 
-
-        '''
+        """
         TOC -- 081125 3:37PM
         How is this working? It looks like I am moving the file while the rendering is 
         still writing to it. 
-        '''
+        """
         if config["visuals"]["store_video"]:
             # change the name of the video file to include the episode
             episode_video_file_path = expand_path(
