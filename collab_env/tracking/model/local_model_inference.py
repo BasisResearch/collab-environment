@@ -9,6 +9,7 @@ from ultralytics import YOLO
 import torch
 import json
 import pandas as pd
+import numpy as np
 
 def infer_with_yolo(video_path, model_path, output_csv_path, output_video_path=None, show_window=True):
     model = YOLO(model_path)
