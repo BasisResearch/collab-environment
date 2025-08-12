@@ -54,7 +54,65 @@ Setup
 
    .. code:: sh
    
-      COLLAB_DATA_KEY=path/to/api/key.json
+      COLLAB_DATA_KEY=/path/to/api/key.json
+
+Dashboard
+---------
+
+A web-based dashboard for browsing and editing data files from GCS buckets using rclone integration.
+
+**Features:**
+
+* **Session Discovery**: Automatically discovers matching sessions across ``fieldwork_curated`` and ``fieldwork_processed`` buckets
+* **Multi-Format Viewer**: Built-in viewers for text files (YAML, TXT, XML, JSON, Markdown), tabular data (CSV, Parquet), and video files (MP4, AVI, MOV, MKV)
+* **File Editing**: Edit and save text-based files directly back to GCS
+* **Local Caching**: Automatically caches downloaded files locally for faster access with cache management UI
+* **Enhanced UI**: Enlarged navigation panel with file tree, cache status icons, and progress indicators
+
+**Prerequisites:**
+
+Install `rclone <https://rclone.org/>`_ for your platform and configure it to access the collab-data remote storage:
+
+.. code:: sh
+
+    # Install rclone (see https://rclone.org/install/)
+    
+    # Configure for GCS access
+    rclone config create collab-data "google cloud storage" service_account_file=/path/to/api/key.json
+
+**Usage:**
+
+.. code:: sh
+
+    # Basic usage
+    python -m collab_env.dashboard.cli
+    
+    # Custom port and buckets
+    python -m collab_env.dashboard.cli --port 8080 --curated-bucket my-curated --processed-bucket my-processed
+    
+    # Don't auto-open browser
+    python -m collab_env.dashboard.cli --no-browser
+
+**Development with Autoreload:**
+
+For the best development experience with autoreload that refreshes existing browser tabs:
+
+.. code:: sh
+
+    # Easy way: Use the provided script
+    ./scripts/dev_dashboard.sh
+    
+    # Or manually navigate to dashboard directory
+    cd collab_env/dashboard
+    panel serve dashboard_app.py --dev --show --port 5007
+
+**Dashboard Interface:**
+
+* 💾 = File is cached locally (fast access)
+* 📡 = File needs to be downloaded from remote
+* Long file names are automatically truncated for better readability
+* Cache management with size and file count display
+* Cache location: ``~/.cache/collab_env_dashboard/``
 
 Usage
 -----
