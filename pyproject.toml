@@ -15,15 +15,13 @@ classifiers = [
 ]
 
 dependencies = [
-  "numpy<2",
   "torch>=2.1,<2.4",
   "torchvision",
-  "torchaudio",
   "pyro-ppl",
+  "numpy<2",
   "pandas",
   "scipy",
   "scikit-learn",
-  "scikit-image",
   "opencv-python",
   "tqdm",
   "pyyaml",
@@ -32,7 +30,7 @@ dependencies = [
   "seaborn",
   "plotly",
   "ultralytics",
-  "python-dotenv",
+  "dotenv",
   "jupyterlab", 
   "ipywidgets",
   "gcsfs",
@@ -46,6 +44,7 @@ dependencies = [
   "pycolmap",
   "pyvista",
   "lpips",
+  "scikit-image"
 ]
 
 [tool.setuptools]                         # NEW
