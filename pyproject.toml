@@ -43,6 +43,7 @@ dependencies = [
   "ipympl",
   "pycolmap",
   "pyvista",
+  "trame",
   "lpips",
   "scikit-image"
 ]
