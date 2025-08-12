@@ -24,6 +24,9 @@ Each entry in `data_sources` should be a dictionary with the following fields:
   - `original_path`: (string, required) The original location of the file (e.g., on a local drive or cloud storage). Useful for provenance.
   - `path`: (string, required) The relative or final path to the file within the project or data repository. Based on the project structure, this should be a path to a thermal_1, thermal_2, rgb_1, or rgb_2 directory, assuming 2 camera set up.
 
+
+The data structure is 
+
 Data processing
 -----------------
 
