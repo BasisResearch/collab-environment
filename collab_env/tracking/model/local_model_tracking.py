@@ -311,8 +311,10 @@ def output_tracked_bboxes_csv(track_csv: Path, detect_csv: Path, output_csv: Pat
             det_box = [x1, y1, x2, y2]
             x_center, y_center = int(x_c), int(y_c)
             iou = (
-                max(0, min(track_box[2], det_box[2]) - max(track_box[0], det_box[0])) *
-                max(0, min(track_box[3], det_box[3]) - max(track_box[1], det_box[1]))
+                float(
+                    max(0, min(track_box[2], det_box[2]) - max(track_box[0], det_box[0])) *
+                    max(0, min(track_box[3], det_box[3]) - max(track_box[1], det_box[1]))
+                )
             )
             iou /= (
                 (track_box[2] - track_box[0]) * (track_box[3] - track_box[1]) +
