@@ -193,6 +193,9 @@ if __name__ == "__main__":
         target_init_range_low=config["environment"]["init_range_low"],
         target_init_range_high=config["environment"]["init_range_high"],
         target_height_init_max=config["environment"]["height_init_max"],
+        target_mesh_file=config["meshes"]["sub_mesh_target"]
+        if config["simulator"]["submesh_target"]
+        else None,
         box_size=config["environment"]["box_size"],
         scene_scale=config["environment"]["scene_scale"],
         scene_filename=config["meshes"]["mesh_scene"],
@@ -230,17 +233,24 @@ if __name__ == "__main__":
 
     num_targets = config["simulator"]["num_targets"]
     distance_columns = [f"distance_target_{t}" for t in range(1, num_targets + 1)]
-    pandas_columns = [
-        "id",
-        "type",
-        "time",
-        "x",
-        "y",
-        "z",
-        "v_x",
-        "v_y",
-        "v_z",
-    ] + distance_columns
+    closest_point_columns = [
+        f"closest_point_target_{t}" for t in range(1, num_targets + 1)
+    ]
+    pandas_columns = (
+        [
+            "id",
+            "type",
+            "time",
+            "x",
+            "y",
+            "z",
+            "v_x",
+            "v_y",
+            "v_z",
+        ]
+        + distance_columns
+        + closest_point_columns
+    )
 
     #
     # Run the episodes

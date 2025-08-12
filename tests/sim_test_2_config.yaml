@@ -4,6 +4,7 @@ simulator:
   num_agents: 20
   num_targets: 5
   num_ground_targets: 2
+  submesh_target: False
   num_episodes: 1
   num_frames: 5
   target_creation_time: 2000
@@ -40,6 +41,12 @@ environment:
   init_range_low: 0.4
   init_range_high: 0.6
   height_init_max: 500
+  target_position: [[50, 20, 750], [750, 20, 50], [750, 0, 750], [750, 200, 750], [0, 20, 0]]
+
+tracks:
+  color_by_time: True
+  number_of_color_groups: 200
+  track_color_rate: 3
 
 agent:
   min_ground_separation: 3.0
@@ -66,6 +73,7 @@ meshes:
     scene_angle: [-90.0, 0.0, 0.0]
     # mesh_scene: 'meshes/example_mesh.ply'
     #scene_angle: [-10.0, 0.0, -115.0]
+    sub_mesh_target: 'meshes/labeled_meshes/query-tree_top-cluster.ply'
 
 files:
     output_folder_prefix: 'boids_sim_runs'

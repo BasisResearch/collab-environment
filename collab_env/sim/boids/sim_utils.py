@@ -1,3 +1,5 @@
+import struct
+
 import numpy as np
 import pandas as pd
 
@@ -34,7 +36,13 @@ def add_obs_to_df(df: pd.DataFrame, obs, time_step=0):
         ):
             row_dict[f"distance_target_{t}"] = distance
 
+        for t, closest_point in zip(
+            range(1, num_targets + 1), obs["target_closest_points"][i - 1]
+        ):
+            row_dict[f"target_closest_points{t}"] = closest_point
+
         agent_rows.append(row_dict)
+
     # agent_rows = [
     #     {
     #         "id": i,
@@ -125,6 +133,55 @@ def calc_angles(first, second):
     theta_z = find_angle(first_zero_z, second_zero_z)
     print(theta_z)
     return theta_x, theta_y, theta_z
+
+
+def get_submesh_indices_from_ply(file_path):
+    with open(file_path, "rb") as file:
+        # Read the header
+        header = []
+        while True:
+            line = file.readline().decode("utf-8").strip()
+            header.append(line)
+            if line == "end_header":
+                break
+
+        # Parse the header to find the number of vertices and properties
+        vertex_count = 0
+        # properties = []
+        for line in header:
+            if line.startswith("element vertex"):
+                vertex_count = int(line.split()[2])
+            # elif line.startswith("property"):
+            #    properties.append(line.split()[2])  # Store property names
+
+        # Read the vertex data
+        # vertices = []
+        keep_vertices = []
+        # red_list = []
+        for i in range(vertex_count):
+            # custom_property_row = []
+            # Read the vertex data according to the property types
+            data = file.read(
+                3 * 8
+            )  # Assuming first three properties are float (x, y, z)
+            _ = struct.unpack("<ddd", data)  # Little-endian float unpacking
+            # vertices.append(vertex)
+
+            # skip the normals
+            _ = file.read(3 * 8)  # Assuming first three properties are float (x, y, z)
+
+            # read the red
+            # Read the custom property (assuming it's a float)
+            data = file.read(1)  # Assuming custom property is a float
+            red = struct.unpack("<B", data)[0]  # Little-endian float unpacking
+            # red_list.append(red)
+            if red > 0:
+                keep_vertices.append(i)
+
+            # skip the next two bytes for green and blue
+            file.read(2)
+
+    return keep_vertices
 
 
 if __name__ == "__main__":

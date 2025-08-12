@@ -9,6 +9,7 @@ import cv2
 from loguru import logger
 
 from collab_env.data.file_utils import get_project_root, expand_path
+from collab_env.sim.boids.sim_utils import get_submesh_indices_from_ply
 
 HIT_DISTANCE = 0.01
 SPEED = 0.1
@@ -39,6 +40,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         target_init_range_high=0.9,
         target_height_init_max=40,
         target_positions=None,
+        target_mesh_file=None,
         box_size=40,
         show_box=False,
         scene_scale=100.0,
@@ -78,6 +80,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self._target_velocity = None  # initialized by reset()
         self._ground_target_location = None
         self._ground_target_velocity = None
+        self.target_mesh_file = target_mesh_file
         self.mesh_scene = None  # initialized by reset()
         self.max_dist_from_center = 3
         self.agent_shape = agent_shape.upper()
@@ -110,7 +113,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.vis_height = vis_height
         logger.debug(f"video path is {self.video_file_path}")
         logger.debug(f"store video is {self.store_video}")
-        self.mesh_target = [None] * self.num_targets
+        self.mesh_target_list = [None] * self.num_targets
         self.agent_trajectories = agent_trajectories
         self.target_trajectories = target_trajectories
         self.run_trajectories = run_trajectories
@@ -123,6 +126,24 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.trajectory_line_set = None
 
         self.time_step = 0
+
+        """
+        TOC -- 081225 3:58PM
+        If we have a target mesh file to read in, we need to get the vertices labeled as the 
+        target from the file and rotate and translate them to their corresponding positions
+        on the scene mesh. That was silly. We get the indices by calling get_submesh_indices_from_ply(). 
+        Then we don't have to translate and rotate anything because the indicies stay the same. We can
+        then just get the vertices out of the scene vertices by choosing by index after we load and rotate
+        the scene in load_and_rotate()  
+        """
+        self.submesh_vertices = None
+        self.submesh_target = False
+        if self.target_mesh_file is not None:
+            self.submesh_target = True
+            self.submesh_vertex_indices = get_submesh_indices_from_ply(
+                expand_path(self.target_mesh_file, get_project_root())
+            )
+            logger.info(f"{len(self.submesh_vertex_indices)} found in sub-mesh target")
 
         self.observation_space = spaces.Dict(
             {
@@ -280,15 +301,20 @@ class BoidsWorldSimpleEnv(gym.Env):
                     self.mesh_scene, self._agent_location
                 )
             )
-        distances_to_target_mesh, target_mesh_closest_points = (
-            self.compute_mesh_target_distances()
-        )
+        if self.submesh_target:
+            distances_to_target_mesh, target_mesh_closest_points = (
+                self.compute_target_distances_to_vertices()
+            )
+        else:
+            distances_to_target_mesh, target_mesh_closest_points = (
+                self.compute_mesh_target_distances()
+            )
         return {
             "agent_loc": tuple(self._agent_location),
             "agent_vel": tuple(self._agent_velocity),
             "target_loc": (tuple(self._target_location)),
             # "target_loc":
-            "distances_to_targets": self.compute_target_distances(),
+            "distances_to_targets": self.compute_target_center_distances(),
             "distances_to_closest_points": distances_to_target_mesh,  # modified 080625 9:08PM
             "target_closest_points": target_mesh_closest_points,  # modified 080625 9:08PM
             "mesh_distance": scene_distances,
@@ -320,7 +346,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             "agent_vel": tuple(self._agent_velocity),
             "target_loc": (tuple(self._target_location)),
             # "target_loc":
-            "distances_to_targets": self.compute_target_distances(),
+            "distances_to_targets": self.compute_target_center_distances(),
             "mesh_distance": distances,
             "mesh_closest_points": closest_points,
         }
@@ -347,10 +373,46 @@ class BoidsWorldSimpleEnv(gym.Env):
                 self._ground_target_location if self.walking else self._target_location
             ),
             # "target_loc":
-            "distances_to_targets": self.compute_target_distances(),
+            "distances_to_targets": self.compute_target_center_distances(),
             "mesh_distance": distances,
             "mesh_closest_points": closest_points,
         }
+
+    def get_distances(agent_locations, submesh_vertices):
+        distances = np.zeros(len(agent_locations))
+        closest_points = np.zeros((len(agent_locations), 3))
+        for i in range(len(agent_locations)):
+            diff = submesh_vertices - agent_locations[i]
+            norms = np.apply_along_axis(np.linalg.norm, 1, diff)
+            argmin = np.argmin(norms)
+            closest_points[i] = submesh_vertices[argmin]
+            distances[i] = norms[argmin]
+        return distances, closest_points
+
+    def compute_target_distances_to_vertices(self):
+        """
+        Computes the distances from each agent to each vertex on the submesh
+
+        For now I am assuming there is only one target. This needs to be fixed.
+
+        Returns:
+
+        """
+
+        d, c = self.compute_distance_and_closest_points_to_vertices(
+            self.submesh_vertices, self._agent_location
+        )
+        distances = np.array([d])
+        closest_points = np.array([c])
+        distances = np.array(distances).transpose()
+
+        logger.debug(f"dist {distances}")
+        logger.debug(f"dist shape {distances.shape}")
+        closest_points = np.array(closest_points).transpose((1, 0, 2))
+        logger.debug(f"points {closest_points}")
+        logger.debug(f"points shape {closest_points.shape}")
+
+        return distances, closest_points
 
     def compute_mesh_target_distances(self):
         """
@@ -358,7 +420,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         Returns:
 
         """
-        logger.debug(f"len{len(self.mesh_target)}")
+        logger.debug(f"len{len(self.mesh_target_list)}")
         distances = []
         closest_points = []
         #
@@ -366,7 +428,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         # There should be a more efficient way to do this without a for loop, but
         # I don't have time to worry about it right now
         #
-        for t in self.mesh_target:
+        for t in self.mesh_target_list:
             d, c = self.compute_distance_and_closest_points(t, self._agent_location)
             distances.append(d)
             closest_points.append(c)
@@ -393,7 +455,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         return distances, closest_points
 
-    def compute_target_distances(self):
+    def compute_target_center_distances(self):
         """
         TOC -- 071825
         need to make this faster
@@ -522,7 +584,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
             """
             TOC -- 080325 
-            This need to be configurable. No idea what I did with these while loops. 
+            This need to be configurable.
             """
             # set the target velocity
             self._target_velocity = self.np_random.normal(
@@ -661,7 +723,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             points = self.agent_trajectories[agent_index]
 
             if self.color_tracks_by_time:
-                group_size = len(points) // self.number_track_color_groups
+                group_size = int(np.ceil(len(points) / self.number_track_color_groups))
 
                 for time in range(0, len(points), group_size):
                     self.create_trajectory_line_group(
@@ -757,8 +819,12 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         return observation, info
 
-    def compute_direction(self, action_list):
-        return [self._action_to_direction[a] for a in action_list]
+    """
+    TOC -- 081225 
+    Removed because I don't use this anymore. 
+    """
+    # def compute_direction(self, action_list):
+    #     return [self._action_to_direction[a] for a in action_list]
 
     def convert_to_velocity_along_mesh(self, location, velocity):
         distances, closest_points = self.compute_distance_and_closest_points(
@@ -919,7 +985,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             to do that to determine whether the agent ate the food.  
             """
             # distance = np.linalg.norm(self._agent_location - self._target_location, ord=1)
-            distance = np.array(self.compute_target_distances())
+            distance = np.array(self.compute_target_center_distances())
 
             # logger.debug('new distance:' + str(distance))
             """
@@ -1049,6 +1115,21 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.box_line_set.colors = open3d.utility.Vector3dVector(colors)
         self.vis.add_geometry(self.box_line_set)
 
+    def compute_distance_and_closest_points_to_vertices(
+        self,
+        submesh_vertices,
+        locations,
+    ):
+        distances = np.zeros(len(locations))
+        closest_points = np.zeros((len(locations), 3))
+        for i in range(len(locations)):
+            diff = submesh_vertices - locations[i]
+            norms = np.apply_along_axis(np.linalg.norm, 1, diff)
+            argmin = np.argmin(norms)
+            closest_points[i] = submesh_vertices[argmin]
+            distances[i] = norms[argmin]
+        return distances, closest_points
+
     def compute_distance_and_closest_points(self, mesh, agents_loc):
         """
         TOC -- 072325
@@ -1129,13 +1210,13 @@ class BoidsWorldSimpleEnv(gym.Env):
     def move_target_meshes(self):
         for i in range(self.num_targets):
             if self.run_trajectories:
-                self.mesh_target[i].translate(
+                self.mesh_target_list[i].translate(
                     np.array(self._target_locations[i]), relative=False
                 )
             else:
-                self.mesh_target[i].translate(np.array(self._target_velocity[i]))
+                self.mesh_target_list[i].translate(np.array(self._target_velocity[i]))
 
-            self.vis.update_geometry(self.mesh_target[i])
+            self.vis.update_geometry(self.mesh_target_list[i])
 
     def load_rotate_scene(
         self, filename, position=np.array([0.0, 0.0, 0.0]), angles=(-np.pi / 2, 0, 0)
@@ -1175,7 +1256,6 @@ class BoidsWorldSimpleEnv(gym.Env):
         # be configurable. We should translate and rotate it once though. Not sure what was up
         # with the double translation I had in here.
 
-        mesh_scene.translate(position)
         # TOC -- 080225 8:30AM
         # This scaling should be happening centered at the center of the mesh_scene
         # rather than the target location. Seems to work.
@@ -1208,12 +1288,20 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
         TOC -- 073025
         Need to make sure this is the correct center for rotation. Seems like it should 
-        be the center of the mesh scene after it has been translated. 
+        be the center of the mesh scene after it has been translated.
+        
+        TOC -- 081225 3:20PM
+        I am switching this to rotate around the origin and to do the translate to the 
+        position after the rotate. I am not sure this will work for general rotations 
+        and positions, so this needs to be tested. Though it seems to work for the 
+        weird mesh angle.   
         """
-        # mesh_scene.rotate(R, center=(self.box_size / 2.0, 0, 0))
-        mesh_scene.rotate(R, center=mesh_scene.get_center())
+        mesh_scene.rotate(R, center=(0, 0, 0))
+        # mesh_scene.rotate(R, center=mesh_scene.get_center())
         # R = np.array([ [0.1, 0, 0], [0,0,0], [0,0,0] ])
         # self.mesh_scene.rotate(R, center=self._target_location)
+
+        mesh_scene.translate(position)
         return mesh_scene
 
     def initialize_visualizer(self):
@@ -1325,20 +1413,35 @@ class BoidsWorldSimpleEnv(gym.Env):
         to have configurable times for each target. 
         """
         for i in range(self.num_targets):
-            self.vis.add_geometry(self.mesh_target[i])
+            self.vis.add_geometry(self.mesh_target_list[i])
         # if self.walking:
         #     self.vis.add_geometry(self.mesh_ground_target[i])
         # else:
         #     self.vis.add_geometry(self.mesh_target)
 
+    def init_sub_mesh_target(self):
+        """
+        Initializes the mesh necessary to compute the positions of the vertices
+        from the target submesh. This function creates the submesh, rotates the
+        submesh and translates the submesh. We can then use the submesh indices
+        we extracted from the query file to find the new vertices. Maybe there
+        is a direct way to do the rotation on our list of vertices, but it is
+        probably safer right now to rely on open3d. Come back to this later.
+
+        Returns:
+
+        """
+
     def init_target_meshes(self):
-        self.mesh_target = [None] * self.num_targets
+        self.mesh_target_list = [None] * self.num_targets
         for i in range(self.num_targets):
-            self.mesh_target[i] = open3d.geometry.TriangleMesh.create_sphere(radius=1.0)
-            self.mesh_target[i].compute_vertex_normals()
-            self.mesh_target[i].paint_uniform_color([0.1, 0.6, 0.1])
-            self.mesh_target[i].scale(
-                scale=self.target_scale, center=self.mesh_target[i].get_center()
+            self.mesh_target_list[i] = open3d.geometry.TriangleMesh.create_sphere(
+                radius=1.0
+            )
+            self.mesh_target_list[i].compute_vertex_normals()
+            self.mesh_target_list[i].paint_uniform_color([0.1, 0.6, 0.1])
+            self.mesh_target_list[i].scale(
+                scale=self.target_scale, center=self.mesh_target_list[i].get_center()
             )
 
             # self.mesh_ground_target = open3d.geometry.TriangleMesh.create_sphere(radius=1.0)
@@ -1372,9 +1475,9 @@ class BoidsWorldSimpleEnv(gym.Env):
             point of view. Each of the targets is going to have to have some weight (possibly changing)
             associated with it. 
             """
-            self.mesh_target[i].translate(self._target_location[i])
+            self.mesh_target_list[i].translate(self._target_location[i])
             # self.mesh_ground_target.translate(self._ground_target_location)
-            self.vis.update_geometry(self.mesh_target[i])
+            self.vis.update_geometry(self.mesh_target_list[i])
             # self.vis.update_geometry(self.mesh_ground_target)
 
     def init_meshes(self):
@@ -1400,6 +1503,17 @@ class BoidsWorldSimpleEnv(gym.Env):
                 # angles=(-np.pi / 2, 0, 0),
                 angles=self.scene_angle,
             )
+
+            if self.target_mesh_file is not None:
+                vertex_mask = np.zeros(len(self.mesh_scene.vertices), dtype=bool)
+                vertex_mask[self.submesh_vertex_indices] = True
+                """
+                TOC -- 081225 4:08PM
+                This doesn't work without converting to np.array. Need to work this out. 
+                """
+                self.submesh_vertices = np.array(self.mesh_scene.vertices)[
+                    vertex_mask
+                ]  # + mesh.get_center()
 
         if self.show_box:
             self.add_box()

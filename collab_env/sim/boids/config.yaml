@@ -2,13 +2,13 @@
 simulator:
   walking: False
   num_agents: 10
-  num_targets: 2
-  num_ground_targets: 2
-  extract_submesh_target: False
+  num_targets: 1
+  num_ground_targets: 1
+  submesh_target: True
   moving_targets: False
   num_episodes: 1
   num_frames: 1000
-  target_creation_time: 20 # min is 1, which creates the target at the beginning of the episode.
+  target_creation_time: 100 # min is 1, which creates the target at the beginning of the episode.
   show_box: False
   # run_main_folder: "collab_env/sim/runs"
   run_main_folder: "sim-output"
@@ -17,7 +17,7 @@ simulator:
 
 
 visuals:
-  store_video: True
+  store_video: False
   show_visualizer: True
   width: 1920
   height: 1280
@@ -25,7 +25,7 @@ visuals:
   video_fps: 30
   video_file_extension: 'mp4'
   agent_shape: 'sphere'
-  agent_color: [1, 0, 0]
+  agent_color: [0, 1, 0]
   agent_scale: 5.0
   target_scale: 8.0
 
@@ -44,7 +44,7 @@ environment:
   init_range_low: 0.4
   init_range_high: 0.6
   height_init_max: 500
-  target_position: [[750, 20, 750], [375, 200, 100]]
+  target_position: [[750, 20, 750]]
 
 agent:
   min_ground_separation: 5.0
@@ -62,19 +62,24 @@ agent:
   variance_init_velocity: 0.5
   init_range_low: 0.4
   init_range_high: 0.6
-  height_init_max: 750
+  height_init_max: 50
   random_walk: False
 
 meshes:
     # mesh_scene: ''
-    # mesh_scene: 'meshes/labeled_meshes/query-tree_top-cluster.ply'
     # scene_angle: [0.0, 0.0, 0.0]
-    mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
+    # mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
+    # scene_angle: [-90.0, 0.0, 0.0]
+    #mesh_scene: 'meshes/labeled_meshes/mesh.ply'
+    mesh_scene: 'meshes/labeled_meshes/query-tree_top-cluster.ply'
+    scene_angle: [0.0, 0.0, 0.0]
     # mesh_scene: 'meshes/query-tree.ply'
-    scene_angle: [-90.0, 0.0, 0.0]
+    # scene_angle: [-90.0, 0.0, 0.0]
     #scene_angle: [0.0, 0.0, 0.0]
     #mesh_scene: 'meshes/example_mesh.ply'
     #scene_angle: [-10.0, 0.0, -115.0]
+    sub_mesh_target: 'meshes/labeled_meshes/query-tree_top-cluster.ply'
+    # sub_mesh_angle: [0.0, 0.0, 0.0]
 
 files:
     output_folder_prefix: 'boids_sim_runs' # which of these am I using?
