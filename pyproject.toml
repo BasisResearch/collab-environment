@@ -44,6 +44,8 @@ dependencies = [
   "pycolmap",
   "pyvista",
   "trame",
+  "trame-vtk",
+  "trame-vuetify",
   "lpips",
   "scikit-image"
 ]
