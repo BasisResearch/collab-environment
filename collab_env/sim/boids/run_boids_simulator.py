@@ -290,6 +290,8 @@ if __name__ == "__main__":
             # done = terminated or truncated
             # done = True
 
+        env.close()
+
         logger.info(f"episode {episode}: df columns = {df.columns}")
         logger.info(f"positions:\n{df[['x', 'y', 'z']]}")
         logger.info(f"velocities:\n{df[['v_x', 'v_y', 'v_z']]}")

@@ -1449,7 +1449,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         """ """
 
         """
-        TOC6 -- 080125 
+        TOC -- 080125 
         Added this as part of Issue #13 to clean up the simulator. The 
         visualization window should close properly with this fix. 
         """
@@ -1458,4 +1458,3 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         if self.video_out is not None:
             self.video_out.release()
-            assert False
