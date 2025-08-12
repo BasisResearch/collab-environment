@@ -282,7 +282,17 @@ class FileContentManager:
         """Check if a file is cached locally."""
         # Construct bucket name from session and type info
         bucket = f"fieldwork_{bucket_type}"  # Simplified for now
-        cache_path = self._get_cache_path(bucket, file_path)
+        
+        # Need to construct the full path that matches what's used during download
+        # The download uses session_manager.get_file_path() which returns full_path
+        # We need to simulate this to get the same cache path
+        if bucket_type == "curated":
+            # Match the pattern used in session_manager.get_file_path()
+            full_path = f"{session_name}/{file_path.strip('/')}"
+        else:  # processed
+            full_path = f"{session_name}/{file_path.strip('/')}"
+            
+        cache_path = self._get_cache_path(bucket, full_path)
         return cache_path.exists()
 
     def get_cache_location(self) -> str:

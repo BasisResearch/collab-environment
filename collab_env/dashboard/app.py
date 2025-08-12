@@ -343,19 +343,21 @@ class DataDashboard(param.Parameterized):
             self.current_file_info = render_info
             self.selected_file = file_path
 
-            # Update viewer
+            # Update cache info and refresh file tree if needed BEFORE updating viewer
+            if not render_info.get("from_cache", False):
+                self._update_cache_info()
+                # Refresh file tree to update cache indicators
+                session = self.sessions.get(self.selected_session)
+                if session:
+                    self._update_file_tree(session)
+                    # Restore the file selection after updating the tree
+                    self._reselect_current_file()
+
+            # Update viewer (after file tree is updated to prevent display issues)
             self._update_file_viewer(render_info)
 
             # Update edit button state
             self.edit_button.disabled = not render_info.get("can_edit", False)
-
-            # Update cache info and refresh file tree if needed
-            if not render_info.get("from_cache", False):
-                self._update_cache_info()
-                # Refresh file tree to update cache indicators (without re-selection to avoid recursion)
-                session = self.sessions.get(self.selected_session)
-                if session:
-                    self._update_file_tree(session)
 
             # Hide loading and show completion status
             self._hide_loading()
