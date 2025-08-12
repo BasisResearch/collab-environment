@@ -13,6 +13,8 @@ Setup
 
 For all installation methods, we require a CUDA 11.8 compatible GPU -- this is required for the COLMAP dependencies.
 
+**Note:** Using a different CUDA version will alter COLMAP results. We recommend matching the CUDA version within collab-splats.
+
 * Using pip / uv:
 
   For installation with pip / uv, all dependencies are installed via a shell script:
