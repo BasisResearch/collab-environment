@@ -11,11 +11,14 @@ collab-environment
 Setup
 -----
 
+For all installation methods, we require a CUDA 11.8 compatible GPU -- this is required for the COLMAP dependencies.
+
 * Using pip / uv:
 
+  For installation with pip / uv, all dependencies are installed via a shell script:
+
    .. code:: sh
-      
-      pip install -e ".[dev]"
+
       bash setup.sh
 
 
@@ -32,18 +35,23 @@ Setup
 
 * Building the Docker image
 
-   This is useful for running the environment in a containerized environment.
+  We provide a prebuilt Docker image as well as the associated Dockerfile. To build the image, run the following commands:
 
    .. code:: sh
 
-      eval $(ssh-agent)
-      ssh-add ~/.ssh/id_rsa
+      docker build --platform=linux/amd64  --progress=plain -t IMAGE_NAME .
+      docker push IMAGE_NAME:latest
 
-      docker build --platform=linux/amd64  --progress=plain -t tommybotch/collab-environment .
-      docker push tommybotch/collab-environment:latest
+  To pull and run the image, run the following commands:
 
+    .. code:: sh
+      docker image pull tommybotch/collab-environment:latest
+      docker run -it --rm -p 8888:8888 tommybotch/collab-environment:latest
 
 * Install exiftool
+
+  Processing the FLIR (thermal) videos requires the installation of exiftool. This can be done with the following commands:
+
    .. code:: sh
 
       # For MacOS
