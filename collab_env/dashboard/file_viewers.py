@@ -298,6 +298,10 @@ class FileContentManager:
     def get_cache_location(self) -> str:
         """Get the cache directory location."""
         return str(self.cache_dir)
+    
+    def get_cache_path(self, bucket: str, file_path: str) -> str:
+        """Get the cache file path for a bucket/file combination (public method)."""
+        return str(self._get_cache_path(bucket, file_path))
 
     def is_file_supported(self, file_path: str) -> bool:
         """Check if a file type is supported by the dashboard."""

@@ -339,6 +339,10 @@ class DataDashboard(param.Parameterized):
                 bucket, full_path
             )
 
+            # Add path information to render_info for display
+            render_info["remote_path"] = f"{bucket}/{full_path}"
+            render_info["cache_path"] = self.file_manager.get_cache_path(bucket, full_path)
+
             self.current_file_content = content
             self.current_file_info = render_info
             self.selected_file = file_path
@@ -373,16 +377,32 @@ class DataDashboard(param.Parameterized):
             self._hide_loading()
             self.status_pane.object = f"<p style='color:red'>❌ Error: {e}</p>"
 
+    def _get_file_path_info(self, render_info: Dict[str, Any]) -> str:
+        """Generate file path information HTML."""
+        cache_status = "💾 Cached" if render_info.get("from_cache", False) else "📡 Downloaded"
+        remote_path = render_info.get("remote_path", "Unknown")
+        cache_path = render_info.get("cache_path", "Unknown")
+        
+        return f"""
+        <div style="background-color: #f0f0f0; padding: 10px; margin-bottom: 10px; border-radius: 4px; font-size: 12px;">
+            <div><strong>Status:</strong> {cache_status}</div>
+            <div><strong>Remote:</strong> <code>{remote_path}</code></div>
+            <div><strong>Cache:</strong> <code>{cache_path}</code></div>
+        </div>
+        """
+
     def _update_file_viewer(self, render_info: Dict[str, Any]):
         """Update the file viewer based on render info."""
         if render_info["type"] == "text":
             # Text content with syntax highlighting
             content = render_info["content"]
             # language = render_info.get("language", "text")  # Available for future syntax highlighting
+            path_info = self._get_file_path_info(render_info)
 
             # Display text content with basic syntax highlighting
             self.file_viewer.object = f"""
             <div>
+                {path_info}
                 <h4>Text File ({render_info["lines"]} lines)</h4>
                 <pre style="background-color: #f8f8f8; padding: 10px; border-radius: 4px; overflow-x: auto;"><code>{content}</code></pre>
             </div>
@@ -392,9 +412,11 @@ class DataDashboard(param.Parameterized):
             # Tabular data
             stats = render_info["stats"]
             html_table = render_info["html"]
+            path_info = self._get_file_path_info(render_info)
 
             header = f"""
             <div>
+                {path_info}
                 <h4>Data Table</h4>
                 <p><strong>Rows:</strong> {stats["rows"]}, <strong>Columns:</strong> {stats["columns"]}</p>
                 <p><strong>Columns:</strong> {", ".join(stats["column_names"])}</p>
@@ -411,9 +433,12 @@ class DataDashboard(param.Parameterized):
         elif render_info["type"] == "video":
             # Video content
             size_mb = render_info["size_mb"]
+            path_info = self._get_file_path_info(render_info)
+            
             if size_mb > 50:  # Large video warning
                 self.file_viewer.object = f"""
                 <div>
+                    {path_info}
                     <h4>Video File ({size_mb:.1f} MB)</h4>
                     <p style='color:orange'>Video is large and may take time to load.</p>
                     <video controls width="100%" height="400">
@@ -425,6 +450,7 @@ class DataDashboard(param.Parameterized):
             else:
                 self.file_viewer.object = f"""
                 <div>
+                    {path_info}
                     <h4>Video File ({size_mb:.1f} MB)</h4>
                     <video controls width="100%" height="400">
                         <source src="{render_info["data_url"]}" type="{render_info["mime_type"]}">
@@ -434,8 +460,10 @@ class DataDashboard(param.Parameterized):
                 """
 
         elif render_info["type"] == "error":
+            path_info = self._get_file_path_info(render_info)
             self.file_viewer.object = f"""
             <div>
+                {path_info}
                 <h4 style='color:red'>Error</h4>
                 <p>{render_info["message"]}</p>
                 <p>File size: {self._format_file_size(render_info["size"])}</p>
@@ -443,8 +471,10 @@ class DataDashboard(param.Parameterized):
             """
 
         elif render_info["type"] == "unknown":
+            path_info = self._get_file_path_info(render_info)
             self.file_viewer.object = f"""
             <div>
+                {path_info}
                 <h4>Unknown File Type</h4>
                 <p>{render_info["message"]}</p>
                 <p>File size: {self._format_file_size(render_info["size"])}</p>
