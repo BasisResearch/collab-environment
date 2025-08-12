@@ -9,6 +9,27 @@ This guide provides best practices and instructions for using the script effecti
 ---
 
 ## **Overview**
+
+What is the data?
+-------------
+
+Our fieldwork data is stored in Google Cloud, with unprocessed data in an internal google drive. The metadata YML file for each session should contain the following fields:
+
+- `notes`: (string, optional) Freeform notes about the session, site, or observations. These are recorded by the researchers on site.
+- `data_sources`: (list, required) A list of data source entries, each describing a file used in the session. The thermal folders should be populated with a single .csq file, and the rgb folders with an .MP4
+
+Each entry in `data_sources` should be a dictionary with the following fields:
+
+  - `description`: (string, required) A short description of the data source (e.g., type of camera, sensor, etc.). Camera 1 (thermal or rgb) refers to the leftmost camera in the field. This may sometimes not align with the actual camera number (e.g., thermal_1 may be FLIR2).
+  - `original_path`: (string, required) The original location of the file (e.g., on a local drive or cloud storage). Useful for provenance.
+  - `path`: (string, required) The relative or final path to the file within the project or data repository. Based on the project structure, this should be a path to a thermal_1, thermal_2, rgb_1, or rgb_2 directory, assuming 2 camera set up.
+
+
+The data structure is 
+
+Data processing
+-----------------
+
 `thermal_processing.py` is a tool for converting .csq files into mp4s. 
 
 1. **Conversion**: Set visualization parameters to create the thermal video from the raw data.
@@ -49,7 +70,7 @@ The alignment mechanism is manual, requiring some user input. The field of view 
 * Spatial Homography
     **How to Select:**  
     1. Visually inspect the cropped video. Use homography for complex transformations and translation for simple shifts. Typically both are needed, but in cases where the cameras are very close together, translation may be the only necessary step. In this case, change `skip_homography` to true.
-    2. Pick at least 4 corresponding points in the RGB and thermal videos for accurate alignment. Again, aligning based on static keypoints (mountain peak, tree, feeder, etc.) leads to the best results. Try to pick points from all quadrants of the frame.
+    2. Pick at least 4 corresponding points in the RGB and thermal videos for accurate alignment. Again, aligning based on static keypoints (mountain peak, tree, feeder, etc.) leads to the best results. **Try to pick points from all quadrants of the frame.**
     3. Repeat selection on the translated frames to apply the homography.
 * Temporal Alignment
     Once the videos are spatially aligned you can use the overlayed videos to move frame by frame to find the highest alignment. This could also be automated via cross-correlation, but manual checking is likely necessary in all cases.
@@ -82,3 +103,54 @@ python alignment_gui.py \
     --skip_homography \
     --skip_translation
 ```
+
+## Inference
+Downloading Model Weights and running inference
+=============================================
+
+This section explains how to download training images from the cloud and train various models (YOLO, RF-DETR) using either the Roboflow API or local scripts. This section is useful if you want to fine-tune a model more. 
+
+Downloading Training Images or weights
+--------------------------------------
+To access training images please download the zip file from the roboflow_model bucket in the google cloud. 
+The bucket should contain a .pt file containing the model weights (yolo11_weights) for an rf-detr model and a zip file containing the images, labels, and annotations in YOLO v7 PyTorch format, as well as in the COCO format.
+
+
+### Downloading from Google Cloud
+1. **Install the Google Cloud CLI**:
+   If you haven't already, install the Google Cloud CLI by following the instructions [here](https://cloud.google.com/sdk/docs/install).
+
+2. **Authenticate with Google Cloud**:
+   ```bash
+   gcloud auth login
+   ```
+
+3. **Download the Zip File** OR **Weights**
+   Use the `gsutil` command to download the zip file containing images, labels, and annotations:
+   ```bash
+   gsutil cp gs://roboflow_model/Bird tracking.v11i.yolov7pytorch.zip ./
+   ```
+
+4. **Extract the Zip File (if getting images)**:
+   After downloading, extract the contents:
+   ```bash
+   unzip "Bird tracking.v11i.yolov7pytorch.zip" -d model_training
+   ```
+
+   Ensure the extracted dataset is organized in the required format (e.g., YOLO or COCO) for training.
+
+   If you want to use the pretrained weights, save the .pt file locally to be called in:
+```python
+checkpoint_path = LOCAL_DOWNLOAD_DIR / "yolo11_weights.pt"  # Update with your model path
+
+infer_with_yolo(
+    video_path=thermal_video_path,
+    model_path=checkpoint_path,
+    output_csv_path=detect_csv
+)
+```
+
+## Tracking
+Once the animals are detected via the inference step, we recommend checking the bounding boxes before feeding them to the tracker. 
+
+We use [Ultralytics for object tracking ](https://docs.ultralytics.com/modes/track/). 

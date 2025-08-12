@@ -8,9 +8,10 @@ them seem to stop -- not sure why that is happening.
 """
 
 import gymnasium as gym
-from collab_env.sim.boids.boidsAgents import BoidsWorldAgent
-import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
 from tqdm import tqdm  # Progress bar
+
+import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
+from collab_env.sim.boids.boidsAgents import BoidsWorldAgent
 
 # from logger.debug import logger.debug
 
@@ -20,7 +21,7 @@ WALKING = False
 if __name__ == "__main__":
     """
     TOC -- 073125 3:00PM
-    Need to include command line arguments 
+    Need to include command line arguments
     """
     # Training hyperparameters
     learning_rate = (
