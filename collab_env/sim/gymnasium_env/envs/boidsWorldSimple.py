@@ -58,6 +58,9 @@ class BoidsWorldSimpleEnv(gym.Env):
         run_trajectories=False,  # run trajectories is for actually moving the agent meshes
         show_trajectory_lines=False,  # show the trajectory lines for the agent
         save_image=False,
+        color_tracks_by_time=False,
+        number_track_color_groups=1,
+        track_color_rate=4,
     ):
         self.box_line_set = None
         self.size = size  # The size of the square grid
@@ -113,6 +116,9 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.run_trajectories = run_trajectories
         self.show_trajectory_lines = show_trajectory_lines
         self.save_image = save_image
+        self.color_tracks_by_time = color_tracks_by_time
+        self.number_track_color_groups = number_track_color_groups
+        self.track_color_rate = track_color_rate
 
         self.trajectory_line_set = None
 
@@ -597,50 +603,112 @@ class BoidsWorldSimpleEnv(gym.Env):
                 )
                 for _ in range(self.num_agents)
             ]
-            """
-            TOC -- 072125
-            """
-            # Set the initial velocities fast to debug the reverse
-            # self._agent_velocity = np.array([np.array([2.0, 2.0, 2.0]) for _ in range(self.num_agents)])
-            """
-            TOC -- 073025 
-            Get rid of all my logger.debug code since logger.debug doesn't work with gymnasium anyway. 
-            """
+
             logger.debug("agent vel:" + str(self._agent_velocity))
+
+    def create_trajectory_line_group(self, agent_index, points, time_range, color):
+        # print(points[time_range[-1]])
+        # assert(False)
+        """
+        Args:
+            agent_index:
+            points:
+            time_range:
+            color:
+
+        Returns:
+
+        """
+
+        """
+        TOC -- 081225 9:17AM
+        Need to look into the fact that there seems to be an extra set of points all at 0 at the end of the
+        list of points. 
+        """
+        lines = [[t, t + 1] for t in range(len(points) - 1)]
+        line_set = open3d.geometry.LineSet(
+            points=open3d.utility.Vector3dVector(points),
+            lines=open3d.utility.Vector2iVector(lines),
+        )
+
+        """
+        TOC -- 080825 12:05PM 
+        Make these colors configurable.
+
+        TOC -- 081125 3:18PM
+        The colors need to change through time, so I think I am going to have
+        to split these up into groups of lines sets based on time step and 
+        color the groups. 
+        """
+        # colors = [
+        #     [
+        #         (agent_index % 2) * 0.5,
+        #         agent_index / self.num_agents,
+        #         1 - (agent_index / self.num_agents),
+        #     ]
+        #     for i in range(len(lines))
+        # ]
+        color_list = [color] * len(lines)
+
+        line_set.colors = open3d.utility.Vector3dVector(color_list)
+        self.vis.add_geometry(line_set)
+        self.trajectory_line_set.append(line_set)
 
     def init_trajectory_lines(self):
         self.trajectory_line_set = []
+
         for agent_index in range(self.num_agents):
             points = self.agent_trajectories[agent_index]
-            # Create a LineSet
-            lines = [[t, t + 1] for t in range(len(points) - 1)]
-            line_set = open3d.geometry.LineSet(
-                points=open3d.utility.Vector3dVector(points),
-                lines=open3d.utility.Vector2iVector(lines),
-            )
 
-            """
-            TOC -- 080825 12:05PM 
-            Make these colors configurable.
-            
-            TOC -- 081125 3:18PM
-            The colors need to change through time, so I think I am going to have
-            to split these up into groups of lines sets based on time step and 
-            color the groups. 
-            """
-            colors = [
-                [
-                    (agent_index % 2) * 0.5,
-                    agent_index / self.num_agents,
-                    1 - (agent_index / self.num_agents),
+            if self.color_tracks_by_time:
+                group_size = len(points) // self.number_track_color_groups
+
+                for time in range(0, len(points), group_size):
+                    self.create_trajectory_line_group(
+                        agent_index,
+                        points[time - 1 if time > 0 else time : time + group_size],
+                        list(range(len(points))),
+                        color=[
+                            self.track_color_rate * time / len(points),
+                            0,
+                            1 - self.track_color_rate * time / len(points),
+                        ],
+                    )
+            else:
+                # Create a LineSet
+                """
+                TOC -- 081225 8:41AM
+                To get these colors to depend on time, we will need to group time ranges and
+                create a different line_set for each time grouping.
+                """
+                lines = [[t, t + 1] for t in range(len(points) - 1)]
+                line_set = open3d.geometry.LineSet(
+                    points=open3d.utility.Vector3dVector(points),
+                    lines=open3d.utility.Vector2iVector(lines),
+                )
+
+                """
+                TOC -- 080825 12:05PM
+                Make these colors configurable.
+    
+                TOC -- 081125 3:18PM
+                The colors need to change through time, so I think I am going to have
+                to split these up into groups of lines sets based on time step and
+                color the groups.
+                """
+                colors = [
+                    [
+                        (agent_index % 2) * 0.5,
+                        agent_index / self.num_agents,
+                        1 - (agent_index / self.num_agents),
+                    ]
+                    for i in range(len(lines))
                 ]
-                for i in range(len(lines))
-            ]
-            line_set.colors = open3d.utility.Vector3dVector(colors)
-            self.vis.add_geometry(line_set)
-            self.trajectory_line_set.append(line_set)
+                line_set.colors = open3d.utility.Vector3dVector(colors)
+                self.vis.add_geometry(line_set)
+                self.trajectory_line_set.append(line_set)
 
-            # self.vis.get_render_option().line_width = 50
+                self.vis.get_render_option().line_width = 50
 
     def reset(self, seed=None, options=None):
         # We need the following line to seed self.np_random

@@ -200,6 +200,9 @@ if __name__ == "__main__":
         scene_angle=np.pi * np.array(config["meshes"]["scene_angle"]) / 180.0,
         target_creation_time=target_creation_time,
         target_positions=fixed_target_position,
+        color_tracks_by_time=config["tracks"]["color_by_time"],
+        number_track_color_groups=config["tracks"]["number_of_color_groups"],
+        track_color_rate=config["tracks"]["track_color_rate"],
     )
 
     agent = BoidsWorldAgent(

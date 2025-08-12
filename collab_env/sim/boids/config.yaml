@@ -1,14 +1,14 @@
 
 simulator:
   walking: False
-  num_agents: 20
+  num_agents: 10
   num_targets: 2
   num_ground_targets: 2
   extract_submesh_target: False
   moving_targets: False
   num_episodes: 1
-  num_frames: 700
-  target_creation_time: 200 # min is 1, which creates the target at the beginning of the episode.
+  num_frames: 1000
+  target_creation_time: 20 # min is 1, which creates the target at the beginning of the episode.
   show_box: False
   # run_main_folder: "collab_env/sim/runs"
   run_main_folder: "sim-output"
@@ -28,6 +28,12 @@ visuals:
   agent_color: [1, 0, 0]
   agent_scale: 5.0
   target_scale: 8.0
+
+tracks:
+  color_by_time: True
+  number_of_color_groups: 200
+  track_color_rate: 3
+
 
 environment:
   max_dist_from_center: 3
