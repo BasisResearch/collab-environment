@@ -509,7 +509,6 @@ def manual_temporal_alignment(
     thm_cap.release()
 
 
-
 ### steps to run the full alignment pipeline
 
 

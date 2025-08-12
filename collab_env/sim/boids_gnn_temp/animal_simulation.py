@@ -1,9 +1,8 @@
+import matplotlib.animation as animation
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 from torch.utils.data import Dataset
-import numpy as np
-
-import matplotlib.pyplot as plt
-import matplotlib.animation as animation
 
 
 class AnimalTrajectoryDataset(Dataset):

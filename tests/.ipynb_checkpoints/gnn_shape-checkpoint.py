@@ -8,11 +8,11 @@ sys.path.append("/workspace/collab-environment/")
 sys.path.append("/workspace/collab-environment/collab_env/gnn")
 sys.path.append("/workspace/collab-environment/collab_env/data/boids")
 
-from collab_env.gnn.gnn_definition import GNN 
-from collab_env.gnn.gnn_definition import Lazy
-from collab_env.gnn.gnn import node_feature_vel
 import numpy as np
 import torch
+
+from collab_env.gnn.gnn import node_feature_vel
+from collab_env.gnn.gnn_definition import GNN, Lazy
 
 output_dim = 3
 gnn_model1  = GNN(     model_name = "bogus1",

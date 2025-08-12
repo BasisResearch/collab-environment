@@ -1,11 +1,13 @@
-from google.oauth2 import service_account
-from google.cloud import storage
-from loguru import logger
-import gcsfs
 import os
 from pathlib import Path
+
+import gcsfs
 from dotenv import load_dotenv
-from collab_env.data.file_utils import get_project_root, expand_path
+from google.cloud import storage
+from google.oauth2 import service_account
+from loguru import logger
+
+from collab_env.data.file_utils import expand_path, get_project_root
 
 DEFAULT_PROJECT_ID = "collab-data-463313"
 DEFAULT_GCS_CREDENTIALS_PATH = "config-local/collab-data-463313-c340ad86b28e.json"

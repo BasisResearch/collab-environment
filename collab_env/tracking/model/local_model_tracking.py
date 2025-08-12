@@ -1,17 +1,15 @@
-import os
-import cv2
 import json
-import pandas as pd
-import numpy as np
-from tqdm import tqdm
-from typing import Optional
+import os
 from pathlib import Path
-import matplotlib.pyplot as plt
-import pandas as pd
-import cv2
+from typing import Optional
 
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
 from ultralytics.trackers.byte_tracker import BYTETracker
-import argparse
+
 
 def video_to_frames(video_path, out_dir, prefix="frame"):
     """
@@ -283,21 +281,48 @@ def run_tracking(
     print(f"✅ Tracking results saved to {output_csv}")
 
 
-def output_tracked_bboxes_csv(track_csv: Path, detect_csv: Path, output_csv: Path, iou_threshold: float = 0.01, use_nearest: bool = True):
+def output_tracked_bboxes_csv(
+    track_csv: Path,
+    detect_csv: Path,
+    output_csv: Path,
+    iou_threshold: float = 0.01,
+    use_nearest: bool = True,
+):
     tracks_df = pd.read_csv(track_csv)
     detects_df = pd.read_csv(detect_csv)
     if "predictions" in detects_df.columns:
         detects_df["parsed_predictions"] = detects_df["predictions"].apply(json.loads)
     else:
-        detects_df["parsed_predictions"] = detects_df.apply(lambda row: [{"x": row["x"], "y": row["y"], "width": row["width"], "height": row["height"], "confidence": row.get("confidence", 1.0), "class": row.get("class", "bird")}], axis=1)
+        detects_df["parsed_predictions"] = detects_df.apply(
+            lambda row: [
+                {
+                    "x": row["x"],
+                    "y": row["y"],
+                    "width": row["width"],
+                    "height": row["height"],
+                    "confidence": row.get("confidence", 1.0),
+                    "class": row.get("class", "bird"),
+                }
+            ],
+            axis=1,
+        )
 
     output_rows = []
     for _, track_row in tracks_df.iterrows():
-        tid, frame_idx, x, y = int(track_row["track_id"]), int(track_row["frame"]), int(track_row["x"]), int(track_row["y"])
+        tid, frame_idx, x, y = (
+            int(track_row["track_id"]),
+            int(track_row["frame"]),
+            int(track_row["x"]),
+            int(track_row["y"]),
+        )
         if frame_idx >= len(detects_df):
             continue
         det_row = detects_df.iloc[frame_idx]
-        preds = det_row["parsed_predictions"]["predictions"] if isinstance(det_row["parsed_predictions"], dict) else det_row["parsed_predictions"]
+        preds = (
+            det_row["parsed_predictions"]["predictions"]
+            if isinstance(det_row["parsed_predictions"], dict)
+            else det_row["parsed_predictions"]
+        )
         best_iou = 0.0
         best_bbox = None
         best_dist = float("inf")
@@ -307,62 +332,80 @@ def output_tracked_bboxes_csv(track_csv: Path, detect_csv: Path, output_csv: Pat
             x1, y1 = int(x_c - w / 2), int(y_c - h / 2)
             x2, y2 = int(x_c + w / 2), int(y_c + h / 2)
             # IoU matching
-            track_box = [x-2, y-2, x+2, y+2]
+            track_box = [x - 2, y - 2, x + 2, y + 2]
             det_box = [x1, y1, x2, y2]
             x_center, y_center = int(x_c), int(y_c)
-            iou = (
-                float(
-                    max(0, min(track_box[2], det_box[2]) - max(track_box[0], det_box[0])) *
-                    max(0, min(track_box[3], det_box[3]) - max(track_box[1], det_box[1]))
-                )
+            iou = float(
+                max(0, min(track_box[2], det_box[2]) - max(track_box[0], det_box[0]))
+                * max(0, min(track_box[3], det_box[3]) - max(track_box[1], det_box[1]))
             )
             iou /= (
-                (track_box[2] - track_box[0]) * (track_box[3] - track_box[1]) +
-                (det_box[2] - det_box[0]) * (det_box[3] - det_box[1]) - iou + 1e-6
+                (track_box[2] - track_box[0]) * (track_box[3] - track_box[1])
+                + (det_box[2] - det_box[0]) * (det_box[3] - det_box[1])
+                - iou
+                + 1e-6
             )
             if iou > best_iou:
                 best_iou = iou
-                best_bbox = (x1, y1, x2, y2, obj.get("confidence", 1.0), obj.get("class", "bird"))
+                best_bbox = (
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    obj.get("confidence", 1.0),
+                    obj.get("class", "bird"),
+                )
             # Nearest center matching
             dist = np.hypot(x - x_center, y - y_center)
             if dist < best_dist:
                 best_dist = dist
-                best_bbox_dist = (x1, y1, x2, y2, obj.get("confidence", 1.0), obj.get("class", "bird"))
+                best_bbox_dist = (
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    obj.get("confidence", 1.0),
+                    obj.get("class", "bird"),
+                )
         # Prefer IoU, fallback to nearest if enabled
         if best_bbox and best_iou > iou_threshold:
-            output_rows.append({
-                "track_id": tid,
-                "frame": frame_idx,
-                "x1": best_bbox[0],
-                "y1": best_bbox[1],
-                "x2": best_bbox[2],
-                "y2": best_bbox[3],
-                "confidence": best_bbox[4],
-                "class": best_bbox[5]
-            })
+            output_rows.append(
+                {
+                    "track_id": tid,
+                    "frame": frame_idx,
+                    "x1": best_bbox[0],
+                    "y1": best_bbox[1],
+                    "x2": best_bbox[2],
+                    "y2": best_bbox[3],
+                    "confidence": best_bbox[4],
+                    "class": best_bbox[5],
+                }
+            )
         elif use_nearest and best_bbox_dist:
-            output_rows.append({
-                "track_id": tid,
-                "frame": frame_idx,
-                "x1": best_bbox_dist[0],
-                "y1": best_bbox_dist[1],
-                "x2": best_bbox_dist[2],
-                "y2": best_bbox_dist[3],
-                "confidence": best_bbox_dist[4],
-                "class": best_bbox_dist[5]
-            })
+            output_rows.append(
+                {
+                    "track_id": tid,
+                    "frame": frame_idx,
+                    "x1": best_bbox_dist[0],
+                    "y1": best_bbox_dist[1],
+                    "x2": best_bbox_dist[2],
+                    "y2": best_bbox_dist[3],
+                    "confidence": best_bbox_dist[4],
+                    "class": best_bbox_dist[5],
+                }
+            )
 
     out_df = pd.DataFrame(output_rows)
     out_df.to_csv(output_csv, index=False)
     print(f"✅ Tracked bounding box CSV saved to: {output_csv}")
-    
+
 
 def plot_tracks_at_frame_bbox_from_video(
     tracked_bboxes_csv: Path,
     video_path: Path,
     output_image: Path,
     frame_number: int = 1000,
-    max_frame: int = 1000
+    max_frame: int = 1000,
 ):
     """
     Plot all track traces up to max_frame on top of a given frame extracted from a video.
@@ -397,13 +440,32 @@ def plot_tracks_at_frame_bbox_from_video(
 
     for i, tid in enumerate(track_ids):
         track = df[df["track_id"] == tid].sort_values("frame")
-        ax.plot(track["x_center"], track["y_center"], '-', color=colors(i), linewidth=2, alpha=0.8)
+        ax.plot(
+            track["x_center"],
+            track["y_center"],
+            "-",
+            color=colors(i),
+            linewidth=2,
+            alpha=0.8,
+        )
         if not track.empty:
-            ax.plot(track["x_center"].iloc[-1], track["y_center"].iloc[-1], 'o', color=colors(i), markersize=8)
-            ax.text(track["x_center"].iloc[-1]+5, track["y_center"].iloc[-1], f"ID {tid}", color=colors(i), fontsize=10)
+            ax.plot(
+                track["x_center"].iloc[-1],
+                track["y_center"].iloc[-1],
+                "o",
+                color=colors(i),
+                markersize=8,
+            )
+            ax.text(
+                track["x_center"].iloc[-1] + 5,
+                track["y_center"].iloc[-1],
+                f"ID {tid}",
+                color=colors(i),
+                fontsize=10,
+            )
 
     ax.set_title(f"Tracks up to frame {max_frame}")
-    ax.axis('off')
+    ax.axis("off")
     plt.tight_layout()
     plt.savefig(output_image, dpi=200)
     plt.close(fig)
