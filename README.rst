@@ -11,31 +11,47 @@ collab-environment
 Setup
 -----
 
+**Note:**  For alignment functionality, we strongly recommend a CUDA 11.8 compatible GPU. Using a different CUDA version will alter COLMAP results. We recommend matching the CUDA version within `collab-splats`.
+
 * Using pip / uv:
 
+  For installation with pip / uv, all dependencies are installed via a shell script:
+
    .. code:: sh
-      
-      pip install -e ".[dev]"
+
+      bash setup.sh
 
 
 * Using conda
 
-   We also provide a conda `env.yml` file that can be used to create a conda environment with the necessary dependencies. Run the following command to create the environment:
+   We also provide a conda `env.yml` file that can be used to create a conda environment with the necessary dependencies. Run the following commands to create the environment:
 
    .. code:: sh
    
       conda env create -n collab-env -f env.yml
       conda activate collab-env
+      bash setup.sh
+
+
+* Building the Docker image
+
+  We provide a prebuilt Docker image as well as the associated Dockerfile. To build the image, run the following commands:
 
    .. code:: sh
 
-      eval $(ssh-agent)
-      ssh-add ~/.ssh/id_rsa
+      docker build --platform=linux/amd64  --progress=plain -t IMAGE_NAME .
+      docker push IMAGE_NAME:latest
 
-      docker build --platform=linux/amd64  --progress=plain -t tommybotch/collab-environment .
-      docker push tommybotch/collab-environment:latest
+  To pull and run the image, run the following commands:
+
+    .. code:: sh
+      docker image pull tommybotch/collab-environment:latest
+      docker run -it --rm -p 8888:8888 tommybotch/collab-environment:latest
 
 * Install exiftool
+
+  Processing the FLIR (thermal) videos requires the installation of exiftool. This can be done with the following commands:
+
    .. code:: sh
 
       # For MacOS
@@ -46,6 +62,7 @@ Setup
 
       # For Linux (RHEL/CentOS/Fedora) 
       sudo yum install perl-Image-ExifTool
+
 
 * Using gcloud
 
