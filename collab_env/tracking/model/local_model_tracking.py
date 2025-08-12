@@ -298,7 +298,7 @@ def output_tracked_bboxes_csv(track_csv: Path, detect_csv: Path, output_csv: Pat
             continue
         det_row = detects_df.iloc[frame_idx]
         preds = det_row["parsed_predictions"]["predictions"] if isinstance(det_row["parsed_predictions"], dict) else det_row["parsed_predictions"]
-        best_iou = 0
+        best_iou = 0.0
         best_bbox = None
         best_dist = float("inf")
         best_bbox_dist = None

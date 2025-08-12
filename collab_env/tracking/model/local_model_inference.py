@@ -135,7 +135,7 @@ def process_video_with_rfdetr(video_path, output_csv_path, output_video_path, ch
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     # Initialize video writer for annotated video
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v") # type: ignore
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v") 
     writer = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
 
     # Write header to CSV
