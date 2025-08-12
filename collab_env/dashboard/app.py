@@ -46,7 +46,7 @@ class DataDashboard(param.Parameterized):
         self.current_session_files: List[Dict] = []
         self.current_file_content: Optional[bytes] = None
         self.current_file_info: Dict[str, Any] = {}
-        
+
         # Mapping from display names to actual file paths
         self.display_to_path_map: Dict[str, str] = {}
 
@@ -58,7 +58,7 @@ class DataDashboard(param.Parameterized):
             options=["curated", "processed"],
             value="curated",
             button_type="success",
-            visible=False  # Hidden initially until session selected
+            visible=False,  # Hidden initially until session selected
         )
 
         # File tree with wider width for better visibility
@@ -68,15 +68,14 @@ class DataDashboard(param.Parameterized):
             size=12,  # Show files at once
             width=550,  # Much wider for long file names
             height=300,  # Reduced height
-            visible=False  # Hidden initially until session selected
+            visible=False,  # Hidden initially until session selected
         )
 
         # File name header for preview panel
         self.file_name_header = pn.pane.HTML(
-            "<h3>No file selected</h3>",
-            margin=(0, 0, 10, 0)
+            "<h3>No file selected</h3>", margin=(0, 0, 10, 0)
         )
-        
+
         self.file_viewer = pn.pane.HTML(
             "<p>Select a file to view its contents</p>",
             width=900,
@@ -88,7 +87,7 @@ class DataDashboard(param.Parameterized):
             width=900,
             height=300,
             sizing_mode="fixed",
-            placeholder="File content will appear here when editing..."
+            placeholder="File content will appear here when editing...",
         )
 
         self.edit_mode = False
@@ -105,20 +104,18 @@ class DataDashboard(param.Parameterized):
         )
 
         self.status_pane = pn.pane.HTML("<p>Ready</p>", width=800, height=30)
-        
+
         # Loading indicator using Panel's built-in loading
         self.loading_indicator = pn.indicators.LoadingSpinner(
-            value=False, 
+            value=False,
             visible=False,
             size=200,
             align="center",
-            name="Loading files..."
+            name="Loading files...",
         )
-        
+
         # Cache management buttons
-        self.clear_cache_button = pn.widgets.Button(
-            name="Clear Cache", width=100
-        )
+        self.clear_cache_button = pn.widgets.Button(name="Clear Cache", width=100)
         self.cache_info_pane = pn.pane.HTML("", width=300)
 
         # Wire up callbacks
@@ -133,7 +130,6 @@ class DataDashboard(param.Parameterized):
         # Load initial data
         self._load_sessions()
         self._update_cache_info()
-        
 
     def _load_sessions(self):
         """Load available sessions."""
@@ -201,7 +197,7 @@ class DataDashboard(param.Parameterized):
             available_options.append("curated")
         if session.has_processed:
             available_options.append("processed")
-        
+
         if available_options:
             self.bucket_type_toggle.options = available_options
             # Set to first available option
@@ -237,30 +233,32 @@ class DataDashboard(param.Parameterized):
         file_options: List[str] = [""]
         displayable_count = 0
         total_files = 0
-        
+
         # Clear the mapping for the new file list
         self.display_to_path_map.clear()
-        
+
         for file_info in files:
             if not file_info.get("IsDir", False):  # Only show files, not directories
                 total_files += 1
                 relative_path = file_info.get("RelativePath", file_info["Name"])
-                
+
                 # Check if file is displayable
                 if self._is_file_displayable(relative_path):
                     displayable_count += 1
                     size = file_info.get("Size", 0)
                     size_str = self._format_file_size(size)
-                    
+
                     # Check if file is cached
-                    cache_indicator = self._get_cache_indicator(session.name, self.current_bucket_type, relative_path)
-                    
+                    cache_indicator = self._get_cache_indicator(
+                        session.name, self.current_bucket_type, relative_path
+                    )
+
                     # Truncate long file names for better display
                     display_path = self._truncate_filename(relative_path, max_length=60)
-                    
+
                     display_name = f"{cache_indicator} {display_path} ({size_str})"
                     file_options.append(display_name)
-                    
+
                     # Store mapping from display name to actual path
                     self.display_to_path_map[display_name] = relative_path
 
@@ -299,11 +297,15 @@ class DataDashboard(param.Parameterized):
         # Get actual file path from mapping
         file_path = self.display_to_path_map.get(selected_display)
         if not file_path:
-            logger.warning(f"Could not find file path for display name: {selected_display}")
+            logger.warning(
+                f"Could not find file path for display name: {selected_display}"
+            )
             self.file_viewer.object = "<p>Error: Could not find file</p>"
-            self.file_name_header.object = "<h3 style='color: red;'>Error: File not found</h3>"
+            self.file_name_header.object = (
+                "<h3 style='color: red;'>Error: File not found</h3>"
+            )
             return
-        
+
         # Use shared file selection logic
         self._on_file_select_by_path(file_path)
 
@@ -315,7 +317,7 @@ class DataDashboard(param.Parameterized):
             self.edit_button.disabled = True
             self.selected_file = ""
             return
-        
+
         # Skip if same file is selected again
         if file_path == self.selected_file:
             return
@@ -323,17 +325,19 @@ class DataDashboard(param.Parameterized):
         try:
             # Show loading overlay
             self._show_loading(f"Loading {file_path}...")
-            
+
             # Update file name header
             self.file_name_header.object = f"<h3>📁 {file_path}</h3>"
-            
+
             # Get bucket and full path
             bucket, full_path = self.session_manager.get_file_path(
                 self.selected_session, self.current_bucket_type, file_path
             )
 
             # Load file content with progress tracking
-            content, render_info = self.file_manager.get_file_content_with_progress(bucket, full_path)
+            content, render_info = self.file_manager.get_file_content_with_progress(
+                bucket, full_path
+            )
 
             self.current_file_content = content
             self.current_file_info = render_info
@@ -356,13 +360,13 @@ class DataDashboard(param.Parameterized):
             # Hide loading and show completion status
             self._hide_loading()
             cache_status = "💾" if render_info.get("from_cache", False) else "📡"
-            self.status_pane.object = (
-                f"<p>{cache_status} Loaded: {file_path} ({self._format_file_size(len(content))})</p>"
-            )
+            self.status_pane.object = f"<p>{cache_status} Loaded: {file_path} ({self._format_file_size(len(content))})</p>"
 
         except Exception as e:
             logger.error(f"Error loading file {file_path}: {e}")
-            self.file_name_header.object = f"<h3 style='color:red;'>❌ Error loading {file_path}</h3>"
+            self.file_name_header.object = (
+                f"<h3 style='color:red;'>❌ Error loading {file_path}</h3>"
+            )
             self.file_viewer.object = f"<p style='color:red'>Error: {e}</p>"
             self._hide_loading()
             self.status_pane.object = f"<p style='color:red'>❌ Error: {e}</p>"
@@ -523,68 +527,72 @@ class DataDashboard(param.Parameterized):
             return f"{size_bytes / (1024**2):.1f} MB"
         else:
             return f"{size_bytes / (1024**3):.1f} GB"
-    
+
     def _is_file_displayable(self, file_path: str) -> bool:
         """Check if a file can be displayed by the dashboard."""
         return self.file_manager.is_file_supported(file_path)
-    
-    def _get_cache_indicator(self, session_name: str, bucket_type: str, file_path: str) -> str:
+
+    def _get_cache_indicator(
+        self, session_name: str, bucket_type: str, file_path: str
+    ) -> str:
         """Get cache indicator icon for a file."""
         if self.file_manager.is_file_cached(session_name, bucket_type, file_path):
             return "💾"  # Cached locally
         else:
             return "📡"  # Remote only
-    
+
     def _truncate_filename(self, file_path: str, max_length: int = 50) -> str:
         """Truncate long file names for better display."""
         if len(file_path) <= max_length:
             return file_path
-        
+
         # Try to keep the file extension visible
         path_obj = Path(file_path)
         name = path_obj.stem
         ext = path_obj.suffix
-        
+
         # Calculate how much of the name we can show
         available_length = max_length - len(ext) - 3  # 3 for "..."
-        
+
         if available_length > 10:  # Only truncate if we have reasonable space
             truncated_name = name[:available_length] + "..."
             return truncated_name + ext
         else:
             # If the extension is too long, just truncate the whole thing
-            return file_path[:max_length-3] + "..."
-    
+            return file_path[: max_length - 3] + "..."
+
     def _reselect_current_file(self):
         """Re-select the current file after file tree update."""
         if not self.selected_file:
             return
-        
+
         # Find the display name for the current file
         for display_name, file_path in self.display_to_path_map.items():
             if file_path == self.selected_file:
                 # Temporarily disconnect the callback to avoid recursion
-                watchers = self.file_tree.param.watchers.get('value', [])
+                watchers = self.file_tree.param.watchers.get("value", [])
                 for watcher in watchers[:]:
                     if watcher.fn == self._on_file_select:
                         self.file_tree.param.unwatch(watcher)
-                
+
                 self.file_tree.value = display_name
-                
+
                 # Reconnect the callback
-                self.file_tree.param.watch(self._on_file_select, 'value')
+                self.file_tree.param.watch(self._on_file_select, "value")
                 break
-    
-    
+
     def _clear_cache(self, _):
         """Clear the cache directory."""
         try:
             cache_dir = Path(self.file_manager.get_cache_location())
             if cache_dir.exists():
                 import shutil
+
                 shutil.rmtree(cache_dir)
                 cache_dir.mkdir(parents=True, exist_ok=True)
-                self.status_pane.object = "<p style='color:green'>Cache cleared successfully</p>"
+                self.status_pane.object = (
+                    "<p style='color:green'>Cache cleared successfully</p>"
+                )
                 self._update_cache_info()
                 # Refresh current file tree to update cache indicators
                 if self.selected_session:
@@ -593,8 +601,10 @@ class DataDashboard(param.Parameterized):
                         self._update_file_tree(session)
         except Exception as e:
             logger.error(f"Error clearing cache: {e}")
-            self.status_pane.object = f"<p style='color:red'>Error clearing cache: {e}</p>"
-    
+            self.status_pane.object = (
+                f"<p style='color:red'>Error clearing cache: {e}</p>"
+            )
+
     def _update_cache_info(self):
         """Update cache information display."""
         try:
@@ -602,11 +612,11 @@ class DataDashboard(param.Parameterized):
             if cache_dir.exists():
                 cache_files = list(cache_dir.glob("*"))
                 cache_count = len(cache_files)
-                
+
                 # Calculate cache size
                 cache_size = sum(f.stat().st_size for f in cache_files if f.is_file())
                 cache_size_str = self._format_file_size(cache_size)
-                
+
                 self.cache_info_pane.object = f"""
                 <small>
                 Cache: {cache_count} files ({cache_size_str})<br>
@@ -617,7 +627,7 @@ class DataDashboard(param.Parameterized):
                 self.cache_info_pane.object = "<small>Cache: Empty</small>"
         except Exception as e:
             self.cache_info_pane.object = f"<small>Cache: Error - {e}</small>"
-    
+
     def _show_loading(self, message: str = "Loading..."):
         """Show the loading indicator."""
         self.loading_indicator.value = True
@@ -625,24 +635,24 @@ class DataDashboard(param.Parameterized):
         self.loading_indicator.name = message
         # Also show in status
         self.status_pane.object = f"<p>🔄 {message}</p>"
-    
+
     def _hide_loading(self):
         """Hide the loading indicator."""
         self.loading_indicator.value = False
         self.loading_indicator.visible = False
-    
+
     def create_layout(self):
         """Create the dashboard layout."""
         # Navigation panel - enlarged width with cache management
-        cache_controls = pn.Column(self.cache_info_pane,self.clear_cache_button)
-        
+        cache_controls = pn.Column(self.cache_info_pane, self.clear_cache_button)
+
         nav_panel = pn.Column(
             "## Data Browser",
             self.session_select,
             self.bucket_type_toggle,
             self.file_tree,
             # "---",
-            "### Cache Management", 
+            "### Cache Management",
             cache_controls,
             # width=850,  # Wider navigation panel to accommodate file tree
             # height=500  # Reduced height
@@ -663,14 +673,14 @@ class DataDashboard(param.Parameterized):
 
         content_panel = pn.Column(
             self.file_name_header,
-            viewer_tabs, 
+            viewer_tabs,
             # sizing_mode="stretch_both"
         )
-        
+
         # Status panel at the bottom with loading indicator
         status_panel = pn.Row(
             self.status_pane,
-            #pn.Spacer(),
+            # pn.Spacer(),
             # sizing_mode="stretch_width"
         )
 
@@ -685,7 +695,7 @@ class DataDashboard(param.Parameterized):
         return pn.template.MaterialTemplate(
             title="CIS Data Dashboard",
             sidebar=[nav_panel],
-            main=[status_panel,self.loading_indicator, content_panel],
+            main=[status_panel, self.loading_indicator, content_panel],
             header_background="#2596be",
             sidebar_width=600,  # Much wider sidebar for file tree
         )
@@ -717,7 +727,7 @@ def create_app():
 def serve_dashboard(port: int = 5007, show: bool = True, autoreload: bool = True):
     """Serve the dashboard application."""
     app = create_app()
-    
+
     return pn.serve(
         app,
         port=port,

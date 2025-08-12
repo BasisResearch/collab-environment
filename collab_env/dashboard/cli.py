@@ -63,16 +63,20 @@ def main():
 
     try:
         show_browser = not args.no_browser
-        
+
         if args.no_browser:
             logger.info("The browser will not be opened automatically")
-        
+
         if args.autoreload:
             logger.info("🔄 Autoreload enabled")
             logger.info(f"🌐 Dashboard URL: http://localhost:{args.port}")
             logger.info("📝 Edit any .py file to see automatic refresh")
-            logger.warning("⚠️  Note: Panel's autoreload with pn.serve() opens new browser tabs")
-            logger.info("💡 For better autoreload experience, use: panel serve dashboard_app.py --dev --show")
+            logger.warning(
+                "⚠️  Note: Panel's autoreload with pn.serve() opens new browser tabs"
+            )
+            logger.info(
+                "💡 For better autoreload experience, use: panel serve dashboard_app.py --dev --show"
+            )
             # For autoreload, let Panel manage browser behavior to avoid new tabs
             serve_dashboard(port=args.port, show=show_browser, autoreload=True)
         else:

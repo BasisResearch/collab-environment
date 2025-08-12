@@ -259,15 +259,15 @@ class FileContentManager:
     def __init__(self, rclone_client: RcloneClient, cache_dir: Optional[str] = None):
         self.client = rclone_client
         self.viewer_registry = FileViewerRegistry()
-        
+
         # Setup cache directory
         if cache_dir is None:
             cache_dir = os.path.expanduser("~/.cache/collab_env_dashboard")
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        
+
         logger.info(f"Dashboard cache directory: {self.cache_dir}")
-    
+
     def _get_cache_path(self, bucket: str, file_path: str) -> Path:
         """Get cache file path for a bucket/file combination."""
         # Create a safe filename from bucket and file path
@@ -275,18 +275,20 @@ class FileContentManager:
         file_ext = Path(file_path).suffix
         cache_filename = f"{safe_name}{file_ext}"
         return self.cache_dir / cache_filename
-    
-    def is_file_cached(self, session_name: str, bucket_type: str, file_path: str) -> bool:
+
+    def is_file_cached(
+        self, session_name: str, bucket_type: str, file_path: str
+    ) -> bool:
         """Check if a file is cached locally."""
         # Construct bucket name from session and type info
         bucket = f"fieldwork_{bucket_type}"  # Simplified for now
         cache_path = self._get_cache_path(bucket, file_path)
         return cache_path.exists()
-    
+
     def get_cache_location(self) -> str:
         """Get the cache directory location."""
         return str(self.cache_dir)
-    
+
     def is_file_supported(self, file_path: str) -> bool:
         """Check if a file type is supported by the dashboard."""
         viewer = self.viewer_registry.get_viewer(file_path)
@@ -307,7 +309,7 @@ class FileContentManager:
         """
         cache_path = self._get_cache_path(bucket, file_path)
         from_cache = False
-        
+
         try:
             # Try to load from cache first
             if cache_path.exists():
@@ -318,11 +320,11 @@ class FileContentManager:
                 # Download from remote and cache
                 logger.info(f"Downloading {file_path} from {bucket}")
                 content = self.client.read_file(bucket, file_path)
-                
+
                 # Save to cache
                 cache_path.write_bytes(content)
                 logger.info(f"Cached {file_path} to {cache_path}")
-            
+
             viewer = self.viewer_registry.get_viewer(file_path)
 
             if viewer:
