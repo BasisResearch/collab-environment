@@ -7,7 +7,7 @@ simulator:
   submesh_target: True
   moving_targets: False
   num_episodes: 1
-  num_frames: 100
+  num_frames: 1000
   target_creation_time: 30 # min is 1, which creates the target at the beginning of the episode.
   show_box: False
   # run_main_folder: "collab_env/sim/runs"
@@ -54,7 +54,7 @@ agent:
   alignment_weight: 1.0
   cohesion_weight: 0.5
   ground_weight: 0.0
-  target_weight: [0.1]
+  target_weight: [1.0]
   max_speed: 1.0
   min_speed: 0.1
   max_force: 0.1

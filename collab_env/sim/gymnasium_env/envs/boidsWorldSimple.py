@@ -52,7 +52,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         scene_angle=[np.pi / 2.0, 0, 0],
         show_visualizer=True,
         store_video=False,
-        video_file_path="video.mp4",
+        video_file_path=None,
+        saved_image_path=None,
         video_codec="*mpv4",
         video_fps=30,
         vis_width=1920,
@@ -125,6 +126,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.run_trajectories = run_trajectories
         self.show_trajectory_lines = show_trajectory_lines
         self.save_image = save_image
+        self.saved_image_path = saved_image_path
         self.color_tracks_by_time = color_tracks_by_time
         self.number_track_color_groups = number_track_color_groups
         self.track_color_rate = track_color_rate
@@ -132,6 +134,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.trajectory_line_set = None
 
         self.time_step = 0
+        self.image_count = 0
 
         """
         TOC -- 081225 3:58PM
@@ -1628,18 +1631,32 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.vis.poll_events()
         self.vis.update_renderer()
 
-        if self.store_video:
+        #
+        # TOC -- 080925 4:03PM
+        # Save the image to a file when user requests. Then reset the save flag
+        # so we don't keep saving images.
+        if self.save_image:
+            self.image_count += 1
             # Capture video
             img = self.vis.capture_screen_float_buffer()
             # logger.debug(f'img is {img}')
 
-            #
-            # TOC -- 080925 4:03PM
-            # Save the image to a file when user requests. Then reset the save flag
-            # so we don't keep saving images.
-            if self.save_image:
-                self.image_count += 1
-                cv2.imwrite(f"image-{self.image_count}")
+            img = (255 * np.asarray(img)).astype(np.uint8)
+            # logger.debug(f'after astype {img}')
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            # logger.debug(f'after cvtColor {img}')
+            image_path = expand_path(
+                f"image-{self.image_count}.png", self.saved_image_path
+            )
+            cv2.imwrite(image_path, img)
+            # don't keep saving the image, just save it once
+            logger.debug(f"image written to {image_path}")
+            self.save_image = False
+
+        if self.store_video:
+            # Capture video
+            img = self.vis.capture_screen_float_buffer()
+            # logger.debug(f'img is {img}')
 
             img = (255 * np.asarray(img)).astype(np.uint8)
             # logger.debug(f'after astype {img}')

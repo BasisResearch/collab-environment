@@ -22,7 +22,6 @@ import pandas as pd
 import shutil
 
 
-from collab_env.sim.boids.boidsAgents import BoidsWorldAgent
 import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
 from collab_env.data.file_utils import get_project_root, expand_path
 from collab_env.sim.boids.sim_utils import function_filter, plot_trajectories
@@ -141,6 +140,8 @@ if __name__ == "__main__":
         video_file_path=video_file_path,
         video_codec=config["visuals"]["video_codec"],
         video_fps=config["visuals"]["video_fps"],
+        save_image=True,  # save the image generated (fix this with key commands later)
+        saved_image_path=new_run_folder,
         agent_shape=config["visuals"]["agent_shape"],
         agent_color=config["visuals"]["agent_color"],
         agent_scale=config["visuals"]["agent_scale"],
@@ -169,29 +170,6 @@ if __name__ == "__main__":
         color_tracks_by_time=config["tracks"]["color_by_time"],
         number_track_color_groups=config["tracks"]["number_of_color_groups"],
         track_color_rate=config["tracks"]["track_color_rate"],
-    )
-
-    agent = BoidsWorldAgent(
-        env=env,
-        num_agents=config["simulator"]["num_agents"],
-        num_targets=config["simulator"]["num_targets"],
-        walking=config["simulator"]["walking"],
-        has_mesh_scene=(config["meshes"]["mesh_scene"] != ""),
-        min_ground_separation=config["agent"]["min_ground_separation"],
-        min_separation=config["agent"]["min_separation"],
-        neighborhood_dist=config["agent"]["neighborhood_dist"],
-        ground_weight=config["agent"]["ground_weight"],
-        separation_weight=config["agent"]["separation_weight"],
-        alignment_weight=config["agent"]["alignment_weight"],
-        cohesion_weight=config["agent"]["cohesion_weight"],
-        target_weight=[0.0]
-        * config["simulator"][
-            "num_targets"
-        ],  # start at all 0's and add weights when created -- not a great design.
-        max_speed=config["agent"]["max_speed"],
-        min_speed=config["agent"]["min_speed"],
-        max_force=config["agent"]["max_force"],
-        random_walk=config["agent"]["random_walk"],
     )
 
     num_targets = config["simulator"]["num_targets"]
@@ -227,6 +205,10 @@ if __name__ == "__main__":
             f"{config['files']['trajectory_folder']}/{config['files']['trajectory_file']}",
             get_project_root(),
         )
+        """
+        TOC -- 081325 10:26AM
+        TODO: Change this to read only the columns we need. 
+        """
         df = pd.read_parquet(trajectory_path)
         plot_trajectories(df, env)
 
