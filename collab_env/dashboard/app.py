@@ -141,13 +141,36 @@ class DataDashboard(param.Parameterized):
 
         self.status_pane = pn.pane.HTML("<p>Ready</p>", width=800, height=30)
 
-        # Loading indicator using Panel's built-in loading
-        self.loading_indicator = pn.indicators.LoadingSpinner(
-            value=False,
-            visible=False,
-            size=200,
-            align="center",
-            name="Loading files...",
+        # Loading indicator as a clean, modern modal
+        self.loading_message = pn.pane.HTML("")
+        self.loading_modal = pn.Column(
+            pn.indicators.LoadingSpinner(
+                value=True,
+                size=80,
+                color="primary",
+                align="center"
+            ),
+            self.loading_message,
+            margin=(40, 20),
+            width=300,
+            height=150,
+            styles={
+                "background": "rgba(255, 255, 255, 0.95)",
+                "border-radius": "16px",
+                "padding": "40px 20px",
+                "box-shadow": "0 12px 40px rgba(0, 0, 0, 0.15), 0 4px 16px rgba(0, 0, 0, 0.1)",
+                "text-align": "center",
+                "backdrop-filter": "blur(10px)"
+            },
+            visible=False
+        )
+        
+        # Modal dialog buttons (will be created in create_layout)
+        self.confirm_delete_button = pn.widgets.Button(
+            name="Yes, Delete", button_type="danger", width=100
+        )
+        self.cancel_delete_button = pn.widgets.Button(
+            name="Cancel", button_type="light", width=100
         )
 
         # Cache management buttons
@@ -166,6 +189,8 @@ class DataDashboard(param.Parameterized):
         self.replace_file_button.on_click(self._replace_file_in_cloud)
         self.download_original_button.on_click(self._download_original_file)
         self.delete_file_button.on_click(self._delete_file)
+        self.confirm_delete_button.on_click(self._confirm_delete)
+        self.cancel_delete_button.on_click(self._cancel_delete)
 
         # Load initial data
         self._load_sessions()
@@ -814,17 +839,15 @@ class DataDashboard(param.Parameterized):
             self.cache_info_pane.object = f"<small>Cache: Error - {e}</small>"
 
     def _show_loading(self, message: str = "Loading..."):
-        """Show the loading indicator."""
-        self.loading_indicator.value = True
-        self.loading_indicator.visible = True
-        self.loading_indicator.name = message
+        """Show the blocking loading modal."""
+        self.loading_message.object = f"<p style='margin-top: 20px; color: #555; font-size: 16px; font-weight: 500; letter-spacing: 0.5px;'>{message}</p>"
+        self.loading_modal.visible = True
         # Also show in status
         self.status_pane.object = f"<p>🔄 {message}</p>"
 
     def _hide_loading(self):
-        """Hide the loading indicator."""
-        self.loading_indicator.value = False
-        self.loading_indicator.visible = False
+        """Hide the blocking loading modal."""
+        self.loading_modal.visible = False
     
     def _convert_video(self, _):
         """Convert current video to H.264 format."""
@@ -997,21 +1020,32 @@ class DataDashboard(param.Parameterized):
             self.download_original_button.disabled = False
             self._hide_loading()
 
+    def _show_modal(self, file_name: str):
+        """Show the deletion confirmation modal."""
+        self.modal_message.object = f"<p style='margin: 15px 0;'>Are you sure you want to delete <strong>'{file_name}'</strong>?<br/><span style='color: #666; font-size: 0.9em;'>This will remove it from both local cache and cloud storage.</span></p>"
+        self.modal_dialog.visible = True
+    
+    def _hide_modal(self):
+        """Hide the deletion confirmation modal."""
+        self.modal_dialog.visible = False
+    
+    def _confirm_delete(self, _):
+        """Handle confirm delete button click."""
+        self._hide_modal()
+        self._perform_file_deletion()
+    
+    def _cancel_delete(self, _):
+        """Handle cancel delete button click."""
+        self._hide_modal()
+        self.status_pane.object = "<p>Deletion cancelled</p>"
+    
     def _delete_file(self, _):
         """Delete the current file from cloud and cache with confirmation."""
         if not self.selected_file or not self.selected_session:
             return
         
-        # Simple input confirmation
-        try:
-            response = input(f"Are you sure you want to delete '{self.selected_file}'? (yes/no): ").lower().strip()
-            if response in ['yes', 'y']:
-                self._perform_file_deletion()
-            else:
-                self.status_pane.object = "<p>Deletion cancelled</p>"
-        except Exception as e:
-            # Fallback to status message if input fails
-            self.status_pane.object = f"<p style='color:red'>Error with confirmation: {e}</p>"
+        # Show modal confirmation dialog
+        self._show_modal(self.selected_file)
     
     def _perform_file_deletion(self):
         """Actually perform the file deletion after confirmation."""
@@ -1118,10 +1152,43 @@ class DataDashboard(param.Parameterized):
         #     height=700
         # )
 
+        # Create a simple modal dialog using Panel's overlay approach
+        self.modal_message = pn.pane.HTML("")
+        
+        # Simple modal dialog content - no complex CSS positioning
+        self.modal_dialog = pn.Column(
+            pn.pane.HTML("<h3>⚠️ Confirm Deletion</h3>", 
+                        styles={"color": "#d32f2f", "margin": "0 0 10px 0"}),
+            self.modal_message,
+            pn.Row(
+                self.confirm_delete_button,
+                pn.Spacer(width=20),
+                self.cancel_delete_button,
+                align="center"
+            ),
+            margin=20,
+            width=400,
+            height=180,
+            styles={
+                "background": "white",
+                "border": "3px solid #d32f2f", 
+                "border-radius": "10px",
+                "padding": "20px",
+                "box-shadow": "0 8px 24px rgba(0, 0, 0, 0.3)"
+            },
+            visible=False
+        )
+        
         return pn.template.MaterialTemplate(
             title="CIS Data Dashboard",
             sidebar=[nav_panel],
-            main=[status_panel, self.loading_indicator, content_panel],
+            main=[
+                # Modal dialogs at top for visibility
+                self.loading_modal,
+                self.modal_dialog,
+                status_panel,
+                content_panel
+            ],
             header_background="#2596be",
             sidebar_width=600,  # Much wider sidebar for file tree
         )
