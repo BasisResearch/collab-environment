@@ -63,6 +63,28 @@ Setup
       # For Linux (RHEL/CentOS/Fedora) 
       sudo yum install perl-Image-ExifTool
 
+* Install ffmpeg (Required for Dashboard Video Conversion)
+
+  The dashboard's video conversion feature requires ffmpeg to convert videos to browser-compatible H.264 format:
+
+   .. code:: sh
+
+      # For MacOS
+      brew install ffmpeg
+
+      # For Linux (Ubuntu/Debian)
+      sudo apt-get install ffmpeg
+
+      # For Linux (RHEL/CentOS/Fedora)
+      sudo dnf install ffmpeg
+
+      # For Windows
+      # Download from https://ffmpeg.org/download.html
+      # Or using Chocolatey: choco install ffmpeg
+
+      # Verify installation
+      ffmpeg -version
+
 
 * Using gcloud
 
@@ -82,13 +104,14 @@ A web-based dashboard for browsing and editing data files from GCS buckets using
 
 * **Session Discovery**: Automatically discovers matching sessions across ``fieldwork_curated`` and ``fieldwork_processed`` buckets
 * **Multi-Format Viewer**: Built-in viewers for text files (YAML, TXT, XML, JSON, Markdown), tabular data (CSV, Parquet), and video files (MP4, AVI, MOV, MKV)
+* **Video Conversion**: Convert incompatible videos (e.g., OpenCV MPEG-4) to browser-compatible H.264 format with one-click upload
 * **File Editing**: Edit and save text-based files directly back to GCS
 * **Local Caching**: Automatically caches downloaded files locally for faster access with cache management UI
 * **Enhanced UI**: Enlarged navigation panel with file tree, cache status icons, and progress indicators
 
 **Prerequisites:**
 
-Install `rclone <https://rclone.org/>`_ for your platform and configure it to access the collab-data remote storage:
+Install `rclone <https://rclone.org/>`_ and `ffmpeg` for your platform:
 
 .. code:: sh
 
@@ -96,6 +119,9 @@ Install `rclone <https://rclone.org/>`_ for your platform and configure it to ac
     
     # Configure for GCS access
     rclone config create collab-data "google cloud storage" service_account_file=/path/to/api/key.json
+    
+    # Install ffmpeg (required for video conversion feature)
+    # See ffmpeg installation instructions above
 
 **Usage:**
 

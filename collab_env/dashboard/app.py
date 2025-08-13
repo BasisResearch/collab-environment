@@ -103,6 +103,27 @@ class DataDashboard(param.Parameterized):
             name="Cancel Edit", button_type="light", width=100, disabled=True
         )
 
+        # Video conversion button
+        self.convert_video_button = pn.widgets.Button(
+            name="Convert to H.264", button_type="primary", width=120, visible=False
+        )
+        
+        # General file management buttons
+        self.replace_file_button = pn.widgets.Button(
+            name="Replace in Cloud", button_type="primary", width=130
+        )
+        self.delete_file_button = pn.widgets.Button(
+            name="Delete local and remote", button_type="danger", width=150
+        )
+        
+        # File management controls container
+        self.file_management_controls = pn.Row(
+            self.replace_file_button,
+            self.delete_file_button,
+            margin=(5, 0),
+            visible=False  # Initially hidden until file is loaded
+        )
+
         self.status_pane = pn.pane.HTML("<p>Ready</p>", width=800, height=30)
 
         # Loading indicator using Panel's built-in loading
@@ -126,6 +147,9 @@ class DataDashboard(param.Parameterized):
         self.save_button.on_click(self._save_edit)
         self.cancel_edit_button.on_click(self._cancel_edit)
         self.clear_cache_button.on_click(self._clear_cache)
+        self.convert_video_button.on_click(self._convert_video)
+        self.replace_file_button.on_click(self._replace_file_in_cloud)
+        self.delete_file_button.on_click(self._delete_file)
 
         # Load initial data
         self._load_sessions()
@@ -161,6 +185,8 @@ class DataDashboard(param.Parameterized):
             self.file_tree.options = []
             self.file_viewer.object = "<p>No session selected</p>"
             self.file_name_header.object = "<h3>No session selected</h3>"
+            self.selected_file = ""
+            self._update_file_management_buttons()
             return
 
         try:
@@ -222,6 +248,11 @@ class DataDashboard(param.Parameterized):
 
     def _update_file_tree(self, session: SessionInfo):
         """Update file tree based on current session and bucket type."""
+        # Preserve current selection before clearing mapping
+        current_file_path = None
+        if self.file_tree.value and self.file_tree.value in self.display_to_path_map:
+            current_file_path = self.display_to_path_map[self.file_tree.value]
+        
         if self.current_bucket_type == "curated" and session.has_curated:
             files = session.curated_files or []
         elif self.current_bucket_type == "processed" and session.has_processed:
@@ -264,25 +295,33 @@ class DataDashboard(param.Parameterized):
 
         self.file_tree.options = file_options
         self.current_session_files = files
+        
+        # Restore selection based on file path (find the new display name for the same file)
+        if current_file_path:
+            for display_name, file_path in self.display_to_path_map.items():
+                if file_path == current_file_path:
+                    self.file_tree.value = display_name
+                    break
 
-        # Update viewer
-        bucket_status = (
-            "✓"
-            if (
-                (self.current_bucket_type == "curated" and session.has_curated)
-                or (self.current_bucket_type == "processed" and session.has_processed)
+        # Only update viewer to show session info if no file is currently selected
+        if not self.selected_file:
+            bucket_status = (
+                "✓"
+                if (
+                    (self.current_bucket_type == "curated" and session.has_curated)
+                    or (self.current_bucket_type == "processed" and session.has_processed)
+                )
+                else "✗"
             )
-            else "✗"
-        )
 
-        self.file_viewer.object = f"""
-        <div>
-            <h3>{session.name} - {self.current_bucket_type.title()} Data {bucket_status}</h3>
-            <p>Found {displayable_count} displayable files (of {total_files} total)</p>
-            <p>Select a file from the list to view its contents</p>
-            <p><small>📁 Cache location: {self.file_manager.get_cache_location()}</small></p>
-        </div>
-        """
+            self.file_viewer.object = f"""
+            <div>
+                <h3>{session.name} - {self.current_bucket_type.title()} Data {bucket_status}</h3>
+                <p>Found {displayable_count} displayable files (of {total_files} total)</p>
+                <p>Select a file from the list to view its contents</p>
+                <p><small>📁 Cache location: {self.file_manager.get_cache_location()}</small></p>
+            </div>
+            """
 
     def _on_file_select(self, event):
         """Handle file selection."""
@@ -292,6 +331,7 @@ class DataDashboard(param.Parameterized):
             self.file_name_header.object = "<h3>No file selected</h3>"
             self.edit_button.disabled = True
             self.selected_file = ""
+            self._update_file_management_buttons()
             return
 
         # Get actual file path from mapping
@@ -316,6 +356,9 @@ class DataDashboard(param.Parameterized):
             self.file_name_header.object = "<h3>No file selected</h3>"
             self.edit_button.disabled = True
             self.selected_file = ""
+            # Hide all file management buttons when no file selected
+            self.convert_video_button.visible = False
+            self._update_file_management_buttons()
             return
 
         # Skip if same file is selected again
@@ -347,21 +390,24 @@ class DataDashboard(param.Parameterized):
             self.current_file_info = render_info
             self.selected_file = file_path
 
-            # Update cache info and refresh file tree if needed BEFORE updating viewer
+            # Update viewer first
+            self._update_file_viewer(render_info)
+
+            # Update edit button state
+            self.edit_button.disabled = not render_info.get("can_edit", False)
+            
+            # Show file management buttons for all files
+            self._update_file_management_buttons()
+
+            # Update cache info and refresh file tree AFTER updating viewer
             if not render_info.get("from_cache", False):
                 self._update_cache_info()
                 # Refresh file tree to update cache indicators
                 session = self.sessions.get(self.selected_session)
                 if session:
                     self._update_file_tree(session)
-                    # Restore the file selection after updating the tree
-                    self._reselect_current_file()
-
-            # Update viewer (after file tree is updated to prevent display issues)
-            self._update_file_viewer(render_info)
-
-            # Update edit button state
-            self.edit_button.disabled = not render_info.get("can_edit", False)
+                    # Ensure buttons remain visible after tree update
+                    self._update_file_management_buttons()
 
             # Hide loading and show completion status
             self._hide_loading()
@@ -434,12 +480,60 @@ class DataDashboard(param.Parameterized):
             # Video content
             size_mb = render_info["size_mb"]
             path_info = self._get_file_path_info(render_info)
+            codec_info = render_info.get("codec_info", {})
+            
+            # Build codec information display
+            codec_name = codec_info.get("codec_name", "unknown")
+            browser_compatible = codec_info.get("browser_compatible")
+            width = codec_info.get("width")
+            height = codec_info.get("height")
+            
+            # Format codec details
+            codec_details = f"<p><strong>Codec:</strong> {codec_name}"
+            if width and height:
+                codec_details += f" | <strong>Resolution:</strong> {width}×{height}"
+            codec_details += "</p>"
+            
+            # Show/hide conversion buttons based on codec compatibility
+            # Only show convert button for incompatible or limited codecs that aren't already H.264/AVC
+            safe_codecs = ["h264", "avc"]
+            needs_conversion = (browser_compatible in [False, "limited"] and 
+                              codec_name.lower() not in safe_codecs)
+            self.convert_video_button.visible = needs_conversion
+            self.convert_video_button.disabled = False
+            
+            # Show compatibility warning for incompatible codecs
+            compatibility_warning = ""
+            if browser_compatible is False:
+                compatibility_warning = f"""
+                <div style="background-color: #f8d7da; border: 1px solid #f5c6cb; padding: 10px; margin: 10px 0; border-radius: 4px;">
+                    <strong>❌ Unsupported Codec</strong><br>
+                    This video uses the <code>{codec_name}</code> codec, which is not supported by modern browsers.<br>
+                    <small>Tip: Use the convert button below to create an H.264 version.</small>
+                </div>
+                """
+            elif browser_compatible == "limited":
+                compatibility_warning = f"""
+                <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; padding: 10px; margin: 10px 0; border-radius: 4px;">
+                    <strong>⚠️ Limited Browser Support</strong><br>
+                    This video uses the <code>{codec_name}</code> codec, which has limited browser support.<br>
+                    <small>May not work in all browsers. Use the convert button below for better compatibility.</small>
+                </div>
+                """
+            elif browser_compatible is True:
+                compatibility_warning = f"""
+                <div style="background-color: #d4edda; border: 1px solid #c3e6cb; padding: 5px 10px; margin: 10px 0; border-radius: 4px; font-size: 12px;">
+                    ✅ Widely supported codec
+                </div>
+                """
             
             if size_mb > 50:  # Large video warning
                 self.file_viewer.object = f"""
                 <div>
                     {path_info}
                     <h4>Video File ({size_mb:.1f} MB)</h4>
+                    {codec_details}
+                    {compatibility_warning}
                     <p style='color:orange'>Video is large and may take time to load.</p>
                     <video controls width="100%" height="400">
                         <source src="{render_info["data_url"]}" type="{render_info["mime_type"]}">
@@ -452,6 +546,8 @@ class DataDashboard(param.Parameterized):
                 <div>
                     {path_info}
                     <h4>Video File ({size_mb:.1f} MB)</h4>
+                    {codec_details}
+                    {compatibility_warning}
                     <video controls width="100%" height="400">
                         <source src="{render_info["data_url"]}" type="{render_info["mime_type"]}">
                         Your browser does not support video playback.
@@ -672,6 +768,187 @@ class DataDashboard(param.Parameterized):
         """Hide the loading indicator."""
         self.loading_indicator.value = False
         self.loading_indicator.visible = False
+    
+    def _convert_video(self, _):
+        """Convert current video to H.264 format."""
+        if not self.selected_file or not self.selected_session:
+            return
+        
+        try:
+            # Show loading
+            self._show_loading("Converting video to H.264...")
+            self.convert_video_button.disabled = True
+            
+            # Get bucket and full path
+            bucket, full_path = self.session_manager.get_file_path(
+                self.selected_session, self.current_bucket_type, self.selected_file
+            )
+            
+            # Convert video
+            success, message, converted_path = self.file_manager.convert_video_to_h264(bucket, full_path)
+            
+            if success:
+                self.status_pane.object = f"<p style='color:green'>✅ {message} - Use 'Replace in Cloud' button to upload</p>"
+                # Replace the local cached file with the converted version  
+                self._replace_local_video_and_reload(bucket, full_path, converted_path)
+            else:
+                self.status_pane.object = f"<p style='color:red'>❌ {message}</p>"
+                self.convert_video_button.disabled = False
+            
+        except Exception as e:
+            logger.error(f"Error in video conversion: {e}")
+            self.status_pane.object = f"<p style='color:red'>❌ Conversion error: {e}</p>"
+            self.convert_video_button.disabled = False
+        finally:
+            self._hide_loading()
+    
+    def _replace_local_video_and_reload(self, bucket: str, full_path: str, converted_path: str):
+        """Replace local cached video with converted version and reload viewer."""
+        try:
+            # Get original cache path
+            original_cache_path = self.file_manager.get_cache_path(bucket, full_path)
+            
+            # Replace the cached file with the converted version
+            import shutil
+            import os
+            shutil.copy2(converted_path, original_cache_path)
+            logger.info(f"Replaced cached video with H.264 version: {original_cache_path}")
+            
+            # Clean up the temporary _h264 file to avoid duplicates
+            try:
+                os.remove(converted_path)
+                logger.info(f"Cleaned up temporary converted file: {converted_path}")
+            except Exception as cleanup_error:
+                logger.warning(f"Could not clean up temporary file {converted_path}: {cleanup_error}")
+            
+            # Reload the current file to show the converted version
+            self._on_file_select_by_path(self.selected_file)
+            
+        except Exception as e:
+            logger.error(f"Error replacing local video: {e}")
+            self.status_pane.object = f"<p style='color:orange'>⚠️ Conversion successful but couldn't replace local file: {e}</p>"
+    
+    def _update_file_management_buttons(self):
+        """Update visibility of file management buttons based on current file."""
+        has_file = bool(self.selected_file and self.selected_session)
+        
+        # Show the entire file management controls container when a file is loaded
+        self.file_management_controls.visible = has_file
+    
+    def _replace_file_in_cloud(self, _):
+        """Replace the current file in cloud with the cached version."""
+        if not self.selected_file or not self.selected_session:
+            return
+        
+        try:
+            # Show loading
+            self._show_loading("Replacing file in cloud...")
+            self.replace_file_button.disabled = True
+            
+            # Get bucket and full path
+            bucket, full_path = self.session_manager.get_file_path(
+                self.selected_session, self.current_bucket_type, self.selected_file
+            )
+            
+            # Replace file
+            success, message = self.file_manager.replace_file_from_cache(bucket, full_path)
+            
+            if success:
+                self.status_pane.object = f"<p style='color:green'>✅ {message}</p>"
+                # Refresh the file list to show the _old backup file
+                self._refresh_file_list()
+            else:
+                self.status_pane.object = f"<p style='color:red'>❌ {message}</p>"
+            
+        except Exception as e:
+            logger.error(f"Error replacing file in cloud: {e}")
+            self.status_pane.object = f"<p style='color:red'>❌ Replace error: {e}</p>"
+        finally:
+            self.replace_file_button.disabled = False
+            self._hide_loading()
+    
+    def _delete_file(self, _):
+        """Delete the current file from cloud and cache with confirmation."""
+        if not self.selected_file or not self.selected_session:
+            return
+        
+        # Create confirmation dialog content
+        confirm_html = f"""
+        <div style="padding: 20px; text-align: center;">
+            <h3 style="color: #d63384;">⚠️ Confirm File Deletion</h3>
+            <p>Are you sure you want to <strong>permanently delete</strong>:</p>
+            <p><code>{self.selected_file}</code></p>
+            <p style="color: #6c757d; font-size: 12px;">This will remove the file from both cloud storage and local cache.</p>
+        </div>
+        """
+        
+        # Create confirmation dialog
+        confirm_pane = pn.pane.HTML(confirm_html, width=400, height=150)
+        confirm_button = pn.widgets.Button(name="Delete", button_type="danger", width=100)
+        cancel_button = pn.widgets.Button(name="Cancel", button_type="primary", width=100)
+        
+        def confirm_delete(_):
+            dialog.close()
+            self._perform_file_deletion()
+        
+        def cancel_delete(_):
+            dialog.close()
+        
+        confirm_button.on_click(confirm_delete)
+        cancel_button.on_click(cancel_delete)
+        
+        button_row = pn.Row(cancel_button, confirm_button, margin=(10, 0))
+        dialog_content = pn.Column(confirm_pane, button_row)
+        
+        # Show modal dialog
+        dialog = pn.layout.Modal(dialog_content, title="Confirm Deletion")
+        dialog.open()
+    
+    def _perform_file_deletion(self):
+        """Actually perform the file deletion after confirmation."""
+        try:
+            # Show loading
+            self._show_loading("Deleting file...")
+            self.delete_file_button.disabled = True
+            
+            # Get bucket and full path
+            bucket, full_path = self.session_manager.get_file_path(
+                self.selected_session, self.current_bucket_type, self.selected_file
+            )
+            
+            # Delete file
+            success, message = self.file_manager.delete_file(bucket, full_path)
+            
+            if success:
+                self.status_pane.object = f"<p style='color:green'>✅ {message}</p>"
+                # Clear the current file selection
+                self.selected_file = ""
+                self.file_viewer.object = "<p>File deleted</p>"
+                self.file_name_header.object = "<h3>File deleted</h3>"
+                # Hide file management buttons
+                self._update_file_management_buttons()
+                # Refresh the file list
+                self._refresh_file_list()
+            else:
+                self.status_pane.object = f"<p style='color:red'>❌ {message}</p>"
+            
+        except Exception as e:
+            logger.error(f"Error deleting file: {e}")
+            self.status_pane.object = f"<p style='color:red'>❌ Delete error: {e}</p>"
+        finally:
+            self.delete_file_button.disabled = False
+            self._hide_loading()
+    
+    def _refresh_file_list(self):
+        """Refresh the file list to show updated files (including _old backups)."""
+        try:
+            if self.selected_session:
+                session = self.session_manager.load_session_files(self.selected_session)
+                if session:
+                    self._update_file_tree(session)
+                    self.status_pane.object = f"<p>📄 File list refreshed</p>"
+        except Exception as e:
+            logger.error(f"Error refreshing file list: {e}")
 
     def create_layout(self):
         """Create the dashboard layout."""
@@ -690,9 +967,16 @@ class DataDashboard(param.Parameterized):
             # height=500  # Reduced height
         )
 
+        # Video conversion controls (only video-specific buttons)
+        video_controls = pn.Row(
+            self.convert_video_button,
+            margin=(10, 0)
+        )
+        
+
         # Main content area with file name header
         viewer_tabs = pn.Tabs(
-            ("View", self.file_viewer),
+            ("View", pn.Column(self.file_viewer, video_controls)),
             (
                 "Edit",
                 pn.Column(
@@ -705,6 +989,7 @@ class DataDashboard(param.Parameterized):
 
         content_panel = pn.Column(
             self.file_name_header,
+            self.file_management_controls,
             viewer_tabs,
             # sizing_mode="stretch_both"
         )

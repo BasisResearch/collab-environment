@@ -7,6 +7,8 @@ import pandas as pd
 import yaml
 import os
 import hashlib
+import subprocess
+import json
 from typing import Any, Dict, Optional, Tuple
 from pathlib import Path
 import base64
@@ -216,6 +218,86 @@ class TableViewer(BaseViewer):
 class VideoViewer(BaseViewer):
     """Viewer for video files."""
 
+    def _analyze_video_codec(self, temp_path: str) -> Dict[str, Any]:
+        """Analyze video codec using ffprobe."""
+        try:
+            cmd = [
+                "ffprobe", "-v", "quiet", "-print_format", "json",
+                "-show_format", "-show_streams", temp_path
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            
+            if result.returncode == 0:
+                probe_data = json.loads(result.stdout)
+                
+                # Find video stream
+                video_stream = None
+                for stream in probe_data.get("streams", []):
+                    if stream.get("codec_type") == "video":
+                        video_stream = stream
+                        break
+                
+                if video_stream:
+                    codec_name = video_stream.get("codec_name", "unknown")
+                    profile = video_stream.get("profile", "")
+                    
+                    # Check browser compatibility
+                    browser_compatible = self._is_browser_compatible(codec_name, profile)
+                    
+                    return {
+                        "codec_name": codec_name,
+                        "profile": profile,
+                        "browser_compatible": browser_compatible,
+                        "width": video_stream.get("width"),
+                        "height": video_stream.get("height"),
+                        "duration": video_stream.get("duration"),
+                    }
+            
+            return {"codec_name": "unknown", "browser_compatible": False}
+            
+        except Exception as e:
+            logger.warning(f"Could not analyze video codec: {e}")
+            return {"codec_name": "unknown", "browser_compatible": None}
+
+    def _is_browser_compatible(self, codec_name: str, profile: str = "") -> bool:
+        """Check if video codec is compatible with modern browsers."""
+        # Well-supported codecs across major browsers
+        well_supported = {
+            "h264": True,     # Most widely supported (AVC)
+            "avc": True,      # Same as h264
+            "vp8": True,      # WebM - good support
+            "vp9": True,      # WebM - good support
+            "av1": True,      # Modern codec, growing support
+        }
+        
+        # Limited support codecs (work in some browsers)
+        limited_support = {
+            "hevc": "limited",    # Safari, some Chrome versions
+            "h265": "limited",    # Same as hevc
+            "mpeg4": "limited",   # MPEG-4 Visual - very limited (Firefox 3GP only, ChromeOS)
+        }
+        
+        # Clearly unsupported codecs
+        unsupported = {
+            "msmpeg4": False, # Microsoft MPEG-4
+            "flv1": False,    # Flash Video
+            "wmv": False,     # Windows Media Video
+            "mpeg1video": False,  # MPEG-1
+            "mpeg2video": False,  # MPEG-2
+        }
+        
+        codec_lower = codec_name.lower()
+        
+        if codec_lower in unsupported:
+            return False
+        elif codec_lower in well_supported:
+            return True
+        elif codec_lower in limited_support:
+            return "limited"
+        else:
+            # Unknown codec - return None to indicate uncertainty
+            return None
+
     def render_view(self, content: bytes, file_path: str) -> Dict[str, Any]:
         """Render video using HTML5 video element."""
         try:
@@ -230,6 +312,21 @@ class VideoViewer(BaseViewer):
             }
 
             mime_type = mime_types.get(file_ext, "video/mp4")
+            
+            # Analyze codec compatibility by writing to a temporary file
+            import tempfile
+            codec_info = {"codec_name": "unknown", "browser_compatible": None}
+            
+            try:
+                with tempfile.NamedTemporaryFile(suffix=file_ext, delete=False) as temp_file:
+                    temp_file.write(content)
+                    temp_path = temp_file.name
+                
+                codec_info = self._analyze_video_codec(temp_path)
+                os.unlink(temp_path)  # Clean up temp file
+                
+            except Exception as e:
+                logger.warning(f"Could not analyze video codec for {file_path}: {e}")
 
             # Encode video content as base64 for embedding
             # Note: This is not ideal for large videos - consider using rclone serve http
@@ -242,6 +339,7 @@ class VideoViewer(BaseViewer):
                 "mime_type": mime_type,
                 "size": len(content),
                 "size_mb": len(content) / (1024 * 1024),
+                "codec_info": codec_info,
             }
 
         except Exception as e:
@@ -302,6 +400,150 @@ class FileContentManager:
     def get_cache_path(self, bucket: str, file_path: str) -> str:
         """Get the cache file path for a bucket/file combination (public method)."""
         return str(self._get_cache_path(bucket, file_path))
+    
+    def convert_video_to_h264(self, bucket: str, file_path: str) -> Tuple[bool, str, Optional[str]]:
+        """
+        Convert a video file to H.264 format.
+        
+        Args:
+            bucket: Bucket name
+            file_path: Path to file
+            
+        Returns:
+            Tuple of (success, message, converted_file_path)
+        """
+        try:
+            # Get the cached file path
+            cache_path = self._get_cache_path(bucket, file_path)
+            if not cache_path.exists():
+                return False, "File not cached locally", None
+            
+            # Create output path for converted file
+            input_path = Path(cache_path)
+            output_path = input_path.parent / f"{input_path.stem}_h264.mp4"
+            
+            # Check if conversion already exists
+            if output_path.exists():
+                return True, "H.264 version already exists", str(output_path)
+            
+            # Run ffmpeg conversion
+            cmd = [
+                "ffmpeg", "-i", str(cache_path),
+                "-c:v", "libx264",  # H.264 video codec
+                "-crf", "23",       # Constant rate factor (good quality)
+                "-preset", "medium", # Encoding speed vs compression
+                "-c:a", "aac",      # AAC audio codec
+                "-movflags", "+faststart",  # Web optimization
+                "-y",               # Overwrite output file
+                str(output_path)
+            ]
+            
+            logger.info(f"Converting video: {' '.join(cmd)}")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            
+            if result.returncode == 0:
+                logger.info(f"Successfully converted video to H.264: {output_path}")
+                return True, f"Successfully converted to H.264 ({self._format_file_size(output_path.stat().st_size)})", str(output_path)
+            else:
+                error_msg = result.stderr[-500:] if result.stderr else "Unknown ffmpeg error"
+                logger.error(f"Video conversion failed: {error_msg}")
+                return False, f"Conversion failed: {error_msg}", None
+                
+        except subprocess.TimeoutExpired:
+            return False, "Conversion timed out (>5 minutes)", None
+        except Exception as e:
+            logger.error(f"Error converting video: {e}")
+            return False, f"Conversion error: {e}", None
+    
+    def replace_file_from_cache(self, bucket: str, file_path: str) -> Tuple[bool, str]:
+        """
+        Replace a file in the cloud with the cached version, backing up the original.
+        
+        Args:
+            bucket: Bucket name
+            file_path: Path to file in bucket
+            
+        Returns:
+            Tuple of (success, message)
+        """
+        try:
+            # Get cached file path
+            cache_path = self._get_cache_path(bucket, file_path)
+            if not cache_path.exists():
+                return False, "File not cached locally"
+            
+            # Create backup filename with _old suffix
+            original_path = Path(file_path)
+            backup_filename = f"{original_path.stem}_old{original_path.suffix}"
+            backup_file_path = str(original_path.parent / backup_filename)
+            
+            # Step 1: Backup original file using rclone copyto
+            try:
+                backup_success = self.client.copy_file(bucket, file_path, bucket, backup_file_path)
+                if backup_success:
+                    logger.info(f"Backed up original file: {bucket}/{backup_file_path}")
+                else:
+                    logger.warning(f"Could not backup original file using rclone copyto")
+            except Exception as e:
+                logger.warning(f"Could not backup original file: {e}")
+                # Continue anyway - backup failure shouldn't stop the upload
+            
+            # Step 2: Upload cached file directly using rclone copyto
+            success = self.client.copy_local_to_remote(str(cache_path), bucket, file_path)
+            if not success:
+                return False, "Failed to upload cached file to remote"
+            
+            logger.info(f"Replaced cloud file with cached version: {bucket}/{file_path}")
+            return True, f"Successfully replaced cloud file with cached version (backup saved as {backup_filename})"
+            
+        except Exception as e:
+            logger.error(f"Error replacing file from cache: {e}")
+            return False, f"Replace failed: {e}"
+    
+    def delete_file(self, bucket: str, file_path: str) -> Tuple[bool, str]:
+        """
+        Delete a file from the cloud storage.
+        
+        Args:
+            bucket: Bucket name
+            file_path: Path to file in bucket
+            
+        Returns:
+            Tuple of (success, message)
+        """
+        try:
+            # Use rclone to delete the file
+            cmd = ["rclone", "delete", f"{self.client.remote_name}:{bucket}/{file_path}"]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            
+            if result.returncode == 0:
+                logger.info(f"Deleted file: {bucket}/{file_path}")
+                
+                # Also remove from local cache
+                cache_path = self._get_cache_path(bucket, file_path)
+                if cache_path.exists():
+                    cache_path.unlink()
+                    logger.info(f"Removed from cache: {cache_path}")
+                
+                return True, f"Successfully deleted {file_path}"
+            else:
+                error_msg = result.stderr or "Unknown rclone error"
+                return False, f"Delete failed: {error_msg}"
+                
+        except Exception as e:
+            logger.error(f"Error deleting file: {e}")
+            return False, f"Delete failed: {e}"
+    
+    def _format_file_size(self, size_bytes: int) -> str:
+        """Format file size in human readable format."""
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        elif size_bytes < 1024**2:
+            return f"{size_bytes / 1024:.1f} KB"
+        elif size_bytes < 1024**3:
+            return f"{size_bytes / (1024**2):.1f} MB"
+        else:
+            return f"{size_bytes / (1024**3):.1f} GB"
 
     def is_file_supported(self, file_path: str) -> bool:
         """Check if a file type is supported by the dashboard."""

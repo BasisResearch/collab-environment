@@ -99,6 +99,7 @@ Key external dependencies:
 - Gymnasium for RL environments
 - Google Cloud Storage (gcsfs) for data access
 - ExifTool (system dependency) for image metadata
+- ffmpeg (system dependency) for dashboard video conversion
 
 ### Data and Configuration
 
@@ -116,6 +117,7 @@ Web-based data browser for GCS buckets via rclone integration:
 - **Session Discovery**: Automatically discovers matching sessions across `fieldwork_curated` and `fieldwork_processed` buckets
 - **Smart File Filtering**: Only displays files that can be viewed/edited by the dashboard
 - **Multi-Format Viewer**: Text (YAML/XML/JSON/MD), tables (CSV/Parquet), video (MP4/AVI/MOV/MKV)
+- **Video Conversion**: Convert incompatible videos to browser-compatible H.264 format with upload
 - **File Editing**: Edit and save text-based files directly back to GCS
 - **Local Caching**: Automatic file caching with cache management UI
 - **Progress Indicators**: Visual feedback during file loading with cache status icons
@@ -123,10 +125,17 @@ Web-based data browser for GCS buckets via rclone integration:
 **Development Setup:**
 
 ```bash
-# Install rclone and configure
+# Install system dependencies
+# macOS:
+brew install rclone ffmpeg
+
+# Linux (Ubuntu/Debian):
+sudo apt-get install rclone ffmpeg
+
+# Configure rclone for GCS access
 rclone config create collab-data "google cloud storage" service_account_file=/path/to/key.json
 
-# Install with dashboard dependencies
+# Install Python dependencies
 pip install -e ".[dev]"
 ```
 
