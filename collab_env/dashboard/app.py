@@ -606,7 +606,7 @@ class DataDashboard(param.Parameterized):
             )
 
     def _save_edit(self, _):
-        """Save the edited file."""
+        """Save the edited file to local cache only."""
         if not self.edit_mode or not self.selected_file:
             return
 
@@ -616,21 +616,46 @@ class DataDashboard(param.Parameterized):
             )
 
             edited_content = self.file_editor.value
-            self.file_manager.save_edited_file(bucket, full_path, edited_content)
+            
+            # Save to local cache only (not to cloud)
+            self._save_to_local_cache(bucket, full_path, edited_content)
 
-            # Refresh file view
-            self._on_file_select(type("Event", (), {"new": self.selected_file})())
+            # Force reload from cache to show updated content
+            # Clear any cached content in the file manager first
+            cache_path = self.file_manager._get_cache_path(bucket, full_path)
+            if cache_path.exists():
+                # Reload the file content directly
+                content, render_info = self.file_manager.get_file_content_with_progress(bucket, full_path)
+                self.current_file_content = content
+                self.current_file_info = render_info
+                self._update_file_viewer(render_info)
 
             # Exit edit mode
             self._exit_edit_mode()
 
             self.status_pane.object = (
-                f"<p style='color:green'>Saved: {self.selected_file}</p>"
+                f"<p style='color:green'>💾 Saved to local cache: {self.selected_file} - Use 'Replace in Cloud' to upload</p>"
             )
 
         except Exception as e:
-            logger.error(f"Error saving file: {e}")
-            self.status_pane.object = f"<p style='color:red'>Error saving file: {e}</p>"
+            logger.error(f"Error saving file to cache: {e}")
+            self.status_pane.object = f"<p style='color:red'>Error saving file to cache: {e}</p>"
+
+    def _save_to_local_cache(self, bucket: str, full_path: str, edited_content: str):
+        """Save edited content to local cache file only."""
+        # Get the file viewer for proper content processing
+        viewer = self.file_manager.viewer_registry.get_viewer(full_path)
+        if not viewer or not viewer.can_edit():
+            raise ValueError(f"File {full_path} is not editable")
+        
+        # Process the content (e.g., encode to bytes)
+        processed_content = viewer.process_edit(edited_content, full_path)
+        
+        # Get cache path and write directly to cache
+        cache_path = self.file_manager._get_cache_path(bucket, full_path)
+        cache_path.write_bytes(processed_content)
+        
+        logger.info(f"Saved edited content to cache: {cache_path}")
 
     def _cancel_edit(self, _):
         """Cancel editing."""
