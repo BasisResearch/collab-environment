@@ -1374,6 +1374,9 @@ class BoidsWorldSimpleEnv(gym.Env):
         mesh_scene.translate(position)
         return mesh_scene
 
+    def key_callback_save_image(self, vis):
+        self.save_image_to_file()
+
     def initialize_visualizer(self):
         """
         Returns:
@@ -1390,10 +1393,16 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
 
         # Initialize Open3D visualizer
-        self.vis = open3d.visualization.Visualizer()
+        self.vis = open3d.visualization.VisualizerWithKeyCallback()
         self.vis.create_window(
             width=self.vis_width, height=self.vis_height, visible=self.show_visualizer
         )
+
+        """
+        TOC -- 081325 -- 7:00PM
+        """
+
+        self.vis.register_key_callback(ord("P"), self.key_callback_save_image)
 
         if self.store_video:
             #
@@ -1630,12 +1639,6 @@ class BoidsWorldSimpleEnv(gym.Env):
         # self.vis.add_geometry(self.mesh_sphere_center)
         # self.vis.add_geometry(self.mesh_sphere_start)
 
-    def key_callback(self, vis, action, mods):
-        print("ahhhhh")
-        key = vis.get_key()
-        if key == ord("P"):
-            self.save_image_to_file()
-
     def save_image_to_file(self):
         self.image_count += 1
         # Capture video
@@ -1672,7 +1675,6 @@ class BoidsWorldSimpleEnv(gym.Env):
         if self.vis is None:
             self.initialize_visualizer()
             self.init_meshes()
-            self.vis.register_key_callback(80, self.key_callback_save_image)
 
             # TOC -- 080825 11:48AM
             if self.show_trajectory_lines:

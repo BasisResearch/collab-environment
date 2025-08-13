@@ -14,7 +14,7 @@ simulator:
   run_main_folder: "sim-output"
   run_sub_folder_prefix: "boids_sim_run"
   show_trajectories: True
-  trajectory_frame_limit: 1500
+  trajectory_frame_limit: 2000
 
 
 visuals:
@@ -67,7 +67,7 @@ agent:
   height_range_high: 1.0
   height_init_min: 200
   height_init_max: 500
-  random_walk: True
+  random_walk: False
 
 meshes:
     # mesh_scene: ''
@@ -87,11 +87,11 @@ meshes:
 
 files:
     output_folder_prefix: 'boids_sim_runs' # which of these am I using?
-    trajectory_file:  'episode-0-completed-20250813-160040.parquet'
-    trajectory_folder: 'sim-output/boids_sim_run-started-20250813-155116'
+    trajectory_file:  'episode-0-completed-20250813-165213.parquet'
+    trajectory_folder: 'sim-output/boids_sim_run-started-20250813-164249'
 
 logging:
   logfile_prefix: 'logfile'
   log_level: 'DEBUG'
   logging: True
-  log_functions: ['init_trajectory_lines']
+  log_functions: ['save_image_to_file']

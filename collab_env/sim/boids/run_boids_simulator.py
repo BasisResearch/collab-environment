@@ -176,6 +176,7 @@ if __name__ == "__main__":
         color_tracks_by_time=config["tracks"]["color_by_time"],
         number_track_color_groups=config["tracks"]["number_of_color_groups"],
         track_color_rate=config["tracks"]["track_color_rate"],
+        saved_image_path=new_run_folder,
     )
 
     agent = BoidsWorldAgent(
