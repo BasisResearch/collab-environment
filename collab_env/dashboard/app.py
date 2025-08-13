@@ -66,9 +66,18 @@ class DataDashboard(param.Parameterized):
             name="Files",
             options=[],
             size=12,  # Show files at once
-            width=550,  # Much wider for long file names
-            height=300,  # Reduced height
+            width=550,  # Width for container
+            height=300,  # Height
             visible=False,  # Hidden initially until session selected
+            stylesheets=["""
+                select {
+                    overflow-x: auto !important;
+                    white-space: nowrap !important;
+                }
+                option {
+                    white-space: nowrap !important;
+                }
+            """]
         )
 
         # File name header for preview panel
@@ -110,15 +119,21 @@ class DataDashboard(param.Parameterized):
         
         # General file management buttons
         self.replace_file_button = pn.widgets.Button(
-            name="Replace in Cloud", button_type="primary", width=130
+            name="Replace in Cloud", button_type="primary", width=140
+        )
+        self.download_original_button = pn.widgets.Button(
+            name="Download Original", button_type="warning", width=140, visible=False
         )
         self.delete_file_button = pn.widgets.Button(
-            name="Delete local and remote", button_type="danger", width=150
+            name="Delete local and remote", button_type="danger", width=160
         )
         
-        # File management controls container
+        # File management controls container with proper spacing
         self.file_management_controls = pn.Row(
             self.replace_file_button,
+            pn.Spacer(width=10),  # Add space between buttons
+            self.download_original_button,
+            pn.Spacer(width=10),  # Add space between buttons
             self.delete_file_button,
             margin=(5, 0),
             visible=False  # Initially hidden until file is loaded
@@ -149,6 +164,7 @@ class DataDashboard(param.Parameterized):
         self.clear_cache_button.on_click(self._clear_cache)
         self.convert_video_button.on_click(self._convert_video)
         self.replace_file_button.on_click(self._replace_file_in_cloud)
+        self.download_original_button.on_click(self._download_original_file)
         self.delete_file_button.on_click(self._delete_file)
 
         # Load initial data
@@ -284,8 +300,8 @@ class DataDashboard(param.Parameterized):
                         session.name, self.current_bucket_type, relative_path
                     )
 
-                    # Truncate long file names for better display
-                    display_path = self._truncate_filename(relative_path, max_length=60)
+                    # Use full path for clarity
+                    display_path = relative_path
 
                     display_name = f"{cache_indicator} {display_path} ({size_str})"
                     file_options.append(display_name)
@@ -424,14 +440,30 @@ class DataDashboard(param.Parameterized):
             self.status_pane.object = f"<p style='color:red'>❌ Error: {e}</p>"
 
     def _get_file_path_info(self, render_info: Dict[str, Any]) -> str:
-        """Generate file path information HTML."""
+        """Generate file path information HTML with modification status."""
         cache_status = "💾 Cached" if render_info.get("from_cache", False) else "📡 Downloaded"
         remote_path = render_info.get("remote_path", "Unknown")
         cache_path = render_info.get("cache_path", "Unknown")
         
+        # Check modification status
+        modification_status = ""
+        if self.selected_file and self.selected_session:
+            try:
+                bucket, full_path = self.session_manager.get_file_path(
+                    self.selected_session, self.current_bucket_type, self.selected_file
+                )
+                is_modified = self.file_manager.is_file_modified(bucket, full_path)
+                if is_modified:
+                    modification_status = '<div><strong>Modified:</strong> <span style="color: #d63384;">📝 Local differs from remote</span></div>'
+                else:
+                    modification_status = '<div><strong>Modified:</strong> <span style="color: #198754;">💾 Matches remote</span></div>'
+            except Exception as e:
+                modification_status = '<div><strong>Modified:</strong> <span style="color: #6c757d;">❓ Unknown</span></div>'
+        
         return f"""
         <div style="background-color: #f0f0f0; padding: 10px; margin-bottom: 10px; border-radius: 4px; font-size: 12px;">
             <div><strong>Status:</strong> {cache_status}</div>
+            {modification_status}
             <div><strong>Remote:</strong> <code>{remote_path}</code></div>
             <div><strong>Cache:</strong> <code>{cache_path}</code></div>
         </div>
@@ -688,31 +720,31 @@ class DataDashboard(param.Parameterized):
     def _get_cache_indicator(
         self, session_name: str, bucket_type: str, file_path: str
     ) -> str:
-        """Get cache indicator icon for a file."""
-        if self.file_manager.is_file_cached(session_name, bucket_type, file_path):
-            return "💾"  # Cached locally
-        else:
+        """Get cache and modification indicator icon for a file."""
+        is_cached = self.file_manager.is_file_cached(session_name, bucket_type, file_path)
+        
+        if not is_cached:
             return "📡"  # Remote only
+        
+        # File is cached, check if modified
+        try:
+            # Construct bucket name and full path for modification check
+            bucket = f"fieldwork_{bucket_type}"
+            if bucket_type == "curated":
+                full_path = f"{session_name}/{file_path.strip('/')}"
+            else:  # processed
+                full_path = f"{session_name}/{file_path.strip('/')}"
+            
+            is_modified = self.file_manager.is_file_modified(bucket, full_path)
+            if is_modified:
+                return "📝"  # Cached and modified
+            else:
+                return "💾"  # Cached, not modified
+                
+        except Exception as e:
+            logger.warning(f"Error checking modification status for {file_path}: {e}")
+            return "💾"  # Default to cached if we can't check
 
-    def _truncate_filename(self, file_path: str, max_length: int = 50) -> str:
-        """Truncate long file names for better display."""
-        if len(file_path) <= max_length:
-            return file_path
-
-        # Try to keep the file extension visible
-        path_obj = Path(file_path)
-        name = path_obj.stem
-        ext = path_obj.suffix
-
-        # Calculate how much of the name we can show
-        available_length = max_length - len(ext) - 3  # 3 for "..."
-
-        if available_length > 10:  # Only truncate if we have reasonable space
-            truncated_name = name[:available_length] + "..."
-            return truncated_name + ext
-        else:
-            # If the extension is too long, just truncate the whole thing
-            return file_path[: max_length - 3] + "..."
 
     def _reselect_current_file(self):
         """Re-select the current file after file tree update."""
@@ -854,11 +886,40 @@ class DataDashboard(param.Parameterized):
             self.status_pane.object = f"<p style='color:orange'>⚠️ Conversion successful but couldn't replace local file: {e}</p>"
     
     def _update_file_management_buttons(self):
-        """Update visibility of file management buttons based on current file."""
+        """Update visibility and state of file management buttons based on current file."""
         has_file = bool(self.selected_file and self.selected_session)
         
         # Show the entire file management controls container when a file is loaded
         self.file_management_controls.visible = has_file
+        
+        if has_file:
+            # Check if file is modified to show/hide buttons appropriately
+            try:
+                bucket, full_path = self.session_manager.get_file_path(
+                    self.selected_session, self.current_bucket_type, self.selected_file
+                )
+                is_modified = self.file_manager.is_file_modified(bucket, full_path)
+                
+                # Show replace button only if file is modified
+                self.replace_file_button.visible = is_modified
+                if is_modified:
+                    self.replace_file_button.name = "Replace in Cloud (Modified)"
+                else:
+                    self.replace_file_button.name = "Replace in Cloud"
+                
+                # Show download original button only if file is modified
+                self.download_original_button.visible = is_modified
+                    
+            except Exception as e:
+                logger.warning(f"Error checking file modification status: {e}")
+                # Default to visible if we can't check
+                self.replace_file_button.visible = True
+                self.replace_file_button.name = "Replace in Cloud"
+                self.download_original_button.visible = False
+        else:
+            # Hide individual buttons when no file is selected
+            self.replace_file_button.visible = False
+            self.download_original_button.visible = False
     
     def _replace_file_in_cloud(self, _):
         """Replace the current file in cloud with the cached version."""
@@ -892,6 +953,44 @@ class DataDashboard(param.Parameterized):
             self.replace_file_button.disabled = False
             self._hide_loading()
     
+    def _download_original_file(self, _):
+        """Download the original file from cloud, overwriting local cache."""
+        if not self.selected_file or not self.selected_session:
+            return
+        
+        try:
+            # Show loading
+            self._show_loading("Downloading original file from cloud...")
+            self.download_original_button.disabled = True
+            
+            # Get bucket and full path
+            bucket, full_path = self.session_manager.get_file_path(
+                self.selected_session, self.current_bucket_type, self.selected_file
+            )
+            
+            # Download original file from cloud and overwrite cache
+            try:
+                content = self.file_manager.client.read_file(bucket, full_path)
+                cache_path = self.file_manager._get_cache_path(bucket, full_path)
+                cache_path.write_bytes(content)
+                logger.info(f"Downloaded original file to cache: {cache_path}")
+                
+                # Reload the file to show original content
+                self._on_file_select_by_path(self.selected_file)
+                
+                self.status_pane.object = f"<p style='color:green'>✅ Downloaded original version from cloud</p>"
+                
+            except Exception as e:
+                logger.error(f"Error downloading original file: {e}")
+                self.status_pane.object = f"<p style='color:red'>❌ Failed to download original: {e}</p>"
+                
+        except Exception as e:
+            logger.error(f"Error in download original: {e}")
+            self.status_pane.object = f"<p style='color:red'>❌ Download error: {e}</p>"
+        finally:
+            self.download_original_button.disabled = False
+            self._hide_loading()
+
     def _delete_file(self, _):
         """Delete the current file from cloud and cache with confirmation."""
         if not self.selected_file or not self.selected_session:

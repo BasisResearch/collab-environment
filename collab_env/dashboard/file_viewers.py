@@ -544,6 +544,62 @@ class FileContentManager:
             return f"{size_bytes / (1024**2):.1f} MB"
         else:
             return f"{size_bytes / (1024**3):.1f} GB"
+    
+    def _get_local_file_checksum(self, file_path: Path, hash_type: str = "md5") -> str:
+        """Get checksum of a local file."""
+        try:
+            import hashlib
+            hash_func = getattr(hashlib, hash_type)()
+            
+            with open(file_path, 'rb') as f:
+                for chunk in iter(lambda: f.read(4096), b""):
+                    hash_func.update(chunk)
+            
+            checksum = hash_func.hexdigest()
+            logger.debug(f"Local {hash_type} checksum for {file_path}: {checksum}")
+            return checksum
+            
+        except Exception as e:
+            logger.error(f"Error calculating local checksum: {e}")
+            return ""
+    
+    def is_file_modified(self, bucket: str, file_path: str) -> bool:
+        """
+        Check if local cached file differs from remote file using checksums.
+        
+        Args:
+            bucket: Bucket name
+            file_path: Path to file
+            
+        Returns:
+            True if local file differs from remote, False if same or no cache
+        """
+        cache_path = self._get_cache_path(bucket, file_path)
+        if not cache_path.exists():
+            return False  # No local cache, so not modified
+        
+        try:
+            # Get local checksum
+            local_checksum = self._get_local_file_checksum(cache_path)
+            if not local_checksum:
+                return False
+            
+            # Get remote checksum
+            remote_checksum = self.client.get_file_checksum(bucket, file_path)
+            if not remote_checksum:
+                return False  # Can't compare, assume not modified
+            
+            is_different = local_checksum != remote_checksum
+            if is_different:
+                logger.info(f"File modified: {bucket}/{file_path} (local: {local_checksum[:8]}..., remote: {remote_checksum[:8]}...)")
+            else:
+                logger.debug(f"File unchanged: {bucket}/{file_path}")
+                
+            return is_different
+            
+        except Exception as e:
+            logger.error(f"Error checking if file is modified: {e}")
+            return False
 
     def is_file_supported(self, file_path: str) -> bool:
         """Check if a file type is supported by the dashboard."""
@@ -622,7 +678,7 @@ class FileContentManager:
 
     def prepare_file_for_edit(self, bucket: str, file_path: str) -> str:
         """
-        Prepare file content for editing.
+        Prepare file content for editing from cached version.
 
         Args:
             bucket: Bucket name
@@ -631,7 +687,13 @@ class FileContentManager:
         Returns:
             String content ready for editing
         """
-        content = self.client.read_file(bucket, file_path)
+        # Read from cache if available, otherwise from remote
+        cache_path = self._get_cache_path(bucket, file_path)
+        if cache_path.exists():
+            content = cache_path.read_bytes()
+        else:
+            content = self.client.read_file(bucket, file_path)
+        
         viewer = self.viewer_registry.get_viewer(file_path)
 
         if not viewer or not viewer.can_edit():

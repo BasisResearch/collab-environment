@@ -298,3 +298,40 @@ class RcloneClient:
         except Exception as e:
             logger.error(f"Error copying local file to remote: {e}")
             return False
+    
+    def get_file_checksum(self, bucket: str, file_path: str, hash_type: str = "md5") -> str:
+        """
+        Get checksum of a remote file using rclone hashsum.
+        
+        Args:
+            bucket: Bucket name
+            file_path: Path to file within bucket
+            hash_type: Hash algorithm (md5, sha1, sha256, etc.)
+            
+        Returns:
+            Checksum string, or empty string if failed
+        """
+        remote_path = f"{self.remote_name}:{bucket}/{file_path.strip('/')}"
+        
+        try:
+            result = subprocess.run(
+                ["rclone", "hashsum", hash_type, remote_path],
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            
+            if result.returncode == 0:
+                # rclone hashsum output format: "checksum filename"
+                output = result.stdout.strip()
+                if output:
+                    checksum = output.split()[0]
+                    logger.debug(f"Remote {hash_type} checksum for {bucket}/{file_path}: {checksum}")
+                    return checksum
+                    
+            logger.warning(f"Failed to get remote checksum: {result.stderr}")
+            return ""
+            
+        except Exception as e:
+            logger.error(f"Error getting remote checksum: {e}")
+            return ""

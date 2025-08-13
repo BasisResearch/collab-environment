@@ -152,8 +152,9 @@ For the best development experience with autoreload that refreshes existing brow
 **Dashboard Interface:**
 
 * 💾 = File is cached locally (fast access)
+* 📝 = File is cached and modified locally (needs upload)
 * 📡 = File needs to be downloaded from remote
-* Long file names are automatically truncated for better readability
+* Full file paths are displayed for precise identification
 * Cache management with size and file count display
 * Cache location: ``~/.cache/collab_env_dashboard/``
 
