@@ -16,21 +16,22 @@ Example:
 
 import os
 import re
-import tempfile
 import subprocess
-import numpy as np
-import cv2
-from pathlib import Path
-from typing import Tuple, List, Optional
-from tqdm import tqdm
-from mpl_toolkits.axes_grid1 import make_axes_locatable
-from PIL import Image
+import tempfile
 from io import BytesIO
+from math import exp, sqrt
+from pathlib import Path
+from typing import List, Optional, Tuple
+
+import cv2
+import exiftool
 import matplotlib.pyplot as plt
+import numpy as np
 import seaborn as sns
 from libjpeg.utils import decode
-from math import exp, sqrt
-import exiftool
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from PIL import Image
+from tqdm import tqdm
 
 # Constants
 MAGIC_SEQ = re.compile(b"\x46\x46\x46\x00\x52\x54")

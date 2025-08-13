@@ -1,6 +1,6 @@
+import os
 from pathlib import Path
 from typing import Optional, Union
-import os
 
 
 def expand_path(path: Union[str, Path], base_path: Optional[Path] = None) -> Path:

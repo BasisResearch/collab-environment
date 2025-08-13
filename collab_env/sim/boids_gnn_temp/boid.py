@@ -4,6 +4,7 @@
 # the main function is update_boids()
 
 import random
+
 import numpy as np
 
 
@@ -124,7 +125,8 @@ def keep_within_bounds(boid, width, height, cfg):
 def limit_speed(boid, cfg):
     """
     It is an optional rule.
-    Note that this procedure operates directly on b.velocity, rather than returning an offset vector. It is not used like the other rules; rather, this procedure is called after all the other rules have been applied and before calculating the new position"""
+    Note that this procedure operates directly on b.velocity, rather than returning an offset vector. It is not used like the other rules; rather, this procedure is called after all the other rules have been applied and before calculating the new position
+    """
     sp = np.hypot(boid["dx"], boid["dy"])
     if sp > cfg["speed_limit"]:
         f = cfg["speed_limit"] / sp

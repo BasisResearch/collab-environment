@@ -1,13 +1,14 @@
-import os
-import cv2
 import json
-import pandas as pd
-import numpy as np
-from tqdm import tqdm
-from typing import Optional
+import os
 from pathlib import Path
+from typing import Optional
+
+import cv2
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
 from ultralytics.trackers.byte_tracker import BYTETracker
-import argparse
 
 
 def video_to_frames(video_path, out_dir, prefix="frame"):
@@ -280,50 +281,192 @@ def run_tracking(
     print(f"✅ Tracking results saved to {output_csv}")
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="Run object tracking on thermal or RGB videos."
-    )
-    parser.add_argument(
-        "--target_root_dir",
-        type=str,
-        required=True,
-        help="Path to the root directory containing data.",
-    )
-    parser.add_argument(
-        "--session_root_dir",
-        type=str,
-        required=True,
-        help="Session directory name (e.g., '2024_02_06-session_0001').",
-    )
-    parser.add_argument(
-        "--camera_type",
-        type=str,
-        choices=["thermal", "rgb"],
-        required=True,
-        help="Type of camera ('thermal' or 'rgb').",
-    )
-    parser.add_argument(
-        "--camera_number",
-        type=int,
-        choices=[1, 2],
-        required=True,
-        help="Camera number (1 or 2).",
-    )
-    args = parser.parse_args()
+def output_tracked_bboxes_csv(
+    track_csv: Path,
+    detect_csv: Path,
+    output_csv: Path,
+    iou_threshold: float = 0.01,
+    use_nearest: bool = True,
+):
+    tracks_df = pd.read_csv(track_csv)
+    detects_df = pd.read_csv(detect_csv)
+    if "predictions" in detects_df.columns:
+        detects_df["parsed_predictions"] = detects_df["predictions"].apply(json.loads)
+    else:
+        detects_df["parsed_predictions"] = detects_df.apply(
+            lambda row: [
+                {
+                    "x": row["x"],
+                    "y": row["y"],
+                    "width": row["width"],
+                    "height": row["height"],
+                    "confidence": row.get("confidence", 1.0),
+                    "class": row.get("class", "bird"),
+                }
+            ],
+            axis=1,
+        )
 
-    # Parse arguments
-    target_root_dir = Path(args.target_root_dir)
-    session_root_dir = args.session_root_dir
-    camera_type = args.camera_type
-    camera_number = args.camera_number
+    output_rows = []
+    for _, track_row in tracks_df.iterrows():
+        tid, frame_idx, x, y = (
+            int(track_row["track_id"]),
+            int(track_row["frame"]),
+            int(track_row["x"]),
+            int(track_row["y"]),
+        )
+        if frame_idx >= len(detects_df):
+            continue
+        det_row = detects_df.iloc[frame_idx]
+        preds = (
+            det_row["parsed_predictions"]["predictions"]
+            if isinstance(det_row["parsed_predictions"], dict)
+            else det_row["parsed_predictions"]
+        )
+        best_iou = 0.0
+        best_bbox = None
+        best_dist = float("inf")
+        best_bbox_dist = None
+        for obj in preds:
+            x_c, y_c, w, h = obj["x"], obj["y"], obj["width"], obj["height"]
+            x1, y1 = int(x_c - w / 2), int(y_c - h / 2)
+            x2, y2 = int(x_c + w / 2), int(y_c + h / 2)
+            # IoU matching
+            track_box = [x - 2, y - 2, x + 2, y + 2]
+            det_box = [x1, y1, x2, y2]
+            x_center, y_center = int(x_c), int(y_c)
+            iou = float(
+                max(0, min(track_box[2], det_box[2]) - max(track_box[0], det_box[0]))
+                * max(0, min(track_box[3], det_box[3]) - max(track_box[1], det_box[1]))
+            )
+            iou /= (
+                (track_box[2] - track_box[0]) * (track_box[3] - track_box[1])
+                + (det_box[2] - det_box[0]) * (det_box[3] - det_box[1])
+                - iou
+                + 1e-6
+            )
+            if iou > best_iou:
+                best_iou = iou
+                best_bbox = (
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    obj.get("confidence", 1.0),
+                    obj.get("class", "bird"),
+                )
+            # Nearest center matching
+            dist = np.hypot(x - x_center, y - y_center)
+            if dist < best_dist:
+                best_dist = dist
+                best_bbox_dist = (
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    obj.get("confidence", 1.0),
+                    obj.get("class", "bird"),
+                )
+        # Prefer IoU, fallback to nearest if enabled
+        if best_bbox and best_iou > iou_threshold:
+            output_rows.append(
+                {
+                    "track_id": tid,
+                    "frame": frame_idx,
+                    "x1": best_bbox[0],
+                    "y1": best_bbox[1],
+                    "x2": best_bbox[2],
+                    "y2": best_bbox[3],
+                    "confidence": best_bbox[4],
+                    "class": best_bbox[5],
+                }
+            )
+        elif use_nearest and best_bbox_dist:
+            output_rows.append(
+                {
+                    "track_id": tid,
+                    "frame": frame_idx,
+                    "x1": best_bbox_dist[0],
+                    "y1": best_bbox_dist[1],
+                    "x2": best_bbox_dist[2],
+                    "y2": best_bbox_dist[3],
+                    "confidence": best_bbox_dist[4],
+                    "class": best_bbox_dist[5],
+                }
+            )
 
-    # Construct session path
-    session_path = target_root_dir / session_root_dir / "aligned_videos"
-
-    # Run tracking
-    run_tracking(session_path, camera_type=camera_type, camera_number=camera_number)
+    out_df = pd.DataFrame(output_rows)
+    out_df.to_csv(output_csv, index=False)
+    print(f"✅ Tracked bounding box CSV saved to: {output_csv}")
 
 
-if __name__ == "__main__":
-    main()
+def plot_tracks_at_frame_bbox_from_video(
+    tracked_bboxes_csv: Path,
+    video_path: Path,
+    output_image: Path,
+    frame_number: int = 1000,
+    max_frame: int = 1000,
+):
+    """
+    Plot all track traces up to max_frame on top of a given frame extracted from a video.
+    Args:
+        tracked_bboxes_csv: CSV with columns track_id, frame, x1, y1, x2, y2
+        video_path: Path to the video file
+        output_image: Path to save the output image
+        frame_number: Frame number to extract as background
+        max_frame: Only show motion up to this frame
+    """
+    # Read tracks
+    df = pd.read_csv(tracked_bboxes_csv)
+    df = df[df["frame"] <= max_frame]
+    df["track_id"] = df["track_id"].astype(int)
+    df["x_center"] = (df["x1"] + df["x2"]) / 2
+    df["y_center"] = (df["y1"] + df["y2"]) / 2
+
+    # Extract frame from video
+    cap = cv2.VideoCapture(str(video_path))
+    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+    ret, img = cap.read()
+    cap.release()
+    if not ret:
+        raise ValueError(f"Could not read frame {frame_number} from {video_path}")
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.imshow(img)
+
+    track_ids = df["track_id"].unique()
+    colors = plt.cm.get_cmap("tab20", len(track_ids))
+
+    for i, tid in enumerate(track_ids):
+        track = df[df["track_id"] == tid].sort_values("frame")
+        ax.plot(
+            track["x_center"],
+            track["y_center"],
+            "-",
+            color=colors(i),
+            linewidth=2,
+            alpha=0.8,
+        )
+        if not track.empty:
+            ax.plot(
+                track["x_center"].iloc[-1],
+                track["y_center"].iloc[-1],
+                "o",
+                color=colors(i),
+                markersize=8,
+            )
+            ax.text(
+                track["x_center"].iloc[-1] + 5,
+                track["y_center"].iloc[-1],
+                f"ID {tid}",
+                color=colors(i),
+                fontsize=10,
+            )
+
+    ax.set_title(f"Tracks up to frame {max_frame}")
+    ax.axis("off")
+    plt.tight_layout()
+    plt.savefig(output_image, dpi=200)
+    plt.close(fig)
+    print(f"✅ Track plot saved to: {output_image}")

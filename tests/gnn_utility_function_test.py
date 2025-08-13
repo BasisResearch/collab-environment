@@ -1,8 +1,9 @@
 """Check functions related to adjacency matrices"""
 
-from collab_env.gnn.gnn import build_edge_index
 import numpy as np
 import torch
+
+from collab_env.gnn.gnn import build_edge_index
 
 
 def test_build_edge_index():
