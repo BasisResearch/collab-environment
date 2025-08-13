@@ -185,9 +185,12 @@ def get_submesh_indices_from_ply(file_path):
     return keep_vertices
 
 
-def plot_trajectories(df, env):
+def plot_trajectories(df, env, frame_limit=None):
     # get the
     num_time_steps = df["time"].max()
+    if frame_limit is not None:
+        num_time_steps = min(frame_limit, num_time_steps)
+
     num_agents = df.loc[df["type"] == "agent"]["id"].max()
     agent_trajectories = []  # = np.zeros((num_time_steps+1, num_agents, 3))
     for i in range(num_agents):

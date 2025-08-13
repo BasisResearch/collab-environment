@@ -7,13 +7,14 @@ simulator:
   submesh_target: True
   moving_targets: False
   num_episodes: 1
-  num_frames: 1000
-  target_creation_time: 30 # min is 1, which creates the target at the beginning of the episode.
+  num_frames: 2000
+  target_creation_time: 500 # min is 1, which creates the target at the beginning of the episode.
   show_box: False
   # run_main_folder: "collab_env/sim/runs"
   run_main_folder: "sim-output"
   run_sub_folder_prefix: "boids_sim_run"
   show_trajectories: True
+  trajectory_frame_limit: 1500
 
 
 visuals:
@@ -25,7 +26,7 @@ visuals:
   video_fps: 30
   video_file_extension: 'mp4'
   agent_shape: 'sphere'
-  agent_color: [0, 1, 0]
+  agent_color: [0, 0, 1]
   agent_scale: 5.0
   target_scale: 0.5
 
@@ -54,7 +55,7 @@ agent:
   alignment_weight: 1.0
   cohesion_weight: 0.5
   ground_weight: 0.0
-  target_weight: [1.0]
+  target_weight: [0.001]
   max_speed: 1.0
   min_speed: 0.1
   max_force: 0.1
@@ -65,8 +66,8 @@ agent:
   height_range_low: 0.0
   height_range_high: 1.0
   height_init_min: 200
-  height_init_max: 400
-  random_walk: False
+  height_init_max: 500
+  random_walk: True
 
 meshes:
     # mesh_scene: ''
@@ -86,11 +87,11 @@ meshes:
 
 files:
     output_folder_prefix: 'boids_sim_runs' # which of these am I using?
-    trajectory_file:  'episode-0-completed-20250813-100353.parquet'
-    trajectory_folder: 'sim-output/boids_sim_run-started-20250813-100324'
+    trajectory_file:  'episode-0-completed-20250813-160040.parquet'
+    trajectory_folder: 'sim-output/boids_sim_run-started-20250813-155116'
 
 logging:
   logfile_prefix: 'logfile'
   log_level: 'DEBUG'
   logging: True
-  log_functions: []
+  log_functions: ['init_trajectory_lines']

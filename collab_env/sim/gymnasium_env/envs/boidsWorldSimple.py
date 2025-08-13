@@ -735,24 +735,68 @@ class BoidsWorldSimpleEnv(gym.Env):
 
     def init_trajectory_lines(self):
         self.trajectory_line_set = []
-
+        blue = (0, 0, 1.0)
+        cyan = (0, 1.0, 1.0)
+        green = (0, 1.0, 0)
+        yellow = (1.0, 1.0, 0)
+        red = (1.0, 0, 0)
+        color_transition_pairs = [
+            [blue, cyan],
+            [cyan, green],
+            [green, yellow],
+            [yellow, red],
+        ]
         for agent_index in range(self.num_agents):
             points = self.agent_trajectories[agent_index]
-
+            logger.debug(f"number of points = {len(points)}")
             if self.color_tracks_by_time:
                 group_size = int(np.ceil(len(points) / self.number_track_color_groups))
-
+                steps_per_color = self.number_track_color_groups / len(
+                    color_transition_pairs
+                )
+                logger.debug(f"group size = {group_size}")
+                logger.debug(f"steps per color = {steps_per_color}")
+                step = 0
+                color_transition_index = 0
                 for time in range(0, len(points), group_size):
+                    logger.debug(f"time = {time}")
+                    # color_transition_index = int(time / steps_per_color)
+                    start_color = color_transition_pairs[color_transition_index][0]
+                    end_color = color_transition_pairs[color_transition_index][1]
+                    logger.debug(f"start_color = {start_color}")
+                    logger.debug(f"end_color = {end_color}")
+                    logger.debug(f"transition index = {color_transition_index}")
+                    logger.debug(f"percent of new color = {(step / steps_per_color)}")
+                    logger.debug(
+                        f"amount of red {(end_color[0] - start_color[0]) * (step / steps_per_color)}"
+                    )
+                    logger.debug(
+                        f"amount of green {(end_color[1] - start_color[1]) * (step / steps_per_color)}"
+                    )
+                    logger.debug(
+                        f"amount of blue {(end_color[2] - start_color[2]) * (step / steps_per_color)}"
+                    )
+                    color = [
+                        start_color[j]
+                        + (end_color[j] - start_color[j]) * (step / steps_per_color)
+                        for j in range(3)
+                    ]
                     self.create_trajectory_line_group(
                         agent_index,
                         points[time - 1 if time > 0 else time : time + group_size],
                         list(range(len(points))),
-                        color=[
-                            self.track_color_rate * time / len(points),
-                            0,
-                            1 - self.track_color_rate * time / len(points),
-                        ],
+                        # color=[
+                        #     self.track_color_rate * time / len(points),
+                        #     0,
+                        #     1 - self.track_color_rate * time / len(points),
+                        # ],
+                        color=color,
                     )
+                    logger.debug(f"color = {color}")
+                    step = (step + 1) % steps_per_color
+                    if step == 0:
+                        color_transition_index += 1
+                    logger.debug(f"step = {step}")
             else:
                 # Create a LineSet
                 """
@@ -1586,6 +1630,27 @@ class BoidsWorldSimpleEnv(gym.Env):
         # self.vis.add_geometry(self.mesh_sphere_center)
         # self.vis.add_geometry(self.mesh_sphere_start)
 
+    def key_callback(self, vis, action, mods):
+        print("ahhhhh")
+        key = vis.get_key()
+        if key == ord("P"):
+            self.save_image_to_file()
+
+    def save_image_to_file(self):
+        self.image_count += 1
+        # Capture video
+        img = self.vis.capture_screen_float_buffer()
+        # logger.debug(f'img is {img}')
+
+        img = (255 * np.asarray(img)).astype(np.uint8)
+        # logger.debug(f'after astype {img}')
+        img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+        # logger.debug(f'after cvtColor {img}')
+        image_path = expand_path(f"image-{self.image_count}.png", self.saved_image_path)
+        cv2.imwrite(image_path, img)
+        # don't keep saving the image, just save it once
+        logger.debug(f"image written to {image_path}")
+
     def _render_frame(self):
         """
         :return:
@@ -1607,6 +1672,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         if self.vis is None:
             self.initialize_visualizer()
             self.init_meshes()
+            self.vis.register_key_callback(80, self.key_callback_save_image)
 
             # TOC -- 080825 11:48AM
             if self.show_trajectory_lines:
@@ -1636,21 +1702,23 @@ class BoidsWorldSimpleEnv(gym.Env):
         # Save the image to a file when user requests. Then reset the save flag
         # so we don't keep saving images.
         if self.save_image:
-            self.image_count += 1
-            # Capture video
-            img = self.vis.capture_screen_float_buffer()
-            # logger.debug(f'img is {img}')
+            self.save_image_to_file()
 
-            img = (255 * np.asarray(img)).astype(np.uint8)
-            # logger.debug(f'after astype {img}')
-            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-            # logger.debug(f'after cvtColor {img}')
-            image_path = expand_path(
-                f"image-{self.image_count}.png", self.saved_image_path
-            )
-            cv2.imwrite(image_path, img)
-            # don't keep saving the image, just save it once
-            logger.debug(f"image written to {image_path}")
+            # self.image_count += 1
+            # # Capture video
+            # img = self.vis.capture_screen_float_buffer()
+            # # logger.debug(f'img is {img}')
+            #
+            # img = (255 * np.asarray(img)).astype(np.uint8)
+            # # logger.debug(f'after astype {img}')
+            # img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            # # logger.debug(f'after cvtColor {img}')
+            # image_path = expand_path(
+            #     f"image-{self.image_count}.png", self.saved_image_path
+            # )
+            # cv2.imwrite(image_path, img)
+            # # don't keep saving the image, just save it once
+            # logger.debug(f"image written to {image_path}")
             self.save_image = False
 
         if self.store_video:

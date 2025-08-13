@@ -210,6 +210,9 @@ if __name__ == "__main__":
         TODO: Change this to read only the columns we need. 
         """
         df = pd.read_parquet(trajectory_path)
-        plot_trajectories(df, env)
+        frame_limit = config["simulator"]["trajectory_frame_limit"]
+        plot_trajectories(
+            df, env, frame_limit=(None if frame_limit == 0 else frame_limit)
+        )
 
     logger.info("trajectories complete")
