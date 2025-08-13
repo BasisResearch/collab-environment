@@ -881,6 +881,9 @@ class DataDashboard(param.Parameterized):
             # Reload the current file to show the converted version
             self._on_file_select_by_path(self.selected_file)
             
+            # Refresh the file list to show updated cache status
+            self._refresh_file_list()
+            
         except Exception as e:
             logger.error(f"Error replacing local video: {e}")
             self.status_pane.object = f"<p style='color:orange'>⚠️ Conversion successful but couldn't replace local file: {e}</p>"
@@ -978,6 +981,9 @@ class DataDashboard(param.Parameterized):
                 # Reload the file to show original content
                 self._on_file_select_by_path(self.selected_file)
                 
+                # Refresh the file list to show updated cache status
+                self._refresh_file_list()
+                
                 self.status_pane.object = f"<p style='color:green'>✅ Downloaded original version from cloud</p>"
                 
             except Exception as e:
@@ -996,37 +1002,16 @@ class DataDashboard(param.Parameterized):
         if not self.selected_file or not self.selected_session:
             return
         
-        # Create confirmation dialog content
-        confirm_html = f"""
-        <div style="padding: 20px; text-align: center;">
-            <h3 style="color: #d63384;">⚠️ Confirm File Deletion</h3>
-            <p>Are you sure you want to <strong>permanently delete</strong>:</p>
-            <p><code>{self.selected_file}</code></p>
-            <p style="color: #6c757d; font-size: 12px;">This will remove the file from both cloud storage and local cache.</p>
-        </div>
-        """
-        
-        # Create confirmation dialog
-        confirm_pane = pn.pane.HTML(confirm_html, width=400, height=150)
-        confirm_button = pn.widgets.Button(name="Delete", button_type="danger", width=100)
-        cancel_button = pn.widgets.Button(name="Cancel", button_type="primary", width=100)
-        
-        def confirm_delete(_):
-            dialog.close()
-            self._perform_file_deletion()
-        
-        def cancel_delete(_):
-            dialog.close()
-        
-        confirm_button.on_click(confirm_delete)
-        cancel_button.on_click(cancel_delete)
-        
-        button_row = pn.Row(cancel_button, confirm_button, margin=(10, 0))
-        dialog_content = pn.Column(confirm_pane, button_row)
-        
-        # Show modal dialog
-        dialog = pn.layout.Modal(dialog_content, title="Confirm Deletion")
-        dialog.open()
+        # Simple input confirmation
+        try:
+            response = input(f"Are you sure you want to delete '{self.selected_file}'? (yes/no): ").lower().strip()
+            if response in ['yes', 'y']:
+                self._perform_file_deletion()
+            else:
+                self.status_pane.object = "<p>Deletion cancelled</p>"
+        except Exception as e:
+            # Fallback to status message if input fails
+            self.status_pane.object = f"<p style='color:red'>Error with confirmation: {e}</p>"
     
     def _perform_file_deletion(self):
         """Actually perform the file deletion after confirmation."""
