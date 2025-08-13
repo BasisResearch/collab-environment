@@ -14,25 +14,18 @@ from datetime import datetime
 
 import numpy as np
 
-from tqdm import tqdm  # Progress bar
 import gymnasium as gym
 import yaml
 from loguru import logger
 
 import pandas as pd
-import pyarrow.parquet as pq
-import pyarrow as pa
 import shutil
 
 
 from collab_env.sim.boids.boidsAgents import BoidsWorldAgent
 import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
 from collab_env.data.file_utils import get_project_root, expand_path
-from collab_env.sim.boids.sim_utils import (
-    add_obs_to_df,
-    function_filter,
-    plot_trajectories,
-)
+from collab_env.sim.boids.sim_utils import function_filter, plot_trajectories
 
 # NUM_AGENTS = 40
 # WALKING = False
@@ -222,103 +215,19 @@ if __name__ == "__main__":
         + closest_point_columns
     )
 
-    #
-    # Run the episodes
-    #
-    for episode in tqdm(range(config["simulator"]["num_episodes"])):
-        # Start a new episode
-
-        logger.debug(f"main(): starting episode {episode}")
-
-        # Reset the environment
-        obs, info = env.reset()
-
-        # TOC -- 080225 8:58AM
-        # create the dataframe for the simulation output
-        df = pd.DataFrame(columns=pandas_columns)
-
-        # TOC -- 080725 10:45PM
-        # Add the initial positions to the dataframe
-        df = add_obs_to_df(df, obs, time_step=0)
-        done = False
-
-        #
-        # MAIN LOOP
-        #
-
-        for time_step in tqdm(range(config["simulator"]["num_frames"])):
-            if time_step == target_creation_time:
-                agent.set_target_weight(config["agent"]["target_weight"][0], 0)
-                """
-                TOC -- 080425 2:40PM
-                I can't call this method since the environment is in a wrapper. 
-                I need to understand wrappers better.
-                """
-                # env.create_target()
-
-            # Agent chooses action
-            action = agent.get_action(obs)
-
-            # Take the action in the environment and observe the result
-            next_obs, reward, terminated, truncated, info = env.step(action)
-
-            # TOC -- 080225 8:58AM
-            # Record the observation
-            df = add_obs_to_df(df, next_obs, time_step=(time_step + 1))
-
-            # Observe the next state
-            obs = next_obs
-
-            # ignore terminated for now since we are just running for a specified number of frames
-            # done = terminated or truncated
-            # done = True
-
-        env.close()
-
-        logger.info(f"episode {episode}: df columns = {df.columns}")
-        logger.info(f"positions:\n{df[['x', 'y', 'z']]}")
-        logger.info(f"velocities:\n{df[['v_x', 'v_y', 'v_z']]}")
-        logger.info(f"distances:\n{df[['distance_target_1']]}")
-
-        #
-        # Dump data to output file
-        #
-        table = pa.Table.from_pandas(df)
-        logger.debug(f"table \n {table}")
-
-        file_path = expand_path(
-            f"episode-{episode}-completed-{datetime.now().strftime('%Y%m%d-%H%M%S')}.parquet",
-            # f"episode-{episode}.parquet",
-            new_run_folder,
+    """
+    TOC -- 080825
+    plot the trajectories for the paper figures. Needs to be able to display the 
+    agents in the visualizer without storing video and with the ability to snap 
+    pictures based on keyboard presses so that users can adjust the camera view 
+    and zoom on the visualizer to get the figures they want.  
+    """
+    if config["simulator"]["show_trajectories"]:
+        trajectory_path = expand_path(
+            f"{config['files']['trajectory_folder']}/{config['files']['trajectory_file']}",
+            get_project_root(),
         )
-        logger.info(f"writing output to {file_path}")
-        pq.write_table(table, file_path)
+        df = pd.read_parquet(trajectory_path)
+        plot_trajectories(df, env)
 
-        """
-        TOC -- 080825
-        plot the trajectories for the paper figures. This need to be redesigned
-        so that plotting trajectories is in a separate program that is run on 
-        the parquet file rather than with the main simulator. Needs to be able
-        to display the agents in the visualizer without storing video and with the 
-        ability to snap pictures based on keyboard presses so that users can 
-        adjust the camera view and zoom on the visualizer to get the figures they 
-        want.  
-        """
-        if config["simulator"]["show_trajectories"]:
-            plot_trajectories(df, env)
-
-        """
-        TOC -- 081125 3:37PM
-        How is this working? It looks like I am moving the file while the rendering is 
-        still writing to it. 
-        """
-        if config["visuals"]["store_video"]:
-            # change the name of the video file to include the episode
-            episode_video_file_path = expand_path(
-                f"episode-{episode}-video.{config['visuals']['video_file_extension']}",
-                new_run_folder,
-            )
-            logger.debug(f"episode video path {episode_video_file_path}")
-            shutil.move(video_file_path, episode_video_file_path)
-
-    logger.info("all episodes complete")
+    logger.info("trajectories complete")

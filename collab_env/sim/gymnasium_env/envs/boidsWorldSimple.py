@@ -35,7 +35,10 @@ class BoidsWorldSimpleEnv(gym.Env):
         agent_variance_init_velocity=0.2,
         agent_init_range_low=0.1,
         agent_init_range_high=0.9,
-        height_init_max=40,
+        agent_height_range_low=0.0,
+        agent_height_range_high=1.0,
+        agent_height_init_min=0,
+        agent_height_init_max=1000,
         target_init_range_low=0.1,
         target_init_range_high=0.9,
         target_height_init_max=40,
@@ -91,7 +94,10 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.agent_variance_init_velocity = agent_variance_init_velocity
         self.agent_init_range_low = agent_init_range_low
         self.agent_init_range_high = agent_init_range_high
-        self.agent_height_init_max = height_init_max
+        self.agent_height_range_low = agent_height_range_low
+        self.agent_height_range_high = agent_height_range_high
+        self.agent_height_init_min = agent_height_init_min
+        self.agent_height_init_max = agent_height_init_max
         self.target_init_range_low = target_init_range_low
         self.target_init_range_high = target_init_range_high
         self.target_height_init_max = target_height_init_max
@@ -625,10 +631,18 @@ class BoidsWorldSimpleEnv(gym.Env):
                                 high=self.agent_init_range_high * self.box_size,
                             ),
                             np.random.uniform(
-                                low=self.agent_init_range_low
-                                * self.agent_height_init_max,
-                                high=self.agent_init_range_high
-                                * self.agent_height_init_max,
+                                low=self.agent_height_range_low
+                                * (
+                                    self.agent_height_init_max
+                                    - self.agent_height_init_min
+                                )
+                                + self.agent_height_init_min,
+                                high=self.agent_height_range_high
+                                * (
+                                    self.agent_height_init_max
+                                    - self.agent_height_init_min
+                                )
+                                + self.agent_height_init_min,
                             ),
                             np.random.uniform(
                                 low=self.agent_init_range_low * self.box_size,
@@ -776,9 +790,18 @@ class BoidsWorldSimpleEnv(gym.Env):
         # We need the following line to seed self.np_random
         super().reset(seed=seed)
 
-        # TOC -- 080825 11:12AM
+        """ 
+        TOC -- 080825 11:12AM
         # The only option we have at the moment is to show the lines -- this design needs to change
+        
+        TOC -- 081325 8:01AM 
+        Need to be able to run the animation to display the specified trajectories. So this option should
+        be a dictionary with an option to either show the tracks or animate the given trajectories.  
+        """
+
         if options is not None:
+            # turn the video off when we are just showing the visualizer to grab the trajectory figure.
+            self.store_video = False
             self.show_trajectory_lines = True
             self.agent_trajectories = options
 

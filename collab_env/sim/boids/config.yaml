@@ -1,14 +1,14 @@
 
 simulator:
   walking: False
-  num_agents: 10
+  num_agents: 20
   num_targets: 1
   num_ground_targets: 1
   submesh_target: True
   moving_targets: False
   num_episodes: 1
-  num_frames: 1000
-  target_creation_time: 100 # min is 1, which creates the target at the beginning of the episode.
+  num_frames: 100
+  target_creation_time: 30 # min is 1, which creates the target at the beginning of the episode.
   show_box: False
   # run_main_folder: "collab_env/sim/runs"
   run_main_folder: "sim-output"
@@ -17,7 +17,7 @@ simulator:
 
 
 visuals:
-  store_video: False
+  store_video: True
   show_visualizer: True
   width: 1920
   height: 1280
@@ -27,12 +27,12 @@ visuals:
   agent_shape: 'sphere'
   agent_color: [0, 1, 0]
   agent_scale: 5.0
-  target_scale: 8.0
+  target_scale: 0.5
 
 tracks:
   color_by_time: True
   number_of_color_groups: 200
-  track_color_rate: 3
+  track_color_rate: 1
 
 
 environment:
@@ -54,7 +54,7 @@ agent:
   alignment_weight: 1.0
   cohesion_weight: 0.5
   ground_weight: 0.0
-  target_weight: [1.0]
+  target_weight: [0.1]
   max_speed: 1.0
   min_speed: 0.1
   max_force: 0.1
@@ -62,17 +62,20 @@ agent:
   variance_init_velocity: 0.5
   init_range_low: 0.4
   init_range_high: 0.6
-  height_init_max: 50
+  height_range_low: 0.0
+  height_range_high: 1.0
+  height_init_min: 200
+  height_init_max: 400
   random_walk: False
 
 meshes:
     # mesh_scene: ''
     # scene_angle: [0.0, 0.0, 0.0]
-    # mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
-    # scene_angle: [-90.0, 0.0, 0.0]
+    mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
+    scene_angle: [-90.0, 0.0, 0.0]
     #mesh_scene: 'meshes/labeled_meshes/mesh.ply'
-    mesh_scene: 'meshes/labeled_meshes/query-tree_top-cluster.ply'
-    scene_angle: [0.0, 0.0, 0.0]
+    #mesh_scene: 'meshes/labeled_meshes/query-tree_top-cluster.ply'
+    #scene_angle: [0.0, 0.0, 0.0]
     # mesh_scene: 'meshes/query-tree.ply'
     # scene_angle: [-90.0, 0.0, 0.0]
     #scene_angle: [0.0, 0.0, 0.0]
@@ -83,8 +86,8 @@ meshes:
 
 files:
     output_folder_prefix: 'boids_sim_runs' # which of these am I using?
-    trajectory_file:  'episode-0-completed-20250806-151621.parquet'
-    trajectory_folder: 'sim-output/boids_sim_run-started-20250806-151619'
+    trajectory_file:  'episode-0-completed-20250813-100353.parquet'
+    trajectory_folder: 'sim-output/boids_sim_run-started-20250813-100324'
 
 logging:
   logfile_prefix: 'logfile'

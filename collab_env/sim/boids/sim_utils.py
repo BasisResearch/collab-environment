@@ -96,6 +96,7 @@ def test_add_obs():
     obs["agent_vel"] = [[10, 20, 30]]
     obs["target_loc"] = [[1000, 2000, 3000]]
     obs["distances_to_targets"] = [[100.0]]
+    obs["target_closest_points"] = [[100.0, 200.0, 300.0]]
     df = pd.DataFrame(columns=pandas_columns)
     df = add_obs_to_df(df, obs, 1)
     print(df)
@@ -182,6 +183,74 @@ def get_submesh_indices_from_ply(file_path):
             file.read(2)
 
     return keep_vertices
+
+
+def plot_trajectories(df, env):
+    # get the
+    num_time_steps = df["time"].max()
+    num_agents = df.loc[df["type"] == "agent"]["id"].max()
+    agent_trajectories = []  # = np.zeros((num_time_steps+1, num_agents, 3))
+    for i in range(num_agents):
+        trajectory = []
+        """
+        TOC -- 080825 11:58 AM
+        Fix this. I stop at -1 because I am apparently missing a time step.
+
+        TOC -- 081125 2:30PM
+        I think this got fixed.  
+        """
+        for t in range(num_time_steps):
+            temp = df.loc[
+                (df["type"] == "agent") & (df["time"] == t) & (df["id"] == (i + 1))
+            ]
+            trajectory.append(temp[["x", "y", "z"]].to_numpy()[0])
+        agent_trajectories.append(trajectory)
+
+    agent_trajectories = np.array(agent_trajectories)
+
+    #
+    # TOC -- 080825 9:56AM
+    # Call reset with options set to plot the trajectories. This is a horrible design
+    # that needs to be changed. I am doing this now to get a figure for the paper.
+    # Later we will separate the rendering from the Gymnasium environment and be able
+    # to call the renderer directly. Gymnasium has some restrictions because the
+    # environment is in a wrapper -- need to understand wrappers better.
+    #
+
+    _, _ = env.reset(options=agent_trajectories)
+    while True:
+        env.step(np.zeros((num_agents, 3)))
+
+
+# def interpolate_color(start_color, end_color, steps):
+#     """Interpolate between two RGB colors."""
+#     # Number of steps for each transition
+#     steps = 50
+#
+#     # Define colors
+#     blue = (0, 0, 1.0)
+#     cyan = (0, 1.0, 1.0)
+#     green = (0, 1.0, 0)
+#     yellow = (1.0, 1.0, 0)
+#     red = (1.0, 0, 0)
+#     # Generate the color list
+#     color_list = (
+#             interpolate_color(blue, cyan, steps) +
+#             interpolate_color(cyan, green, steps) +
+#             interpolate_color(green, yellow, steps) +
+#             interpolate_color(yellow, red, steps)
+#     )
+#
+#     return [
+#         (
+#             int(start_color[0] + (end_color[0] - start_color[0]) * (i / steps)),
+#             int(start_color[1] + (end_color[1] - start_color[1]) * (i / steps)),
+#             int(start_color[2] + (end_color[2] - start_color[2]) * (i / steps))
+#         )
+#         for i in range(steps + 1)
+#     ]
+#
+#
 
 
 if __name__ == "__main__":
