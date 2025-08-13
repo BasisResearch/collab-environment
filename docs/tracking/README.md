@@ -10,8 +10,7 @@ This guide provides best practices and instructions for using the script effecti
 
 ## **Overview**
 
-What is the data?
--------------
+### What is the data?
 
 Our fieldwork data is stored in Google Cloud, with unprocessed data in an internal google drive. The metadata YML file for each session should contain the following fields:
 
@@ -25,10 +24,7 @@ Each entry in `data_sources` should be a dictionary with the following fields:
   - `path`: (string, required) The relative or final path to the file within the project or data repository. Based on the project structure, this should be a path to a thermal_1, thermal_2, rgb_1, or rgb_2 directory, assuming 2 camera set up.
 
 
-The data structure is 
-
-Data processing
------------------
+### Data processing
 
 `thermal_processing.py` is a tool for converting .csq files into mp4s. 
 
@@ -44,7 +40,7 @@ The alignment process involves three main steps:
 
 ---
 ## **Tips and Tricks**
-#### Best Practices for Thermal Processing
+### Best Practices for Thermal Processing
 * Selecting vmin and vmax  
     **What are vmin and vmax?**  
     These values define the minimum and maximum pixel intensities for visualizing thermal data. Often, the optimal contrast for thermal videos is not the full range of captured temperatures. If autodetection does not produce good visual results, use the preview mode (`--preview` in the command line or `preview = True` in notebook) to manually adjust these parameters.  
@@ -104,14 +100,13 @@ python alignment_gui.py \
     --skip_translation
 ```
 
-## Inference
-Downloading Model Weights and running inference
-=============================================
+## Inference (object detection)
+### Downloading Model Weights and running inference
 
 This section explains how to download training images from the cloud and train various models (YOLO, RF-DETR) using either the Roboflow API or local scripts. This section is useful if you want to fine-tune a model more. 
 
-Downloading Training Images or weights
---------------------------------------
+### Downloading Training Images or weights
+
 To access training images please download the zip file from the roboflow_model bucket in the google cloud. 
 The bucket should contain a .pt file containing the model weights (yolo11_weights) for an rf-detr model and a zip file containing the images, labels, and annotations in YOLO v7 PyTorch format, as well as in the COCO format.
 
@@ -140,17 +135,17 @@ The bucket should contain a .pt file containing the model weights (yolo11_weight
    Ensure the extracted dataset is organized in the required format (e.g., YOLO or COCO) for training.
 
    If you want to use the pretrained weights, save the .pt file locally to be called in:
-```python
-checkpoint_path = LOCAL_DOWNLOAD_DIR / "yolo11_weights.pt"  # Update with your model path
+    ```python
+    checkpoint_path = LOCAL_DOWNLOAD_DIR / "yolo11_weights.pt"  # Update with your model path
 
-infer_with_yolo(
-    video_path=thermal_video_path,
-    model_path=checkpoint_path,
-    output_csv_path=detect_csv
-)
-```
+    infer_with_yolo(
+        video_path=thermal_video_path,
+        model_path=checkpoint_path,
+        output_csv_path=detect_csv
+    )
+    ```
 
-## Tracking
+### Tracking
 Once the animals are detected via the inference step, we recommend checking the bounding boxes before feeding them to the tracker. 
 
 We use [Ultralytics for object tracking ](https://docs.ultralytics.com/modes/track/). 

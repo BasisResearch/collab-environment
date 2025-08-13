@@ -14,7 +14,7 @@ from .session_manager import SessionManager, SessionInfo
 from .file_viewers import FileContentManager
 
 # Enable Panel extensions
-pn.extension("tabulator")
+pn.extension("tabulator", "vtk")
 
 # No custom CSS - using only Panel widgets
 
@@ -141,28 +141,24 @@ class DataDashboard(param.Parameterized):
 
         self.status_pane = pn.pane.HTML("<p>Ready</p>", width=800, height=30)
 
-        # Loading indicator as a clean, modern modal
-        self.loading_message = pn.pane.HTML("")
-        self.loading_modal = pn.Column(
-            pn.indicators.LoadingSpinner(
-                value=True,
-                size=80,
-                color="primary",
-                align="center"
-            ),
-            self.loading_message,
-            margin=(40, 20),
-            width=300,
-            height=150,
-            styles={
-                "background": "rgba(255, 255, 255, 0.95)",
-                "border-radius": "16px",
-                "padding": "40px 20px",
-                "box-shadow": "0 12px 40px rgba(0, 0, 0, 0.15), 0 4px 16px rgba(0, 0, 0, 0.1)",
-                "text-align": "center",
-                "backdrop-filter": "blur(10px)"
-            },
-            visible=False
+        # Loading indicator as a proper overlay modal
+        self.loading_modal = pn.pane.HTML(
+            "",
+            visible=False,
+            sizing_mode="stretch_both"
+        )
+        
+        # Single reusable VTK pane - defer creation until needed
+        # Panel VTK pane requires a valid render window, can't be created with None
+        self.vtk_pane = None
+        logger.info("🔨 VTK pane creation deferred until first PLY file is loaded")
+        
+        # Container that holds the VTK pane (starts empty, VTK pane added on demand)
+        self.persistent_vtk_container = pn.Column(
+            width=800,
+            height=0,  # Start collapsed
+            sizing_mode="fixed",
+            styles={"display": "none"}
         )
         
         # Modal dialog buttons (will be created in create_layout)
@@ -176,6 +172,9 @@ class DataDashboard(param.Parameterized):
         # Cache management buttons
         self.clear_cache_button = pn.widgets.Button(name="Clear Cache", width=100)
         self.cache_info_pane = pn.pane.HTML("", width=300)
+        
+        # PLY viewer state
+        self.current_ply_viewer = None
 
         # Wire up callbacks
         self.session_select.param.watch(self._on_session_change, "value")
@@ -227,10 +226,15 @@ class DataDashboard(param.Parameterized):
             self.file_viewer.object = "<p>No session selected</p>"
             self.file_name_header.object = "<h3>No session selected</h3>"
             self.selected_file = ""
+            # Clean up any existing PLY viewer when no session selected
+            self._cleanup_ply_viewer()
             self._update_file_management_buttons()
             return
 
         try:
+            # Clean up any existing PLY viewer when switching to a different session
+            self._cleanup_ply_viewer()
+            
             self._show_loading(f"Loading session: {session_name}")
             session = self.session_manager.load_session_files(session_name)
 
@@ -280,6 +284,9 @@ class DataDashboard(param.Parameterized):
 
     def _on_bucket_type_change(self, event):
         """Handle bucket type toggle change."""
+        # Clean up any existing PLY viewer when switching bucket types
+        self._cleanup_ply_viewer()
+        
         # Ensure we always have a valid string value
         self.current_bucket_type = event.new or "curated"
         if self.selected_session:
@@ -494,13 +501,40 @@ class DataDashboard(param.Parameterized):
         </div>
         """
 
+    def _cleanup_ply_viewer(self):
+        """Hide the reusable VTK container but keep VTK pane for reuse."""
+        if hasattr(self, 'persistent_vtk_container'):
+            logger.info("🙈 HIDING reusable VTK container (keeping VTK pane for reuse)")
+            # Just collapse and hide the container - DON'T clear it or reset vtk_pane
+            self.persistent_vtk_container.height = 0
+            self.persistent_vtk_container.styles = {"display": "none"}
+            
+            # Keep the VTK pane alive for reuse - don't set to None
+            if hasattr(self, 'vtk_pane') and self.vtk_pane is not None:
+                logger.info("✅ VTK pane preserved for reuse")
+        else:
+            logger.debug("🙈 VTK container not found")
+
+
+    def _update_view_container(self):
+        """Update visibility of persistent VTK container."""
+        # No need to change container objects since persistent_vtk_container is always there
+        # Just control its visibility
+        logger.info("📋 LAYOUT: Using persistent VTK container approach - no container changes needed")
+
     def _update_file_viewer(self, render_info: Dict[str, Any]):
         """Update the file viewer based on render info."""
+        logger.info(f"🔍 UPDATING file viewer for type: {render_info.get('type', 'unknown')}")
+        # ALWAYS clean up any existing PLY viewer first, regardless of file type
+        self._cleanup_ply_viewer()
+        
         if render_info["type"] == "text":
             # Text content with syntax highlighting
             content = render_info["content"]
             # language = render_info.get("language", "text")  # Available for future syntax highlighting
             path_info = self._get_file_path_info(render_info)
+            
+            self._update_view_container()
 
             # Display text content with basic syntax highlighting
             self.file_viewer.object = f"""
@@ -516,6 +550,8 @@ class DataDashboard(param.Parameterized):
             stats = render_info["stats"]
             html_table = render_info["html"]
             path_info = self._get_file_path_info(render_info)
+            
+            self._update_view_container()
 
             header = f"""
             <div>
@@ -538,6 +574,8 @@ class DataDashboard(param.Parameterized):
             size_mb = render_info["size_mb"]
             path_info = self._get_file_path_info(render_info)
             codec_info = render_info.get("codec_info", {})
+            
+            self._update_view_container()
             
             # Build codec information display
             codec_name = codec_info.get("codec_name", "unknown")
@@ -612,8 +650,156 @@ class DataDashboard(param.Parameterized):
                 </div>
                 """
 
+        elif render_info["type"] == "ply_3d":
+            # PLY 3D mesh visualization
+            path_info = self._get_file_path_info(render_info)
+            stats = render_info.get("stats", {})
+            
+            # Build statistics display based on data type
+            is_point_cloud = stats.get("is_point_cloud", False)
+            data_type = "Point Cloud" if is_point_cloud else "3D Mesh"
+            stats_html = f"<h4>{data_type} Statistics</h4><ul>"
+            
+            if stats.get("points"):
+                stats_html += f"<li><strong>Points:</strong> {stats['points']:,}</li>"
+            if stats.get("cells") and not is_point_cloud:
+                stats_html += f"<li><strong>Cells:</strong> {stats['cells']:,}</li>"
+            if stats.get("area"):
+                stats_html += f"<li><strong>Surface Area:</strong> {stats['area']:.2f}</li>"
+            if stats.get("volume"):
+                stats_html += f"<li><strong>Volume:</strong> {stats['volume']:.2f}</li>"
+            if stats.get("bounds"):
+                bounds = stats["bounds"]
+                stats_html += f"<li><strong>Bounds:</strong> X: [{bounds[0]:.2f}, {bounds[1]:.2f}], Y: [{bounds[2]:.2f}, {bounds[3]:.2f}], Z: [{bounds[4]:.2f}, {bounds[5]:.2f}]</li>"
+            stats_html += "</ul>"
+            
+            # Get the render window to update the persistent VTK pane
+            render_window = render_info.get("render_window")
+            
+            if render_window:
+                info_section = f"""
+                <div>
+                    {path_info}
+                    <h4>PLY {data_type} File</h4>
+                    {stats_html}
+                    <p><em><strong>Interactive 3D viewer</strong></em></p>
+                    <p>🎮 Use mouse to rotate, zoom, and pan</p>
+                </div>
+                """
+                self.file_viewer.object = info_section
+                
+                # Create or update the reusable VTK pane with new render window
+                logger.info(f"🔄 Creating/updating VTK pane with new render window")
+                
+                try:
+                    # Create VTK pane on demand if it doesn't exist
+                    if self.vtk_pane is None:
+                        logger.info("🔨 Creating VTK pane ONCE with render window")
+                        self.vtk_pane = pn.pane.VTK(
+                            render_window,
+                            width=800,
+                            height=600,
+                            sizing_mode="fixed"
+                        )
+                        
+                        # Add to the container
+                        self.persistent_vtk_container.clear()
+                        self.persistent_vtk_container.append(self.vtk_pane)
+                        logger.info("✅ VTK pane created ONCE and added to container")
+                        
+                        # The camera should already be properly set by PyVista, but ensure it's visible
+                        logger.info("📷 Initial camera view set by PyVista")
+                    else:
+                        # Update existing VTK pane with new render window
+                        logger.info("🔄 REUSING existing VTK pane, updating render window")
+                        self.vtk_pane.object = render_window
+                        
+                        # Reset camera view to properly frame the new data
+                        logger.info("📷 Resetting camera view for new PLY data")
+                        try:
+                            # Get mesh bounds and center for better camera positioning
+                            mesh_bounds = render_info.get("mesh_bounds")
+                            mesh_center = render_info.get("mesh_center")
+                            
+                            # Access the render window from the VTK pane and reset camera
+                            ren_win = self.vtk_pane.object
+                            if ren_win and hasattr(ren_win, 'GetRenderers'):
+                                renderers = ren_win.GetRenderers()
+                                if renderers.GetNumberOfItems() > 0:
+                                    renderer = renderers.GetFirstRenderer()
+                                    if renderer:
+                                        # Reset camera to fit the bounds
+                                        renderer.ResetCamera()
+                                        
+                                        # If we have mesh center, position camera for better iso view
+                                        if mesh_center is not None and mesh_bounds is not None:
+                                            camera = renderer.GetActiveCamera()
+                                            # Calculate a good distance from the bounds
+                                            bounds_range = max(
+                                                mesh_bounds[1] - mesh_bounds[0],  # x range
+                                                mesh_bounds[3] - mesh_bounds[2],  # y range  
+                                                mesh_bounds[5] - mesh_bounds[4]   # z range
+                                            )
+                                            distance = bounds_range * 2.0  # Good viewing distance
+                                            
+                                            # Set isometric view position
+                                            camera.SetPosition(
+                                                mesh_center[0] + distance,
+                                                mesh_center[1] + distance, 
+                                                mesh_center[2] + distance
+                                            )
+                                            camera.SetFocalPoint(mesh_center[0], mesh_center[1], mesh_center[2])
+                                            camera.SetViewUp(0, 0, 1)  # Z-up
+                                            renderer.ResetCameraClippingRange()
+                                        
+                                        ren_win.Render()
+                                        logger.info("✅ Camera view reset with mesh bounds successfully")
+                        except Exception as camera_error:
+                            logger.warning(f"⚠️ Could not reset camera view: {camera_error}")
+                    
+                    # Show and expand the VTK container 
+                    logger.info(f"📦 EXPANDING VTK container")
+                    self.persistent_vtk_container.height = 600
+                    self.persistent_vtk_container.margin = 5
+                    self.persistent_vtk_container.styles = {"display": "block"}
+                    
+                except Exception as vtk_error:
+                    logger.error(f"🚨 VTK pane creation/update failed: {vtk_error}")
+                    # Fall back to error section if VTK pane creation fails
+                    error_section = f"""
+                    <div>
+                        {path_info}
+                        <h4>PLY {data_type} File</h4>
+                        {stats_html}
+                        <p style='color: red;'><strong>❌ VTK viewer creation failed</strong></p>
+                        <p>Error: {vtk_error}</p>
+                    </div>
+                    """
+                    self.file_viewer.object = error_section
+                
+            else:
+                # Fallback if render window failed
+                error_section = f"""
+                <div>
+                    {path_info}
+                    <h4>PLY 3D Mesh File</h4>
+                    {stats_html}
+                    <p style='color: red;'><strong>❌ Failed to create 3D viewer</strong></p>
+                    <p>The PLY file was loaded but the 3D visualization could not be created.</p>
+                </div>
+                """
+                self.file_viewer.object = error_section
+                # Make sure VTK container is collapsed but keep VTK pane for reuse
+                if hasattr(self, 'persistent_vtk_container'):
+                    self.persistent_vtk_container.height = 0
+                    self.persistent_vtk_container.styles = {"display": "none"}
+                # Keep VTK pane alive for reuse
+
         elif render_info["type"] == "error":
             path_info = self._get_file_path_info(render_info)
+            
+            self._update_view_container()
+            
             self.file_viewer.object = f"""
             <div>
                 {path_info}
@@ -625,6 +811,9 @@ class DataDashboard(param.Parameterized):
 
         elif render_info["type"] == "unknown":
             path_info = self._get_file_path_info(render_info)
+            
+            self._update_view_container()
+            
             self.file_viewer.object = f"""
             <div>
                 {path_info}
@@ -840,13 +1029,62 @@ class DataDashboard(param.Parameterized):
 
     def _show_loading(self, message: str = "Loading..."):
         """Show the blocking loading modal."""
-        self.loading_message.object = f"<p style='margin-top: 20px; color: #555; font-size: 16px; font-weight: 500; letter-spacing: 0.5px;'>{message}</p>"
+        # Create a full-screen overlay modal
+        modal_html = f"""
+        <div style='
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 10000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        '>
+            <div style='
+                background: rgba(255, 255, 255, 0.95);
+                padding: 40px 30px;
+                border-radius: 16px;
+                box-shadow: 0 12px 40px rgba(0, 0, 0, 0.15);
+                backdrop-filter: blur(10px);
+                text-align: center;
+                min-width: 300px;
+            '>
+                <div style='
+                    width: 60px;
+                    height: 60px;
+                    border: 4px solid #e3e3e3;
+                    border-top: 4px solid #3498db;
+                    border-radius: 50%;
+                    animation: spin 2s linear infinite;
+                    margin: 0 auto 20px auto;
+                '></div>
+                <p style='
+                    margin: 0;
+                    color: #555;
+                    font-size: 16px;
+                    font-weight: 500;
+                    letter-spacing: 0.5px;
+                '>{message}</p>
+            </div>
+        </div>
+        <style>
+        @keyframes spin {{
+            0% {{ transform: rotate(0deg); }}
+            100% {{ transform: rotate(360deg); }}
+        }}
+        </style>
+        """
+        self.loading_modal.object = modal_html
         self.loading_modal.visible = True
         # Also show in status
         self.status_pane.object = f"<p>🔄 {message}</p>"
 
     def _hide_loading(self):
         """Hide the blocking loading modal."""
+        self.loading_modal.object = ""
         self.loading_modal.visible = False
     
     def _convert_video(self, _):
@@ -1111,15 +1349,22 @@ class DataDashboard(param.Parameterized):
         )
 
         # Video conversion controls (only video-specific buttons)
-        video_controls = pn.Row(
+        self.video_controls = pn.Row(
             self.convert_video_button,
             margin=(10, 0)
         )
         
 
         # Main content area with file name header
+        # Create a container for the view content that can be dynamically updated
+        self.view_container = pn.Column(
+            self.file_viewer, 
+            self.persistent_vtk_container,  # Always present, but collapsed when not needed
+            self.video_controls
+        )
+        
         viewer_tabs = pn.Tabs(
-            ("View", pn.Column(self.file_viewer, video_controls)),
+            ("View", self.view_container),
             (
                 "Edit",
                 pn.Column(

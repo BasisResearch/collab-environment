@@ -41,6 +41,10 @@ class FileViewerRegistry:
         for ext in [".mp4", ".avi", ".mov", ".mkv"]:
             self.viewers[ext] = video_viewer
 
+        # PLY 3D mesh viewer
+        ply_viewer = PLYViewer()
+        self.viewers[".ply"] = ply_viewer
+
     def get_viewer(self, file_path: str) -> Optional["BaseViewer"]:
         """Get viewer for a file based on its extension."""
         ext = Path(file_path).suffix.lower()
@@ -293,10 +297,10 @@ class VideoViewer(BaseViewer):
         elif codec_lower in well_supported:
             return True
         elif codec_lower in limited_support:
-            return "limited"
+            return False  # Treat limited support as unsupported for safety
         else:
-            # Unknown codec - return None to indicate uncertainty
-            return None
+            # Unknown codec - return False to indicate uncertainty
+            return False
 
     def render_view(self, content: bytes, file_path: str) -> Dict[str, Any]:
         """Render video using HTML5 video element."""
@@ -348,6 +352,133 @@ class VideoViewer(BaseViewer):
                 "type": "error",
                 "message": f"Cannot render video: {e}",
                 "size": len(content),
+            }
+
+
+class PLYViewer(BaseViewer):
+    """Viewer for PLY 3D mesh files using PyVista."""
+    
+    # Track if VTK has been used - only allow one VTK viewer per session
+    _vtk_used = False
+
+    def render_view(self, content: bytes, file_path: str) -> Dict[str, Any]:
+        """Render PLY file using PyVista and Panel's VTK integration."""
+        try:
+            import pyvista as pv
+            import panel as pn
+            import tempfile
+            import os
+            
+            # Create a temporary file to save the PLY content
+            with tempfile.NamedTemporaryFile(suffix='.ply', delete=False) as tmp_file:
+                tmp_file.write(content)
+                temp_path = tmp_file.name
+            
+            try:
+                # Load the PLY file using PyVista
+                mesh = pv.read(temp_path)
+                
+                # Check if this is a point cloud or mesh
+                is_point_cloud = mesh.n_cells == 0 or mesh.n_cells == mesh.n_points
+                has_faces = mesh.n_cells > 0 and not is_point_cloud
+                
+                # Create VTK pane that will be inserted into the persistent container
+                try:
+                    # Create PyVista plotter for Panel VTK
+                    plotter = pv.Plotter(
+                        window_size=[800, 600],
+                        off_screen=False,  # Keep on-screen for Panel VTK
+                        notebook=False     # Disable notebook mode
+                    )
+                    
+                    # Configure plotter appearance
+                    plotter.background_color = (0.95, 0.95, 0.95)  # type: ignore
+                    
+                    if is_point_cloud:
+                        # Render as points for point clouds
+                        plotter.add_mesh(
+                            mesh,  # type: ignore
+                            color='lightblue',
+                            point_size=3.0,
+                            render_points_as_spheres=True,
+                            opacity=0.8
+                        )
+                    else:
+                        # Render as mesh with edges for surfaces
+                        plotter.add_mesh(
+                            mesh,  # type: ignore
+                            color='lightblue',
+                            show_edges=True,
+                            edge_color='gray',
+                            smooth_shading=True,
+                            opacity=0.9
+                        )
+                    
+                    plotter.camera_position = 'iso'
+                    plotter.reset_camera()  # type: ignore
+                    
+                    # Store mesh bounds for camera reset in app
+                    mesh_bounds = mesh.bounds if hasattr(mesh, 'bounds') else None
+                    mesh_center = mesh.center if hasattr(mesh, 'center') else None
+                    
+                    # Return the render window instead of creating a VTK pane
+                    render_window = plotter.ren_win
+                    
+                    logger.info(f"🎮 CREATED RENDER WINDOW for reusable VTK pane: {file_path}")
+                    
+                except Exception as vtk_error:
+                    logger.error(f"VTK render window creation failed: {vtk_error}")
+                    render_window = None
+                
+                # Get mesh/point cloud statistics
+                stats = {
+                    "points": mesh.n_points,
+                    "cells": mesh.n_cells,
+                    "bounds": list(mesh.bounds) if hasattr(mesh, 'bounds') else None,
+                    "is_point_cloud": is_point_cloud,
+                }
+                
+                # Only compute surface properties for meshes with faces
+                if has_faces:
+                    try:
+                        stats["area"] = float(mesh.area)
+                        stats["volume"] = float(mesh.volume)
+                    except Exception as e:
+                        logger.debug(f"Could not compute mesh properties: {e}")
+                        stats["area"] = None
+                        stats["volume"] = None
+                else:
+                    stats["area"] = None
+                    stats["volume"] = None
+                
+                return {
+                    "type": "ply_3d",
+                    "render_window": render_window,
+                    "stats": stats,
+                    "mesh_bounds": mesh_bounds,
+                    "mesh_center": mesh_center,
+                    "success": True,
+                    "error": None
+                }
+                
+            finally:
+                # Clean up temporary file
+                try:
+                    os.unlink(temp_path)
+                except OSError:
+                    pass
+                    
+        except ImportError as e:
+            return {
+                "type": "error",
+                "error": f"PyVista not available: {e}",
+                "success": False
+            }
+        except Exception as e:
+            return {
+                "type": "error", 
+                "error": f"Failed to render PLY file: {e}",
+                "success": False
             }
 
 

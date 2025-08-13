@@ -9,7 +9,7 @@ import panel as pn
 from collab_env.dashboard.app import create_app
 
 # Configure Panel
-pn.extension("tabulator")
+pn.extension("tabulator", "vtk")
 
 # Create the app
 app = create_app()
