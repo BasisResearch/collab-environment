@@ -683,7 +683,14 @@ class DataDashboard(param.Parameterized):
                     <h4>PLY {data_type} File</h4>
                     {stats_html}
                     <p><em><strong>Interactive 3D viewer</strong></em></p>
-                    <p>🎮 Use mouse to rotate, zoom, and pan</p>
+                    <p>🎮 Use mouse to rotate, zoom, and pan. Keyboard shortcuts:
+                    <ul>
+                        <li>s: set representation of all actors to surface</li>
+                        <li>w: set representation of all actors to wireframe</li>
+                        <li>v: set representation of all actors to vertex</li>
+                        <li>r: center the actors and move the camera so that all actors are visible</li>
+                    </ul>
+                    </p>
                 </div>
                 """
                 self.file_viewer.object = info_section
@@ -699,7 +706,8 @@ class DataDashboard(param.Parameterized):
                             render_window,
                             width=800,
                             height=600,
-                            sizing_mode="fixed"
+                            sizing_mode="fixed",
+                            enable_keybindings=True, orientation_widget=True,
                         )
                         
                         # Add to the container
