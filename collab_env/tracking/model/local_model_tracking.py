@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Optional
 
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -91,7 +90,7 @@ def track_objects(csv_path: Path) -> dict:
     return track_history
 
 
-def visualize_detections_from_video(
+def get_detections_from_video(
     csv_path: Path,
     video_path: Path,
     output_video_path: Path,
@@ -189,41 +188,6 @@ def visualize_detections_from_video(
     print(f"✅ Annotated video saved to: {output_video_path}")
     if output_frames_dir is not None:
         print(f"✅ Annotated frames saved to: {output_frames_dir}")
-
-
-def overlay_tracks_on_video(
-    csv_path: Path, frame_dir: Path, output_video: Path, fps: int = 5
-):
-    df = pd.read_csv(csv_path)
-    df["track_id"] = df["track_id"].astype(int)
-
-    frame_paths = sorted(frame_dir.glob("*.jpg"))
-    if not frame_paths:
-        raise FileNotFoundError(f"No frames found in {frame_dir}")
-
-    # Get frame size
-    sample_frame = cv2.imread(str(frame_paths[0]))
-    h, w = sample_frame.shape[:2]
-    writer = cv2.VideoWriter(
-        str(output_video),
-        cv2.VideoWriter_fourcc(*"mp4v"),  # type: ignore
-        fps,
-        (w, h),
-    )
-
-    for frame_path in frame_paths:
-        frame_idx = int(frame_path.stem.split("_")[-1])
-        frame = cv2.imread(str(frame_path))
-
-        frame_tracks = df[df["frame"] == frame_idx]
-        for _, row in frame_tracks.iterrows():
-            _, x, y = int(row["track_id"]), int(row["x"]), int(row["y"])
-            cv2.circle(frame, (x, y), 5, (255, 255, 0), -1)
-
-        writer.write(frame)
-
-    writer.release()
-    print(f"✅ Saved annotated video to: {output_video}")
 
 
 def run_tracking(
@@ -400,73 +364,61 @@ def output_tracked_bboxes_csv(
     print(f"✅ Tracked bounding box CSV saved to: {output_csv}")
 
 
-def plot_tracks_at_frame_bbox_from_video(
-    tracked_bboxes_csv: Path,
+def generate_thermal_masks_from_bboxes(
+    bbox_csv: Path,
     video_path: Path,
-    output_image: Path,
-    frame_number: int = 1000,
-    max_frame: int = 1000,
+    output_mask_dir: Path,
+    temp_threshold: int = 128,  # adjust based on your thermal encoding
+    mask_value: int = 255,
 ):
     """
-    Plot all track traces up to max_frame on top of a given frame extracted from a video.
+    Generate binary masks for thermal video frames, masking pixels within each bounding box
+    that are warmer than temp_threshold.
+
     Args:
-        tracked_bboxes_csv: CSV with columns track_id, frame, x1, y1, x2, y2
-        video_path: Path to the video file
-        output_image: Path to save the output image
-        frame_number: Frame number to extract as background
-        max_frame: Only show motion up to this frame
+        bbox_csv (Path): CSV file with columns ['frame', 'x1', 'y1', 'x2', 'y2'].
+        video_path (Path): Path to the thermal video file.
+        output_mask_dir (Path): Directory to save mask images.
+        temp_threshold (int): Pixel intensity threshold for "warm" pixels.
+        mask_value (int): Value to assign to mask pixels.
     """
-    # Read tracks
-    df = pd.read_csv(tracked_bboxes_csv)
-    df = df[df["frame"] <= max_frame]
-    df["track_id"] = df["track_id"].astype(int)
-    df["x_center"] = (df["x1"] + df["x2"]) / 2
-    df["y_center"] = (df["y1"] + df["y2"]) / 2
 
-    # Extract frame from video
+    output_mask_dir.mkdir(parents=True, exist_ok=True)
+    df = pd.read_csv(bbox_csv)
+    df["frame"] = df["frame"].astype(int)
+
     cap = cv2.VideoCapture(str(video_path))
-    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
-    ret, img = cap.read()
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    for frame_idx in range(total_frames):
+        ret, frame = cap.read()
+        if not ret:
+            print(f"⚠️ Unable to read frame {frame_idx} from {video_path}")
+            continue
+
+        # Convert to grayscale if needed
+        if len(frame.shape) == 3:
+            frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        else:
+            frame_gray = frame
+
+        mask = np.zeros(frame_gray.shape, dtype=np.uint8)
+
+        # Get all bboxes for this frame
+        group = df[df["frame"] == frame_idx]
+        for _, row in group.iterrows():
+            x1, y1, x2, y2 = (
+                int(row["x1"]),
+                int(row["y1"]),
+                int(row["x2"]),
+                int(row["y2"]),
+            )
+            roi = frame_gray[y1:y2, x1:x2]
+            roi_mask = (roi > temp_threshold).astype(np.uint8) * mask_value
+            mask[y1:y2, x1:x2] = np.maximum(mask[y1:y2, x1:x2], roi_mask)
+
+        mask_path = output_mask_dir / f"frame_{frame_idx:06d}.jpg"
+        cv2.imwrite(str(mask_path), mask)
+
     cap.release()
-    if not ret:
-        raise ValueError(f"Could not read frame {frame_number} from {video_path}")
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-    fig, ax = plt.subplots(figsize=(12, 8))
-    ax.imshow(img)
-
-    track_ids = df["track_id"].unique()
-    colors = plt.cm.get_cmap("tab20", len(track_ids))
-
-    for i, tid in enumerate(track_ids):
-        track = df[df["track_id"] == tid].sort_values("frame")
-        ax.plot(
-            track["x_center"],
-            track["y_center"],
-            "-",
-            color=colors(i),
-            linewidth=2,
-            alpha=0.8,
-        )
-        if not track.empty:
-            ax.plot(
-                track["x_center"].iloc[-1],
-                track["y_center"].iloc[-1],
-                "o",
-                color=colors(i),
-                markersize=8,
-            )
-            ax.text(
-                track["x_center"].iloc[-1] + 5,
-                track["y_center"].iloc[-1],
-                f"ID {tid}",
-                color=colors(i),
-                fontsize=10,
-            )
-
-    ax.set_title(f"Tracks up to frame {max_frame}")
-    ax.axis("off")
-    plt.tight_layout()
-    plt.savefig(output_image, dpi=200)
-    plt.close(fig)
-    print(f"✅ Track plot saved to: {output_image}")
+    print(f"✅ Thermal masks saved to: {output_mask_dir}")

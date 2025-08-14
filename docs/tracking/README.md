@@ -25,7 +25,30 @@ Each entry in `data_sources` should be a dictionary with the following fields:
   - `path`: (string, required) The relative or final path to the file within the project or data repository. Based on the project structure, this should be a path to a thermal_1, thermal_2, rgb_1, or rgb_2 directory, assuming 2 camera set up.
 
 
-The data structure is 
+The data structure is as follows: 
+Unique session name: `YYYY_MM_DD-session_0001`
+
+```text
+YYYY_MM_DD-session_0001/             # Unique session folder
+    ├── thermal_1/                   # Thermal camera 1 data
+    │   ├── cameraInfoTime.csq
+    │   ├── cameraInfoTime_vmin-vmax.mp4 # if using preprocessed
+    │   
+    ├── thermal_2/                   # Thermal camera 2 data
+    │   ├── cameraInfoTime.csq
+    │   ├── cameraInfoTime_vmin-vmax.mp4
+    │ 
+    ├── rgb_cam_1/                   # RGB camera 1 data
+    │   └── cameraSerial.mp4
+    ├── rgb_cam_2/                   # RGB camera 2 data
+    │   └── cameraSerial.mp4
+    └── Metadata.yaml                # Session metadata and notes, described above
+```
+
+- `thermal_1` and `thermal_2` contain raw `.csq` files, and will store the processed `.mp4` videos. One may be empty or missing if only one camera is useable.
+- `rgb_cam_1` and `rgb_cam_2` store RGB video files from each camera. One may be empty or missing if only one camera is useable.
+- `Metadata.yaml` includes session notes, project tags, and metadata for all sources, described above.
+
 
 Data processing
 -----------------
@@ -154,3 +177,4 @@ infer_with_yolo(
 Once the animals are detected via the inference step, we recommend checking the bounding boxes before feeding them to the tracker. 
 
 We use [Ultralytics for object tracking ](https://docs.ultralytics.com/modes/track/). 
+

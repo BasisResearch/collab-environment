@@ -1,9 +1,11 @@
+import gc
+
+import matplotlib.pyplot as plt
+import numpy as np
 import torch
 import torch.nn.functional as functional
-import numpy as np
-import matplotlib.pyplot as plt
+
 from collab_env.gnn.utility import handle_discrete_data, v_function_2_vminushalf
-import gc
 
 
 def build_edge_index(positions, visual_range):
@@ -282,7 +284,7 @@ def run_gnn_frame(
         if "leap" in prediction_integration:
             """
             # leap frog integration
-        
+
             # v_{i+1/2} = v_{i-1/2} + a_i * delta_t
             # x_{i+1} = x_{i} + v_{i+1/2} * delta_t
             """
