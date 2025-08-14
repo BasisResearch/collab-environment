@@ -64,7 +64,7 @@ atlassian-ide-plugin.xml
 .ropeproject/
 
 # Python3 Venv Files
-.venv/
+.venv*/
 bin/
 include/
 lib/

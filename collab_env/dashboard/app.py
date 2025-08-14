@@ -579,6 +579,11 @@ class DataDashboard(param.Parameterized):
             # language = render_info.get("language", "text")  # Available for future syntax highlighting
             path_info = self._get_file_path_info(render_info)
 
+            # Hide video management buttons for text files
+            self.convert_video_button.visible = False
+            self.bbox_viewer_button.visible = False
+            self._current_bbox_csvs = []
+
             self._update_view_container()
 
             # Display text content with basic syntax highlighting
@@ -595,6 +600,11 @@ class DataDashboard(param.Parameterized):
             stats = render_info["stats"]
             html_table = render_info["html"]
             path_info = self._get_file_path_info(render_info)
+
+            # Hide video management buttons for table files
+            self.convert_video_button.visible = False
+            self.bbox_viewer_button.visible = False
+            self._current_bbox_csvs = []
 
             self._update_view_container()
 
@@ -732,6 +742,11 @@ class DataDashboard(param.Parameterized):
             # PLY 3D mesh visualization
             path_info = self._get_file_path_info(render_info)
             stats = render_info.get("stats", {})
+
+            # Hide video management buttons for PLY files
+            self.convert_video_button.visible = False
+            self.bbox_viewer_button.visible = False
+            self._current_bbox_csvs = []
 
             # Build statistics display based on data type
             is_point_cloud = stats.get("is_point_cloud", False)
@@ -905,6 +920,11 @@ class DataDashboard(param.Parameterized):
         elif render_info["type"] == "error":
             path_info = self._get_file_path_info(render_info)
 
+            # Hide video management buttons for error files
+            self.convert_video_button.visible = False
+            self.bbox_viewer_button.visible = False
+            self._current_bbox_csvs = []
+
             self._update_view_container()
 
             self.file_viewer.object = f"""
@@ -918,6 +938,11 @@ class DataDashboard(param.Parameterized):
 
         elif render_info["type"] == "unknown":
             path_info = self._get_file_path_info(render_info)
+
+            # Hide video management buttons for unknown files
+            self.convert_video_button.visible = False
+            self.bbox_viewer_button.visible = False
+            self._current_bbox_csvs = []
 
             self._update_view_container()
 
