@@ -5,6 +5,8 @@
 
 ARG UBUNTU_VERSION=22.04
 ARG NVIDIA_CUDA_VERSION=11.8.0
+# ARG NVIDIA_CUDA_VERSION=12.6.1
+#11.8.0
 
 ##################################################
 #           Get pre-built components             #
@@ -12,6 +14,15 @@ ARG NVIDIA_CUDA_VERSION=11.8.0
 
 # Get conda from official image
 FROM continuumio/miniconda3:latest as conda-source
+
+# For NVIDIA CUDA 11.8.0
+FROM ghcr.io/nerfstudio-project/nerfstudio:1.1.5 as colmap-source
+
+# # For NVIDIA CUDA 12.3.0
+# FROM colmap/colmap:20240213.23 as colmap-source
+
+## For NVIDIA CUDA 12.6.1
+# FROM colmap/colmap:20241128.1598 as colmap-source
 
 ##################################################
 #           Runtime stage                        #
@@ -53,10 +64,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends --no-install-su
     libqt5core5a \
     libqt5gui5 \
     libqt5widgets5 \
+    libimage-exiftool-perl \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy conda installation from conda-source
 COPY --from=conda-source /opt/conda/ /opt/conda
+COPY --from=colmap-source /usr/local/bin/colmap /usr/local/bin/colmap
+COPY --from=colmap-source /usr/local/lib/libcolmap* /usr/local/lib/
 
 # Copy env.yml to container
 COPY env.yml /tmp/env.yml

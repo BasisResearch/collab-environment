@@ -177,4 +177,3 @@ infer_with_yolo(
 Once the animals are detected via the inference step, we recommend checking the bounding boxes before feeding them to the tracker. 
 
 We use [Ultralytics for object tracking ](https://docs.ultralytics.com/modes/track/). 
-
