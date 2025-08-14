@@ -1652,6 +1652,23 @@ class BoidsWorldSimpleEnv(gym.Env):
         not visualizing.   
         """
         if self.mesh_scene is not None:
+            '''
+            TOC -- 081425 11:32AM
+            Change the color of the target submesh so it is discernible in the visualizer. 
+            '''
+            color = [0.0,0.0,1.0]
+            vertices = np.asarray(self.mesh_scene.vertices)
+            colors = np.asarray(self.mesh_scene.vertex_colors)
+
+            # # If no existing colors, create a default white array
+            # if len(colors) == 0:
+            #     colors = np.ones_like(vertices)
+
+            # Modify colors for specific indices
+            colors[self.submesh_vertex_indices] = color
+
+            # Update mesh vertex colors
+            self.mesh_scene.vertex_colors = open3d.utility.Vector3dVector(colors)
             self.vis.add_geometry(self.mesh_scene)
 
         # self.vis.add_geometry(self.mesh_top_corner)
