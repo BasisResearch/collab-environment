@@ -1652,12 +1652,11 @@ class BoidsWorldSimpleEnv(gym.Env):
         not visualizing.   
         """
         if self.mesh_scene is not None:
-            '''
+            """
             TOC -- 081425 11:32AM
             Change the color of the target submesh so it is discernible in the visualizer. 
-            '''
-            color = [0.0,0.0,1.0]
-            vertices = np.asarray(self.mesh_scene.vertices)
+            """
+            color = [0.0, 0.0, 1.0]
             colors = np.asarray(self.mesh_scene.vertex_colors)
 
             # # If no existing colors, create a default white array
