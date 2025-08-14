@@ -5,16 +5,17 @@ simulator:
   num_targets: 1
   num_ground_targets: 1
   submesh_target: True
+  submesh_show_points: True # put spheres on at least some of the submesh vertices
   moving_targets: False
   num_episodes: 1
-  num_frames: 2000
+  num_frames: 3000
   target_creation_time: 500 # min is 1, which creates the target at the beginning of the episode.
   show_box: False
   # run_main_folder: "collab_env/sim/runs"
   run_main_folder: "sim-output"
   run_sub_folder_prefix: "boids_sim_run"
   show_trajectories: True
-  trajectory_frame_limit: 2000
+  trajectory_frame_limit: 3000
 
 
 visuals:
@@ -67,7 +68,7 @@ agent:
   height_range_high: 1.0
   height_init_min: 200
   height_init_max: 500
-  random_walk: False
+  random_walk: True
 
 meshes:
     # mesh_scene: ''
@@ -87,8 +88,8 @@ meshes:
 
 files:
     output_folder_prefix: 'boids_sim_runs' # which of these am I using?
-    trajectory_file:  'episode-0-completed-20250813-165213.parquet'
-    trajectory_folder: 'sim-output/boids_sim_run-started-20250813-164249'
+    trajectory_file:  'episode-0-completed-20250814-084935.parquet'
+    trajectory_folder: 'sim-output/boids_sim_run-started-20250814-083533'
 
 logging:
   logfile_prefix: 'logfile'

@@ -221,8 +221,12 @@ def plot_trajectories(df, env, frame_limit=None):
     #
 
     _, _ = env.reset(options=agent_trajectories)
-    while True:
-        env.step(np.zeros((num_agents, 3)))
+    done = False
+    while not done:
+        # truncated indicates the user hit quit in the open3d visualizer
+        _, _, _, done, _ = env.step(np.zeros((num_agents, 3)))
+
+    env.close()
 
 
 # def interpolate_color(start_color, end_color, steps):

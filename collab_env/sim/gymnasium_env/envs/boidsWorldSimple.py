@@ -135,6 +135,8 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         self.time_step = 0
         self.image_count = 0
+        self.terminated = False
+        self.truncated = False
 
         """
         TOC -- 081225 3:58PM
@@ -402,7 +404,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
         Computes the distances from each agent to each vertex on the submesh
 
-        For now I am assuming there is only one target. This needs to be fixed.
+        For now, I am assuming there is only one target. This needs to be fixed.
 
         Returns:
 
@@ -836,6 +838,8 @@ class BoidsWorldSimpleEnv(gym.Env):
     def reset(self, seed=None, options=None):
         # We need the following line to seed self.np_random
         super().reset(seed=seed)
+        self.terminated = False
+        self.truncated = False
 
         """ 
         TOC -- 080825 11:12AM
@@ -1099,6 +1103,10 @@ class BoidsWorldSimpleEnv(gym.Env):
             """
             TOC -- 080325
             Hit distance should be configurable
+            
+            TOC -- 081425 8:49AM
+            Need some sort of systematic way to say a run is terminated. This one doesn't make
+            much sense, 
             """
             terminated = (
                 len(distance[distance < HIT_DISTANCE]) > 0
@@ -1125,7 +1133,12 @@ class BoidsWorldSimpleEnv(gym.Env):
         # logger.debug('step(): observation: ' + str(observation), level=1)
         # logger.debug('step(): reward: ' + str(reward), level=3)
         # logger.debug('step(): info: ' + str(info), level=4)
-        return observation, reward, terminated, False, info
+        """
+        TOC -- 081425 8:42AM
+        return self.truncated so that user can quit out of visualizer to 
+        quit the run instead of having to Ctrl-C. 
+        """
+        return observation, reward, terminated, self.truncated, info
 
     """
     TOC -- 073125 2:30PM
@@ -1377,6 +1390,12 @@ class BoidsWorldSimpleEnv(gym.Env):
     def key_callback_save_image(self, vis):
         self.save_image_to_file()
 
+    def key_callback_quit(self, vis):
+        self.truncated = True
+
+    def key_callback_reset_view(self, vis):
+        self.vis.reset_view_point()
+
     def initialize_visualizer(self):
         """
         Returns:
@@ -1403,6 +1422,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
 
         self.vis.register_key_callback(ord("P"), self.key_callback_save_image)
+        self.vis.register_key_callback(ord("Q"), self.key_callback_quit)
+        self.vis.register_key_callback(ord("R"), self.key_callback_reset_view)
 
         if self.store_video:
             #

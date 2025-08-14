@@ -273,6 +273,8 @@ if __name__ == "__main__":
             # ignore terminated for now since we are just running for a specified number of frames
             # done = terminated or truncated
             # done = True
+            if terminated or truncated:
+                break  # I hate breaks, why does Python make me do it?
 
         env.close()
 
