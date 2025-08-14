@@ -1425,13 +1425,13 @@ class DataDashboard(param.Parameterized):
         self.video_controls = pn.Row(self.convert_video_button, margin=(10, 0))
 
         # Main content area with file name header
-        # Create a container for the view content that can be dynamically updated
+        # Create a container for the view content (VTK container moved outside tabs)
         self.view_container = pn.Column(
             self.file_viewer,
-            self.persistent_vtk_container,  # Always present, but collapsed when not needed
             self.video_controls,
         )
 
+        # Create tabs without VTK to avoid DOM manipulation issues
         viewer_tabs = pn.Tabs(
             ("View", self.view_container),
             (
@@ -1441,13 +1441,14 @@ class DataDashboard(param.Parameterized):
                     self.file_editor,
                 ),
             ),
-            dynamic=True,
+            dynamic=True,  # Re-enable dynamic tabs since VTK is outside
         )
 
         content_panel = pn.Column(
             self.file_name_header,
             self.file_management_controls,
             viewer_tabs,
+            self.persistent_vtk_container,  # VTK container outside tabs to avoid DOM issues
             # sizing_mode="stretch_both"
         )
 

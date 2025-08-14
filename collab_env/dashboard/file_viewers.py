@@ -2,7 +2,6 @@
 File viewers for different file types in the dashboard.
 """
 
-import io
 import pandas as pd
 import yaml
 import os
@@ -67,33 +66,35 @@ class BaseViewer:
         """Return True if this viewer supports viewing."""
         return True
 
-    def render_view(self, content: bytes, file_path: str) -> Dict[str, Any]:
+    def render_view(
+        self, local_file_path: str, original_file_path: str
+    ) -> Dict[str, Any]:
         """
         Render file content for viewing.
 
         Args:
-            content: Raw file content
-            file_path: Path to the file
+            local_file_path: Path to the local cached file
+            original_file_path: Original path to the file (for reference)
 
         Returns:
             Dictionary with rendering information
         """
         raise NotImplementedError
 
-    def prepare_edit(self, content: bytes, file_path: str) -> str:
+    def prepare_edit(self, local_file_path: str, original_file_path: str) -> str:
         """
         Prepare content for editing.
 
         Args:
-            content: Raw file content
-            file_path: Path to the file
+            local_file_path: Path to the local cached file
+            original_file_path: Original path to the file (for reference)
 
         Returns:
             String content ready for editing
         """
         if not self.can_edit():
             raise NotImplementedError("This viewer does not support editing")
-        return content.decode("utf-8")
+        return Path(local_file_path).read_text("utf-8")
 
     def process_edit(self, edited_content: str, file_path: str) -> bytes:
         """
@@ -117,11 +118,13 @@ class TextViewer(BaseViewer):
     def can_edit(self) -> bool:
         return True
 
-    def render_view(self, content: bytes, file_path: str) -> Dict[str, Any]:
+    def render_view(
+        self, local_file_path: str, original_file_path: str
+    ) -> Dict[str, Any]:
         """Render text content with syntax highlighting hints."""
         try:
-            text_content = content.decode("utf-8")
-            file_ext = Path(file_path).suffix.lower()
+            text_content = Path(local_file_path).read_text("utf-8")
+            file_ext = Path(original_file_path).suffix.lower()
 
             # Determine language for syntax highlighting
             language_map = {
@@ -142,14 +145,14 @@ class TextViewer(BaseViewer):
                 try:
                     parsed_data = yaml.safe_load(text_content)
                 except yaml.YAMLError as e:
-                    logger.warning(f"YAML parsing error in {file_path}: {e}")
+                    logger.warning(f"YAML parsing error in {original_file_path}: {e}")
 
             return {
                 "type": "text",
                 "content": text_content,
                 "language": language,
                 "parsed_data": parsed_data,
-                "size": len(content),
+                "size": Path(local_file_path).stat().st_size,
                 "lines": text_content.count("\n") + 1,
             }
 
@@ -157,23 +160,25 @@ class TextViewer(BaseViewer):
             return {
                 "type": "error",
                 "message": f"Cannot decode file as text: {e}",
-                "size": len(content),
+                "size": Path(local_file_path).stat().st_size,
             }
 
 
 class TableViewer(BaseViewer):
     """Viewer for tabular data files (CSV, Parquet)."""
 
-    def render_view(self, content: bytes, file_path: str) -> Dict[str, Any]:
+    def render_view(
+        self, local_file_path: str, original_file_path: str
+    ) -> Dict[str, Any]:
         """Render tabular data as HTML table."""
         try:
-            file_ext = Path(file_path).suffix.lower()
+            file_ext = Path(original_file_path).suffix.lower()
 
             # Read data based on file type
             if file_ext == ".csv":
-                df = pd.read_csv(io.BytesIO(content))
+                df = pd.read_csv(local_file_path)
             elif file_ext == ".parquet":
-                df = pd.read_parquet(io.BytesIO(content))
+                df = pd.read_parquet(local_file_path)
             else:
                 raise ValueError(f"Unsupported table format: {file_ext}")
 
@@ -181,7 +186,7 @@ class TableViewer(BaseViewer):
             stats = {
                 "rows": len(df),
                 "columns": len(df.columns),
-                "size": len(content),
+                "size": Path(local_file_path).stat().st_size,
                 "column_names": list(df.columns),
                 "dtypes": df.dtypes.to_dict(),
             }
@@ -211,11 +216,11 @@ class TableViewer(BaseViewer):
             }
 
         except Exception as e:
-            logger.error(f"Error rendering table {file_path}: {e}")
+            logger.error(f"Error rendering table {original_file_path}: {e}")
             return {
                 "type": "error",
                 "message": f"Cannot render table: {e}",
-                "size": len(content),
+                "size": Path(local_file_path).stat().st_size,
             }
 
 
@@ -310,10 +315,12 @@ class VideoViewer(BaseViewer):
             # Unknown codec - return False to indicate uncertainty
             return False
 
-    def render_view(self, content: bytes, file_path: str) -> Dict[str, Any]:
+    def render_view(
+        self, local_file_path: str, original_file_path: str
+    ) -> Dict[str, Any]:
         """Render video using HTML5 video element."""
         try:
-            file_ext = Path(file_path).suffix.lower()
+            file_ext = Path(original_file_path).suffix.lower()
 
             # Determine MIME type
             mime_types = {
@@ -325,44 +332,39 @@ class VideoViewer(BaseViewer):
 
             mime_type = mime_types.get(file_ext, "video/mp4")
 
-            # Analyze codec compatibility by writing to a temporary file
-            import tempfile
-
+            # Analyze codec compatibility using the local cached file directly
             codec_info = {"codec_name": "unknown", "browser_compatible": None}
 
             try:
-                with tempfile.NamedTemporaryFile(
-                    suffix=file_ext, delete=False
-                ) as temp_file:
-                    temp_file.write(content)
-                    temp_path = temp_file.name
-
-                codec_info = self._analyze_video_codec(temp_path)
-                os.unlink(temp_path)  # Clean up temp file
-
+                codec_info = self._analyze_video_codec(local_file_path)
             except Exception as e:
-                logger.warning(f"Could not analyze video codec for {file_path}: {e}")
+                logger.warning(
+                    f"Could not analyze video codec for {original_file_path}: {e}"
+                )
 
-            # Encode video content as base64 for embedding
+            # Read and encode video content as base64 for embedding
             # Note: This is not ideal for large videos - consider using rclone serve http
+            content = Path(local_file_path).read_bytes()
             video_b64 = base64.b64encode(content).decode("utf-8")
             data_url = f"data:{mime_type};base64,{video_b64}"
+
+            file_size = Path(local_file_path).stat().st_size
 
             return {
                 "type": "video",
                 "data_url": data_url,
                 "mime_type": mime_type,
-                "size": len(content),
-                "size_mb": len(content) / (1024 * 1024),
+                "size": file_size,
+                "size_mb": file_size / (1024 * 1024),
                 "codec_info": codec_info,
             }
 
         except Exception as e:
-            logger.error(f"Error rendering video {file_path}: {e}")
+            logger.error(f"Error rendering video {original_file_path}: {e}")
             return {
                 "type": "error",
                 "message": f"Cannot render video: {e}",
-                "size": len(content),
+                "size": Path(local_file_path).stat().st_size,
             }
 
 
@@ -372,113 +374,100 @@ class PLYViewer(BaseViewer):
     # Track if VTK has been used - only allow one VTK viewer per session
     _vtk_used = False
 
-    def render_view(self, content: bytes, file_path: str) -> Dict[str, Any]:
+    def render_view(
+        self, local_file_path: str, original_file_path: str
+    ) -> Dict[str, Any]:
         """Render PLY file using PyVista and Panel's VTK integration."""
         try:
             import pyvista as pv
-            import tempfile
-            import os
 
-            # Create a temporary file to save the PLY content
-            with tempfile.NamedTemporaryFile(suffix=".ply", delete=False) as tmp_file:
-                tmp_file.write(content)
-                temp_path = tmp_file.name
+            # Load the PLY file using PyVista directly from the cached file
+            mesh = pv.read(local_file_path)
 
+            # Check if this is a point cloud or mesh
+            is_point_cloud = mesh.n_cells == 0 or mesh.n_cells == mesh.n_points
+            has_faces = mesh.n_cells > 0 and not is_point_cloud
+
+            # Create VTK pane that will be inserted into the persistent container
             try:
-                # Load the PLY file using PyVista
-                mesh = pv.read(temp_path)
+                # Create PyVista plotter for Panel VTK
+                plotter = pv.Plotter(
+                    window_size=[800, 600],
+                    off_screen=False,  # Keep on-screen for Panel VTK
+                    notebook=False,  # Disable notebook mode
+                )
 
-                # Check if this is a point cloud or mesh
-                is_point_cloud = mesh.n_cells == 0 or mesh.n_cells == mesh.n_points
-                has_faces = mesh.n_cells > 0 and not is_point_cloud
+                # Configure plotter appearance
+                plotter.background_color = (0.95, 0.95, 0.95)  # type: ignore
 
-                # Create VTK pane that will be inserted into the persistent container
-                try:
-                    # Create PyVista plotter for Panel VTK
-                    plotter = pv.Plotter(
-                        window_size=[800, 600],
-                        off_screen=False,  # Keep on-screen for Panel VTK
-                        notebook=False,  # Disable notebook mode
+                if is_point_cloud:
+                    # Render as points for point clouds
+                    plotter.add_mesh(
+                        mesh,  # type: ignore
+                        # color="lightblue",
+                        # point_size=3.0,
+                        # render_points_as_spheres=True,
+                        # opacity=0.8,
                     )
-
-                    # Configure plotter appearance
-                    plotter.background_color = (0.95, 0.95, 0.95)  # type: ignore
-
-                    if is_point_cloud:
-                        # Render as points for point clouds
-                        plotter.add_mesh(
-                            mesh,  # type: ignore
-                            color="lightblue",
-                            point_size=3.0,
-                            render_points_as_spheres=True,
-                            opacity=0.8,
-                        )
-                    else:
-                        # Render as mesh with edges for surfaces
-                        plotter.add_mesh(
-                            mesh,  # type: ignore
-                            color="lightblue",
-                            show_edges=True,
-                            edge_color="gray",
-                            smooth_shading=True,
-                            opacity=0.9,
-                        )
-
-                    plotter.camera_position = "iso"
-                    plotter.reset_camera()  # type: ignore
-
-                    # Store mesh bounds for camera reset in app
-                    mesh_bounds = mesh.bounds if hasattr(mesh, "bounds") else None
-                    mesh_center = mesh.center if hasattr(mesh, "center") else None
-
-                    # Return the render window instead of creating a VTK pane
-                    render_window = plotter.ren_win
-
-                    logger.info(
-                        f"🎮 CREATED RENDER WINDOW for reusable VTK pane: {file_path}"
-                    )
-
-                except Exception as vtk_error:
-                    logger.error(f"VTK render window creation failed: {vtk_error}")
-                    render_window = None
-
-                # Get mesh/point cloud statistics
-                stats = {
-                    "points": mesh.n_points,
-                    "cells": mesh.n_cells,
-                    "bounds": list(mesh.bounds) if hasattr(mesh, "bounds") else None,
-                    "is_point_cloud": is_point_cloud,
-                }
-
-                # Only compute surface properties for meshes with faces
-                if has_faces:
-                    try:
-                        stats["area"] = float(mesh.area)
-                        stats["volume"] = float(mesh.volume)
-                    except Exception as e:
-                        logger.debug(f"Could not compute mesh properties: {e}")
-                        stats["area"] = None
-                        stats["volume"] = None
                 else:
+                    # Render as mesh with edges for surfaces
+                    plotter.add_mesh(
+                        mesh,  # type: ignore
+                        # color="lightblue",
+                        # show_edges=True,
+                        # edge_color="gray",
+                        # smooth_shading=True,
+                        # opacity=0.9,
+                    )
+
+                plotter.camera_position = "iso"
+                plotter.reset_camera()  # type: ignore
+
+                # Store mesh bounds for camera reset in app
+                mesh_bounds = mesh.bounds if hasattr(mesh, "bounds") else None
+                mesh_center = mesh.center if hasattr(mesh, "center") else None
+
+                # Return the render window instead of creating a VTK pane
+                render_window = plotter.ren_win
+
+                logger.info(
+                    f"🎮 CREATED RENDER WINDOW for reusable VTK pane: {original_file_path}"
+                )
+
+            except Exception as vtk_error:
+                logger.error(f"VTK render window creation failed: {vtk_error}")
+                render_window = None
+
+            # Get mesh/point cloud statistics
+            stats = {
+                "points": mesh.n_points,
+                "cells": mesh.n_cells,
+                "bounds": list(mesh.bounds) if hasattr(mesh, "bounds") else None,
+                "is_point_cloud": is_point_cloud,
+            }
+
+            # Only compute surface properties for meshes with faces
+            if has_faces:
+                try:
+                    stats["area"] = float(mesh.area)
+                    stats["volume"] = float(mesh.volume)
+                except Exception as e:
+                    logger.debug(f"Could not compute mesh properties: {e}")
                     stats["area"] = None
                     stats["volume"] = None
+            else:
+                stats["area"] = None
+                stats["volume"] = None
 
-                return {
-                    "type": "ply_3d",
-                    "render_window": render_window,
-                    "stats": stats,
-                    "mesh_bounds": mesh_bounds,
-                    "mesh_center": mesh_center,
-                    "success": True,
-                    "error": None,
-                }
-
-            finally:
-                # Clean up temporary file
-                try:
-                    os.unlink(temp_path)
-                except OSError:
-                    pass
+            return {
+                "type": "ply_3d",
+                "render_window": render_window,
+                "stats": stats,
+                "mesh_bounds": mesh_bounds,
+                "mesh_center": mesh_center,
+                "success": True,
+                "error": None,
+            }
 
         except ImportError as e:
             return {
@@ -808,15 +797,17 @@ class FileContentManager:
             viewer = self.viewer_registry.get_viewer(file_path)
 
             if viewer:
-                render_info = viewer.render_view(content, file_path)
+                # Pass local cache path to viewer instead of content
+                render_info = viewer.render_view(str(cache_path), file_path)
                 render_info["viewer_available"] = True
                 render_info["can_edit"] = viewer.can_edit()
                 render_info["from_cache"] = from_cache
             else:
                 # Unknown file type
+                file_size = cache_path.stat().st_size
                 render_info = {
                     "type": "unknown",
-                    "size": len(content),
+                    "size": file_size,
                     "viewer_available": False,
                     "can_edit": False,
                     "from_cache": from_cache,
@@ -855,19 +846,20 @@ class FileContentManager:
         Returns:
             String content ready for editing
         """
-        # Read from cache if available, otherwise from remote
+        # Ensure file is cached
         cache_path = self._get_cache_path(bucket, file_path)
-        if cache_path.exists():
-            content = cache_path.read_bytes()
-        else:
+        if not cache_path.exists():
+            # Download and cache if not available
             content = self.client.read_file(bucket, file_path)
+            cache_path.write_bytes(content)
 
         viewer = self.viewer_registry.get_viewer(file_path)
 
         if not viewer or not viewer.can_edit():
             raise ValueError(f"File {file_path} is not editable")
 
-        return viewer.prepare_edit(content, file_path)
+        # Pass cache path to viewer instead of content
+        return viewer.prepare_edit(str(cache_path), file_path)
 
     def save_edited_file(self, bucket: str, file_path: str, edited_content: str):
         """
