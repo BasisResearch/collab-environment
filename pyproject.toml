@@ -83,6 +83,7 @@ dev = [
   "isort",
   "flake8>=6.0",
   "types-PyYAML",
+  "types-requests",
 ]
 
 [build-system]
