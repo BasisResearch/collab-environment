@@ -8,58 +8,67 @@ import numpy as np
 
 def update_boids(boids, width, height, species_configs):
     for b in boids:
+        if "food" in b['species']:
+            b['dx'], b['dy'] = 0, 0
+            continue
         cfg = species_configs[b['species']]
         fly_towards_center(b,boids,cfg) # Rule1
         avoid_others(b,boids,cfg) # Rule2
         match_velocity(b,boids,cfg) # Rule3
         keep_within_bounds(b,width,height,cfg) #optional
         limit_speed(b,cfg) #optional, has to be applied last.
+
     for b in boids: #update all birds at the same time
-        b['x'] += b['dx']; b['y'] += b['dy']
+        b['x'] += b['dx']
+        b['y'] += b['dy']
 
 def update_boids_with_food(boids, width, height, species_configs):
+    """
+    Each boid has state variables:
+    - satiated, during which period,
+        it does not approach food, and only follows the Boid rule outside food zone.
+        Initiated food_time < 0
+        Terminated by food_time < -threshold
+    - eating, during which period,
+        it does not move.
+        Initiated by near_food == True and not satiated
+        Terminated by food_time < 0
+    - aux variables:
+        near_food
+        food_time
+    """
     for b in boids:
+        if "food" in b['species']:
+            b['dx'], b['dy'] = 0, 0
+            continue
+
         cfg = species_configs[b['species']]
 
-        # food section
-        if start_eating_food(b,cfg):
-            start_food_time(b,cfg)
+        b['food_time'] -= 1
 
         if b['eating']:
-            b['food_time'] -= 1
-            b['perching_time'] -= 1
-            perch(b,boids,cfg) #food is on the ground
-            update_satiate(b,cfg)
-            continue
-
-        if near_food(b,cfg) and b['satiate'] <= 0:
-            approach_food(b,boids,cfg)
-            
-        # perch section
-        if b['perching']:
-            b['perching_time'] -= 1
-            perch(b,boids,cfg)
+            b['dx'], b['dy'] = 0, 0
+        
+        if b['satiated']:
+            avoid_others(b,boids,cfg) # Rule2
             keep_within_bounds_with_food(b,width,height,cfg) #optional
-            continue
-  
-        # classic boid section
+            limit_speed(b,cfg) #optional, has to be applied last.
         else:
+            # Boid, searching for food
             fly_towards_center(b,boids,cfg) # Rule1
             avoid_others(b,boids,cfg) # Rule2
             match_velocity(b,boids,cfg) # Rule3
+            approach_food(b,boids,cfg)
             keep_within_bounds_with_food(b,width,height,cfg) #optional
             limit_speed(b,cfg) #optional, has to be applied last.
-            perch(b,boids,cfg)
-
         
-    keep_within_bounds_with_food(b,width,height,cfg) #optional
+        # food state variable section
+        update_state_variables(b,cfg)
+
 
     for b in boids: #update all birds at the same time
-        if not b['perching']:
-            b['x'] += b['dx']; b['y'] += b['dy']
-        else:
-            b['y'] = 0
-            b['dy'] = 0
+        b['x'] += b['dx']
+        b['y'] += b['dy']
 
         
 
@@ -67,21 +76,29 @@ def update_boids_with_food(boids, width, height, species_configs):
 def init_multi_species_boids(species_configs, species_counts, width, height,
                              velocity_scale = 10,
                              seed = 2025):
-    np.random.seed(seed)
+    
     boids = []
     for species, count in species_counts.items():
-        if species == 'food':
+        if 'food' in species:
+            boids.append({
+                'species': species,
+                'x': species_configs[species]["x"],
+                'y': species_configs[species]["y"],
+                'dx':0,
+                'dy':0})
             continue
         for _ in range(count):
+            np.random.seed(seed + _)
+            random.seed(seed + _) 
             boids.append({
                 'x': random.random() * width,
                 'y': random.random() * height,
-                'dx': random.random() * velocity_scale,
-                'dy': random.random() * velocity_scale,
+                'dx': (random.random()-0.5) * velocity_scale,
+                'dy': (random.random()-0.5) * velocity_scale,
                 'species': species,
                 'perching': np.random.binomial(n=1, p=0.2),
                 'perching_time': 0,
-                'satiate': 0,
+                'satiated': 0,
                 'eating': 0,
                 'food_time': 0
             })
@@ -103,6 +120,9 @@ def fly_towards_center(boid, boids, cfg):
     boids: all the boids.
     cfg: parameters of the Boid model
     """
+    if cfg["independent"]:
+        return None
+
     cx = cy = cnt = 0
     for o in boids:
         if o is not boid and same_species(boid,o):
@@ -139,6 +159,9 @@ def match_velocity(boid, boids, cfg):
     boids: all the boids.
     cfg: parameters of the Boid model
     """
+    if cfg["independent"]:
+        return None
+        
     avx=avy=cnt=0
     for o in boids:
         if o is not boid and same_species(boid,o):
@@ -174,23 +197,33 @@ def end_perching(boid, boids, cfg):
     
 
 def near_food(boid, cfg):
-    threshold = cfg["food_visual_range"]
+    threshold = cfg["food_eating_range"]
     d = distance(cfg['food'], boid)
     return d <= threshold
 
-def update_satiate(boid,cfg):
-    if boid['food_time'] < 0 and boid['satiate'] < 0:
-        boid['satiate'] = 1
-        boid['eating'] = 0
-    elif boid['satiate'] == 1:
-        boid['satiate'] -= 0.01
+def update_state_variables(boid,cfg):
+    if boid['eating']:
+        if boid['food_time'] < 0 and boid['food_time'] > cfg['hunger_threshold']:
+            boid['satiated'] = 1
+            boid['eating'] = 0
+            initiate_random_direction(boid, cfg)
+    elif boid['satiated'] == 1:
+        if boid['food_time'] < cfg['hunger_threshold']:
+            boid['satiated'] = 0
+    elif (not boid['satiated'] and not boid['eating']) and near_food(boid, cfg):
+        boid['eating'] = 1
+        start_food_time(boid, cfg)
 
-def start_eating_food(boid,cfg):
-    return (boid['perching'] and distance(cfg['food'], boid) < 1) and boid['food_time'] == 0
+def initiate_random_direction(boid, cfg):
+    random.seed()
+    theta = np.deg2rad(random.random() * 180)
+    #print("theta", theta)
+    boid['dx'] = np.cos(theta) * cfg['turn_factor'] * 0.05
+    boid['dy'] = np.sin(theta) * cfg['turn_factor'] * 0.05
 
+    
 def start_food_time(boid, cfg):
-    boid['eating'] = 1
-    boid['food_time'] = random.random() * cfg['perching_time']
+    boid['food_time'] = random.random() * cfg['food_time']
 
 def approach_food(boid, boids, cfg):
     x_food = cfg['food']['x'] #scalar for now
@@ -218,13 +251,16 @@ def keep_within_bounds(boid, width, height, cfg):
 def keep_within_bounds_with_food(boid, width, height, cfg):
     m, t = cfg['margin'], cfg['turn_factor']
     if boid['x'] < m:
-        boid['dx'] += t
-    if boid['x'] > width-m:
-        boid['dx'] -= t
-    if boid['perching']:
+        boid['dx'] += t #* (boid['x'] - 0)
+    if boid['x'] > width - m:
+        boid['dx'] -= t #* np.abs(width - boid['x'])
+    if boid['y'] > height - m:
+        boid['dy'] -= t #* np.abs(height - boid['y'])
+    if boid['eating']:
         return None
-    if boid['y']>height-m:
-        boid['dy'] -= t
+    if boid['y'] < m:
+        boid['dy'] += t #* np.abs(height - boid['y'])
+
     return None
 
 def limit_speed(boid, cfg):

@@ -27,12 +27,12 @@ class AnimalTrajectoryDataset(Dataset):
         self.height = height
         self.sequences = []
 
-        species_counts = {i:species_configs[i]["counts"] for i in species_configs.keys()}
+        species_counts = {i: species_configs[i]["counts"] for i in species_configs.keys()}
         self.species_to_idx = {s: i for i, s in enumerate(species_counts.keys())}
         self.N = sum(species_counts.values())
         
         for _ in range(num_samples): #loop through number of videos
-            boids = init_fn(species_configs, species_counts, width, height, velocity_scale, seed)
+            boids = init_fn(species_configs, species_counts, width, height, velocity_scale, seed + _)
             traj = []
 
             for _ in range(steps):
@@ -136,15 +136,13 @@ def visualize_pair(p1, p2, v1 = None, v2 = None, starting_frame = 0,
 
 def visualize_graph(p, v,
                     batch = None,
+                    species = None,
                     starting_frame = 0,
                     ending_frame = None,
-                    file_id = 0,
-                    model = None,
-                    device = None):
+                    file_id = 0):
     """
 
     """
-    model = model.to(device) if model else None
 
     if batch is not None:
         p, species = batch
@@ -155,10 +153,13 @@ def visualize_graph(p, v,
     N = p0.shape[0]
     print("p0 shape", p0.shape)
     print("p shape", p.shape)
-    colors = ["C"+str(n%10) for n in range(N)]
+    if species is not None:
+        colors = ["C"+str(n) for n in species.detach().numpy().ravel()]
+    else:
+        colors = ["C"+str(n%10) for n in range(N)]
 
     # Create the figure and axes
-    fig, ax = plt.subplots()
+    fig, ax = plt.subplots(1,1,figsize = (5,5))
 
     # Set plot limits
     ax.set_xlim(0, 1)

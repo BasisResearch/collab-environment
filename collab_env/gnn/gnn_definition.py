@@ -81,6 +81,7 @@ class Lazy(torch.nn.Module):
         in_node_dim=3,
         heads=1,
         hidden_dim=30,
+        start_frame=None,
         input_differentiation="finite",  # or "spline"
         prediction_integration="Euler",
     ):  # or "Leapfrog")

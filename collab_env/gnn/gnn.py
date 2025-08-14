@@ -1,10 +1,13 @@
 import torch
 import torch.nn.functional as functional
 import numpy as np
+import pickle
 import matplotlib.pyplot as plt
 from collab_env.gnn.utility import handle_discrete_data, v_function_2_vminushalf
 import gc
 from gnn_definition import GNN, Lazy
+from collab_env.data.file_utils import expand_path, get_project_root
+
 
 
 def build_edge_index(positions, visual_range):
@@ -52,8 +55,8 @@ def node_feature_vel(past_p, past_v, past_a, species_idx, species_dim):
     # Flatten
     x_vel = init_v.view(S * N, dim)
     x_pos = init_p.view(S * N, dim)
-    x_pos_boundary = np.maximum(
-        1 - x_pos, np.ones_like(x_pos) * 0.5
+    x_pos_boundary = torch.maximum(
+        1 - x_pos, torch.ones_like(x_pos) * 0.5
     )  # as in Allen et al., CoRL 2022
     x_species = species_idx.view(S * N)
     species_onehot = functional.one_hot(x_species, num_classes=species_dim).float()
@@ -75,8 +78,8 @@ def node_feature_vel_pos(past_p, past_v, past_a, species_idx, species_dim):
     # Flatten
     x_vel = init_v.view(S * N, dim)
     x_pos = init_p.view(S * N, dim)
-    x_pos_boundary = np.maximum(
-        1 - x_pos, np.ones_like(x_pos) * 0.5
+    x_pos_boundary = torch.maximum(
+        1 - x_pos, torch.ones_like(x_pos) * 0.5
     )  # as in Allen et al., CoRL 2022
     x_species = species_idx.view(S * N)
     species_onehot = functional.one_hot(x_species, num_classes=species_dim).float()
@@ -101,8 +104,8 @@ def node_feature_vel_pos_plus(
     # Flatten
     x_vel = init_v.view(S * N, dim)
     x_pos = past_p.reshape((S * N, past_time * dim))
-    x_pos_boundary = np.maximum(
-        1 - x_pos, np.ones_like(x_pos) * 0.5
+    x_pos_boundary = torch.maximum(
+        1 - x_pos, torch.ones_like(x_pos) * 0.5
     )  # as in Allen et al., CoRL 2022
     x_species = species_idx.view(S * N)
     species_onehot = functional.one_hot(x_species, num_classes=species_dim).float()
@@ -136,8 +139,8 @@ def node_feature_vel_plus_pos_plus(
     # Flatten
     x_vel = past_v.reshape((S * N, past_time * dim))
     x_pos = past_p.reshape((S * N, past_time * dim))
-    x_pos_boundary = np.maximum(
-        1 - x_pos, np.ones_like(x_pos) * 0.5
+    x_pos_boundary = torch.maximum(
+        1 - x_pos, torch.ones_like(x_pos) * 0.5
     )  # as in Allen et al., CoRL 2022
 
     x_species = species_idx.view(S * N)
@@ -225,6 +228,7 @@ def identify_frames(pos, vel):
 
     # polarity
     polarity = torch.norm(torch.mean(vel[0],axis = 1), dim = 1)
+    polarity = polarity[:-4] #skip last 4 frames
     polarity_diff = torch.abs(torch.diff(polarity)).cpu().numpy()
     threshold = np.mean(polarity_diff) + np.std(polarity_diff)
     diff_ind = np.argwhere(polarity_diff >= threshold).ravel()
@@ -526,6 +530,12 @@ def train_rules_gnn(
     debug_result_all = {}
 
     train_losses = []  # train loss by epoch
+    if not training: #testing mode
+        epochs = 1
+    
+    if rollout > 0:
+        print("rolling out...")
+        
     for ep in range(epochs):
         torch.cuda.empty_cache()
 
@@ -683,40 +693,80 @@ def find_frame_sets(lst):
     
     return out
 
-def load_model(name, model_path):
+def load_model(name, file_name):
+    model_path = expand_path(
+        f"trained_models/{file_name}.pt",
+        get_project_root(),
+    )
+    model_spec_path = expand_path(
+        f"trained_models/{file_name}_model_spec.pkl",
+        get_project_root(),
+    )
+    train_spec_path = expand_path(
+        f"trained_models/{file_name}_train_spec.pkl",
+        get_project_root(),
+    )
+    
+    # save model spec
+    with open(model_spec_path, "rb") as f: # 'wb' for write binary
+        model_spec = pickle.load(f)
+    print("Loaded model spec.")
+    
+    # save training spec
+    with open(train_spec_path, "rb") as f: # 'wb' for write binary
+        train_spec = pickle.load(f)
+    print("Loaded training spec.")
 
     # Create an instance of the model (with the same architecture)
-    models = {}
-    models["name"] = name
-    models["node_feature_function"] = "vel_plus_pos_plus"
-    models["node_prediction"] = "acc"  # predict model acceleration
-    models["prediction_integration"] = "Euler"  # predict model acceleration
-    models["input_differentiation"] = "finite"
-    models["in_node_dim"] = 6 + 6 + 6 + 1
-    models["start_frame"] = 3
-    models["lr"] = 1e-3
-
-
-    node_feature_function = models["node_feature_function"]
-    node_prediction = models["node_prediction"]
-    in_node_dim = models["in_node_dim"]
-    start_frame = models["start_frame"]
-        
-    gnn_model = GNN(model_name = name,
-                    node_feature_function = node_feature_function,
-                    node_prediction = node_prediction, start_frame = start_frame,
-                    heads = 1, in_node_dim = in_node_dim)
+    model_spec["model_name"] = name
+    if "lazy" in name:
+        gnn_model = Lazy(**model_spec)
+        print("Loaded lazy model.")
+        return gnn_model, model_spec, train_spec
+    
+    gnn_model = GNN(**model_spec)
     
     # load model
     # Load the state dictionary
     gnn_model.load_state_dict(torch.load(model_path))
+    print("Loaded model.")
     
     # Set the model to evaluation mode (important for inference)
     gnn_model.eval()
-    
-    models["model"] = gnn_model
 
-    return models
+    return gnn_model, model_spec, train_spec
+
+def save_model(model, model_spec, train_spec, file_name):
+
+    # model weights
+    model_output = expand_path(
+        f"trained_models/{file_name}.pt",
+        get_project_root(),
+    )
+    torch.save(model.state_dict(), model_output)
+
+    print(f"Saved model to {model_output}.")
+
+    # model specs
+    model_spec_path = expand_path(
+        f"trained_models/{file_name}_model_spec.pkl",
+        get_project_root(),
+    )
+    with open(model_spec_path, "wb") as f: # 'wb' for write binary
+        pickle.dump(model_spec, f)
+
+    # training specs
+    train_spec_path = expand_path(
+        f"trained_models/{file_name}_train_spec.pkl",
+        get_project_root(),
+    )
+    with open(train_spec_path, "wb") as f: # 'wb' for write binary
+        pickle.dump(train_spec, f)
+    
+    return 1
+
+
+
 
 def debug_result2prediction(rollout_debug_result, file_id,epoch_num):
     
