@@ -232,9 +232,10 @@ class VideoViewer(BaseViewer):
         self._rclone_client = None
 
     def _find_bbox_csv_files_with_bucket(self, bucket: str, video_path: str) -> list:
-        """Find matching bbox CSV files in the same directory as the video."""
+        """Find matching bbox CSV files in the same directory as the video, and for thermal videos, also check corresponding rgb folders."""
         try:
             from .rclone_client import RcloneClient
+            import re
 
             # Get directory path from video_path (without bucket)
             video_path_obj = Path(video_path)
@@ -245,41 +246,83 @@ class VideoViewer(BaseViewer):
             # Use rclone to list files in the same directory
             rclone_client = RcloneClient()
 
-            try:
-                # List files in the same directory
-                files = rclone_client.list_directory(bucket, dir_path)
+            bbox_csvs = []
+            directories_to_search = [dir_path]  # Always search the same directory first
 
-                # Filter for CSV files ending with '_bboxes.csv'
-                bbox_csvs = []
-                for file_info in files:
-                    file_name = file_info.get("Name", "")  # rclone uses 'Name' field
+            # For thermal videos, also search corresponding rgb directories
+            # Check if this is a thermal_XX directory pattern
+            if dir_path:
+                dir_name = Path(dir_path).name
+                thermal_match = re.match(r"^thermal_(\d+)$", dir_name, re.IGNORECASE)
+                if thermal_match:
+                    camera_number = thermal_match.group(1)
+                    corresponding_rgb_dir = str(
+                        Path(dir_path).parent / f"rgb_{camera_number}"
+                    )
+                    directories_to_search.append(corresponding_rgb_dir)
+                    logger.info(
+                        f"Thermal video detected: {dir_path}, will also search {corresponding_rgb_dir} for bbox CSV files"
+                    )
 
-                    if file_name.lower().endswith(
-                        "_bboxes.csv"
-                    ) or file_name.lower().endswith(".csv"):  # Be flexible initially
-                        # Construct full path for validation (without bucket prefix)
-                        full_csv_path = (
-                            str(Path(dir_path) / file_name) if dir_path else file_name
-                        )
+            # Search all directories
+            for search_dir in directories_to_search:
+                try:
+                    # List files in the directory
+                    files = rclone_client.list_directory(bucket, search_dir)
 
-                        # Check if it's actually a bbox CSV by examining columns
-                        if self._is_bbox_csv_with_bucket(bucket, full_csv_path):
-                            bbox_csvs.append(
-                                {
+                    # Filter for CSV files ending with '_bboxes.csv'
+                    for file_info in files:
+                        file_name = file_info.get(
+                            "Name", ""
+                        )  # rclone uses 'Name' field
+
+                        # Only look for CSV files that contain "bbox" or "bboxes" in the filename
+                        if file_name.lower().endswith(".csv") and (
+                            "bbox" in file_name.lower()
+                        ):
+                            # Construct full path for validation (without bucket prefix)
+                            full_csv_path = (
+                                str(Path(search_dir) / file_name)
+                                if search_dir
+                                else file_name
+                            )
+
+                            # Check if it's actually a bbox CSV by examining columns
+                            if self._is_bbox_csv_with_bucket(bucket, full_csv_path):
+                                # Add source information to help identify cross-folder CSVs
+                                csv_entry = {
                                     "name": file_name,
                                     "path": full_csv_path,  # Path without bucket prefix
                                     "size": file_info.get("Size", 0),
+                                    "source_dir": search_dir,  # Track which directory this came from
+                                    "is_cross_folder": search_dir
+                                    != dir_path,  # Flag for cross-folder detection
                                 }
-                            )
 
-                logger.info(
-                    f"Found {len(bbox_csvs)} bbox CSV files for video {bucket}/{video_path}"
-                )
-                return bbox_csvs
+                                # Add cross-folder indicator to name for clarity
+                                if search_dir != dir_path:
+                                    csv_entry["display_name"] = (
+                                        f"{file_name} (from {Path(search_dir).name})"
+                                    )
+                                else:
+                                    csv_entry["display_name"] = file_name
 
-            except Exception as e:
-                logger.warning(f"Could not list directory for bbox detection: {e}")
-                return []
+                                bbox_csvs.append(csv_entry)
+
+                except Exception as e:
+                    if search_dir == dir_path:
+                        logger.warning(
+                            f"Could not list primary directory {search_dir} for bbox detection: {e}"
+                        )
+                    else:
+                        logger.info(
+                            f"Could not list cross-folder directory {search_dir} for bbox detection (this is normal if folder doesn't exist): {e}"
+                        )
+
+            logger.info(
+                f"Found {len(bbox_csvs)} bbox CSV files for video {bucket}/{video_path} (searched directories: {directories_to_search})"
+            )
+            return bbox_csvs
 
         except Exception as e:
             logger.error(f"Error finding bbox CSV files: {e}")
@@ -310,23 +353,21 @@ class VideoViewer(BaseViewer):
                 # Read just the first few rows to check columns
                 df = pd.read_csv(temp_path, nrows=5)
 
-                # Check for required columns for bbox/tracking data
+                # Check for required columns for bbox data - must have x1,y1,x2,y2 format
                 required_cols = {"track_id", "frame"}
                 bbox_cols = {"x1", "y1", "x2", "y2"}
-                centroid_cols = {"x", "y"}
 
                 df_cols = set(df.columns)
 
-                # Must have track_id and frame, plus either bbox or centroid columns
+                # Must have track_id, frame, and x1,y1,x2,y2 bbox columns
                 has_required = required_cols.issubset(df_cols)
                 has_bbox = bbox_cols.issubset(df_cols)
-                has_centroid = centroid_cols.issubset(df_cols)
 
-                is_valid = has_required and (has_bbox or has_centroid)
+                is_valid = has_required and has_bbox
 
                 if is_valid:
                     logger.info(
-                        f"Valid bbox CSV detected: {bucket}/{csv_path} (format: {'bbox' if has_bbox else 'centroid'})"
+                        f"Valid bbox CSV detected: {bucket}/{csv_path} (bbox format with x1,y1,x2,y2)"
                     )
 
                 return is_valid

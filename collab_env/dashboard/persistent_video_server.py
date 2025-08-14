@@ -598,6 +598,7 @@ def api_add_video():
         video_path = data.get("video_path")
         csv_path = data.get("csv_path")
         fps = data.get("fps", 30.0)
+        video_label = data.get("video_label")  # Meaningful video name/label
 
         print(f"📹 Video ID: {video_id}")
         print(f"🎥 Video path: {video_path}")
@@ -622,7 +623,7 @@ def api_add_video():
 
         # Add video using internal function
         print("🚀 Adding video to server...")
-        success = add_video(video_id, video_path, csv_path, fps)
+        success = add_video(video_id, video_path, csv_path, fps, video_label)
 
         if success:
             print(f"✅ Video added successfully: {video_id}")
@@ -736,23 +737,32 @@ def prepare_bbox_data(df: pd.DataFrame) -> dict:
     return data_by_frame
 
 
-def add_video(video_id: str, video_path: str, csv_path: str, fps: float = 30.0):
+def add_video(
+    video_id: str,
+    video_path: str,
+    csv_path: str,
+    fps: float = 30.0,
+    video_label: str | None = None,
+):
     """Add a video/CSV combination to the server."""
     try:
         # Load CSV data
         df = pd.read_csv(csv_path)
         bbox_data = prepare_bbox_data(df)
 
+        # Use meaningful label if provided, otherwise fall back to cache filename
+        display_name = video_label if video_label else Path(video_path).name
+
         with data_lock:
             videos_data[video_id] = {
-                "name": Path(video_path).name,
+                "name": display_name,
                 "video_path": video_path,
                 "csv_path": csv_path,
                 "fps": fps,
                 "bbox_data": bbox_data,
             }
 
-        print(f"✅ Added video: {video_id} ({Path(video_path).name})")
+        print(f"✅ Added video: {video_id} ({display_name})")
         return True
 
     except Exception as e:

@@ -695,8 +695,8 @@ class DataDashboard(param.Parameterized):
             if bbox_csvs:
                 bbox_count = len(bbox_csvs)
                 bbox_names = ", ".join(
-                    [csv["name"] for csv in bbox_csvs[:3]]
-                )  # Show first 3 names
+                    [csv.get("display_name", csv["name"]) for csv in bbox_csvs[:3]]
+                )  # Show first 3 names with cross-folder indication
                 if bbox_count > 3:
                     bbox_names += f" (+{bbox_count - 3} more)"
 
@@ -1335,7 +1335,8 @@ class DataDashboard(param.Parameterized):
             selected_csv = bbox_csvs[0]  # Use first CSV
 
             if len(bbox_csvs) > 1:
-                self.status_pane.object = f"<p style='color:blue'>📊 Using first CSV: {selected_csv['name']} ({len(bbox_csvs)} available)</p>"
+                display_name = selected_csv.get("display_name", selected_csv["name"])
+                self.status_pane.object = f"<p style='color:blue'>📊 Using first CSV: {display_name} ({len(bbox_csvs)} available)</p>"
 
             # Get cached CSV path
             csv_cache_path = self.file_manager.get_cache_path(
@@ -1374,6 +1375,7 @@ class DataDashboard(param.Parameterized):
                     "video_path": str(video_cache_path),
                     "csv_path": str(csv_cache_path),
                     "fps": 30.0,
+                    "video_label": f"{bucket}/{video_path}",  # Full remote path as meaningful label
                 }
 
                 logger.info(f"Sending video to persistent server: {add_video_data}")
