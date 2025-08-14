@@ -117,6 +117,7 @@ Web-based data browser for GCS buckets via rclone integration:
 - **Session Discovery**: Automatically discovers matching sessions across `fieldwork_curated` and `fieldwork_processed` buckets
 - **Smart File Filtering**: Only displays files that can be viewed/edited by the dashboard
 - **Multi-Format Viewer**: Text (YAML/XML/JSON/MD), tables (CSV/Parquet), video (MP4/AVI/MOV/MKV)
+- **Video Bbox Overlay Viewer**: Interactive video player with synchronized bounding box/tracking overlays from CSV data
 - **Video Conversion**: Convert incompatible videos to browser-compatible H.264 format with upload
 - **File Editing**: Edit and save text-based files directly back to GCS
 - **Local Caching**: Automatic file caching with cache management UI
@@ -156,12 +157,42 @@ cd collab_env/dashboard
 panel serve dashboard_app.py --dev --show --port 5007
 ```
 
+**Video Bbox Overlay Workflow:**
+
+1. **Browse Videos**: Navigate to any MP4/AVI/MOV/MKV file in the dashboard
+2. **Auto-Detection**: If `*_bboxes.csv` files exist in same directory, "View with Overlays" button appears
+3. **Launch Viewer**: Click button → Persistent server starts → Browser opens to video selector
+4. **Select Video**: Choose your video from dropdown → Interactive overlay viewer loads
+5. **Multiple Videos**: Add more videos from dashboard → Switch between them in same viewer
+6. **Interactive Controls**: Toggle track IDs, trails, opacity, debug coordinates in real-time
+7. **Cleanup**: Click "Stop Server" in dashboard when done to free resources
+
+**CSV Format Requirements:**
+- Must contain `track_id` and `frame` columns
+- Either bounding box format: `x1, y1, x2, y2` (pixel coordinates)
+- Or centroid format: `x, y` (center point coordinates)
+- File naming: `*_bboxes.csv` in same directory as video file
+
+**Video Bbox Overlay Viewer:**
+
+Advanced video analysis feature for viewing tracking data overlays:
+
+- **Auto-Detection**: Automatically detects `*_bboxes.csv` files in same directory as videos
+- **Smart Activation**: "View with Overlays" button appears when tracking data is available  
+- **Persistent Server**: Single Flask server efficiently handles multiple video/CSV combinations
+- **Interactive Controls**: Toggle track IDs, movement trails, opacity, coordinate debugging
+- **Multi-Format Support**: Handles both bounding box (x1,y1,x2,y2) and centroid (x,y) CSV formats
+- **Dynamic Loading**: Add videos from dashboard, switch between them via dropdown selector
+- **Resource Efficient**: One server process regardless of number of videos viewed
+- **Clean Lifecycle**: Start/stop server management integrated with dashboard
+
 **Architecture Components:**
 
 - `RcloneClient`: Interface to rclone for GCS operations
 - `SessionManager`: Session discovery and management across buckets
 - `FileContentManager`: File viewing/editing with pluggable viewer registry
 - `DataDashboard`: Main Panel/HoloViz reactive UI application
+- `PersistentVideoServer`: Flask server for video bbox overlay viewing
 
 ### Notebook Testing
 

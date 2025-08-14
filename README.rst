@@ -104,6 +104,7 @@ A web-based dashboard for browsing and editing data files from GCS buckets using
 
 * **Session Discovery**: Automatically discovers matching sessions across ``fieldwork_curated`` and ``fieldwork_processed`` buckets
 * **Multi-Format Viewer**: Built-in viewers for text files (YAML, TXT, XML, JSON, Markdown), tabular data (CSV, Parquet), and video files (MP4, AVI, MOV, MKV)
+* **Video Bbox Overlay Viewer**: Interactive video player with synchronized bounding box/tracking overlays from CSV data - automatically detects ``*_bboxes.csv`` files and provides real-time visualization controls
 * **Video Conversion**: Convert incompatible videos (e.g., OpenCV MPEG-4) to browser-compatible H.264 format with one-click upload
 * **File Editing**: Edit and save text-based files directly back to GCS
 * **Local Caching**: Automatically caches downloaded files locally for faster access with cache management UI
@@ -157,6 +158,36 @@ For the best development experience with autoreload that refreshes existing brow
 * Full file paths are displayed for precise identification
 * Cache management with size and file count display
 * Cache location: ``~/.cache/collab_env_dashboard/``
+
+**Video Bbox Overlay Viewer:**
+
+The dashboard includes an advanced video analysis feature for viewing tracking data overlays:
+
+**Features:**
+
+* **Auto-Detection**: Automatically detects ``*_bboxes.csv`` files in the same directory as video files
+* **Smart Activation**: "View with Overlays" button appears when tracking data is available
+* **Interactive Controls**: Real-time toggle for track IDs, movement trails, opacity, and coordinate debugging
+* **Multi-Format Support**: Handles both bounding box (x1,y1,x2,y2) and centroid (x,y) CSV formats
+* **Persistent Server**: Single Flask server efficiently manages multiple video/CSV combinations
+* **Dynamic Loading**: Add videos from dashboard, switch between them via dropdown selector
+
+**Usage Workflow:**
+
+1. Navigate to any video file (MP4/AVI/MOV/MKV) in the dashboard
+2. If ``*_bboxes.csv`` files exist in same directory → "View with Overlays" button appears
+3. Click button → Persistent server starts → Browser opens to video selector
+4. Select your video from dropdown → Interactive overlay viewer loads with tracking data
+5. Use real-time controls to customize visualization (trails, IDs, opacity, debug info)
+6. Add more videos from dashboard → Switch between them in the same viewer interface
+7. Click "Stop Server" in dashboard when finished to clean up resources
+
+**CSV Requirements:**
+
+* Must contain ``track_id`` and ``frame`` columns
+* Bounding box format: ``x1, y1, x2, y2`` (pixel coordinates of box corners)
+* Or centroid format: ``x, y`` (center point coordinates)
+* File naming convention: ``*_bboxes.csv`` in same directory as video file
 
 Usage
 -----
