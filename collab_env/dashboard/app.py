@@ -29,13 +29,27 @@ class DataDashboard(param.Parameterized):
         default="curated", doc="Current bucket type view"
     )
 
-    def __init__(self, **params):
+    def __init__(
+        self,
+        remote_name: Optional[str] = None,
+        curated_bucket: Optional[str] = None,
+        processed_bucket: Optional[str] = None,
+        **params,
+    ):
         super().__init__(**params)
 
         # Initialize clients
         try:
-            self.rclone_client = RcloneClient()
-            self.session_manager = SessionManager(self.rclone_client)
+            # RcloneClient expects a string, so provide default if None
+            if remote_name:
+                self.rclone_client = RcloneClient(remote_name=remote_name)
+            else:
+                self.rclone_client = RcloneClient()  # Uses default "collab-data"
+            self.session_manager = SessionManager(
+                self.rclone_client,
+                curated_bucket=curated_bucket or "fieldwork_curated",
+                processed_bucket=processed_bucket or "fieldwork_processed",
+            )
             self.file_manager = FileContentManager(self.rclone_client)
         except Exception as e:
             logger.error(f"Failed to initialize dashboard: {e}")
@@ -69,7 +83,8 @@ class DataDashboard(param.Parameterized):
             width=550,  # Width for container
             height=300,  # Height
             visible=False,  # Hidden initially until session selected
-            stylesheets=["""
+            stylesheets=[
+                """
                 select {
                     overflow-x: auto !important;
                     white-space: nowrap !important;
@@ -77,7 +92,8 @@ class DataDashboard(param.Parameterized):
                 option {
                     white-space: nowrap !important;
                 }
-            """]
+            """
+            ],
         )
 
         # File name header for preview panel
@@ -116,7 +132,7 @@ class DataDashboard(param.Parameterized):
         self.convert_video_button = pn.widgets.Button(
             name="Convert to H.264", button_type="primary", width=120, visible=False
         )
-        
+
         # General file management buttons
         self.replace_file_button = pn.widgets.Button(
             name="Replace in Cloud", button_type="primary", width=140
@@ -127,7 +143,7 @@ class DataDashboard(param.Parameterized):
         self.delete_file_button = pn.widgets.Button(
             name="Delete local and remote", button_type="danger", width=160
         )
-        
+
         # File management controls container with proper spacing
         self.file_management_controls = pn.Row(
             self.replace_file_button,
@@ -136,31 +152,27 @@ class DataDashboard(param.Parameterized):
             pn.Spacer(width=10),  # Add space between buttons
             self.delete_file_button,
             margin=(5, 0),
-            visible=False  # Initially hidden until file is loaded
+            visible=False,  # Initially hidden until file is loaded
         )
 
         self.status_pane = pn.pane.HTML("<p>Ready</p>", width=800, height=30)
 
         # Loading indicator as a proper overlay modal
-        self.loading_modal = pn.pane.HTML(
-            "",
-            visible=False,
-            sizing_mode="stretch_both"
-        )
-        
+        self.loading_modal = pn.pane.HTML("", visible=False, sizing_mode="stretch_both")
+
         # Single reusable VTK pane - defer creation until needed
         # Panel VTK pane requires a valid render window, can't be created with None
-        self.vtk_pane = None
+        self.vtk_pane: Optional[pn.pane.VTK] = None
         logger.info("🔨 VTK pane creation deferred until first PLY file is loaded")
-        
+
         # Container that holds the VTK pane (starts empty, VTK pane added on demand)
         self.persistent_vtk_container = pn.Column(
             width=800,
             height=0,  # Start collapsed
             sizing_mode="fixed",
-            styles={"display": "none"}
+            styles={"display": "none"},
         )
-        
+
         # Modal dialog buttons (will be created in create_layout)
         self.confirm_delete_button = pn.widgets.Button(
             name="Yes, Delete", button_type="danger", width=100
@@ -172,7 +184,7 @@ class DataDashboard(param.Parameterized):
         # Cache management buttons
         self.clear_cache_button = pn.widgets.Button(name="Clear Cache", width=100)
         self.cache_info_pane = pn.pane.HTML("", width=300)
-        
+
         # PLY viewer state
         self.current_ply_viewer = None
 
@@ -234,7 +246,7 @@ class DataDashboard(param.Parameterized):
         try:
             # Clean up any existing PLY viewer when switching to a different session
             self._cleanup_ply_viewer()
-            
+
             self._show_loading(f"Loading session: {session_name}")
             session = self.session_manager.load_session_files(session_name)
 
@@ -286,7 +298,7 @@ class DataDashboard(param.Parameterized):
         """Handle bucket type toggle change."""
         # Clean up any existing PLY viewer when switching bucket types
         self._cleanup_ply_viewer()
-        
+
         # Ensure we always have a valid string value
         self.current_bucket_type = event.new or "curated"
         if self.selected_session:
@@ -300,7 +312,7 @@ class DataDashboard(param.Parameterized):
         current_file_path = None
         if self.file_tree.value and self.file_tree.value in self.display_to_path_map:
             current_file_path = self.display_to_path_map[self.file_tree.value]
-        
+
         if self.current_bucket_type == "curated" and session.has_curated:
             files = session.curated_files or []
         elif self.current_bucket_type == "processed" and session.has_processed:
@@ -343,7 +355,7 @@ class DataDashboard(param.Parameterized):
 
         self.file_tree.options = file_options
         self.current_session_files = files
-        
+
         # Restore selection based on file path (find the new display name for the same file)
         if current_file_path:
             for display_name, file_path in self.display_to_path_map.items():
@@ -357,7 +369,10 @@ class DataDashboard(param.Parameterized):
                 "✓"
                 if (
                     (self.current_bucket_type == "curated" and session.has_curated)
-                    or (self.current_bucket_type == "processed" and session.has_processed)
+                    or (
+                        self.current_bucket_type == "processed"
+                        and session.has_processed
+                    )
                 )
                 else "✗"
             )
@@ -432,7 +447,9 @@ class DataDashboard(param.Parameterized):
 
             # Add path information to render_info for display
             render_info["remote_path"] = f"{bucket}/{full_path}"
-            render_info["cache_path"] = self.file_manager.get_cache_path(bucket, full_path)
+            render_info["cache_path"] = self.file_manager.get_cache_path(
+                bucket, full_path
+            )
 
             self.current_file_content = content
             self.current_file_info = render_info
@@ -443,7 +460,7 @@ class DataDashboard(param.Parameterized):
 
             # Update edit button state
             self.edit_button.disabled = not render_info.get("can_edit", False)
-            
+
             # Show file management buttons for all files
             self._update_file_management_buttons()
 
@@ -473,10 +490,12 @@ class DataDashboard(param.Parameterized):
 
     def _get_file_path_info(self, render_info: Dict[str, Any]) -> str:
         """Generate file path information HTML with modification status."""
-        cache_status = "💾 Cached" if render_info.get("from_cache", False) else "📡 Downloaded"
+        cache_status = (
+            "💾 Cached" if render_info.get("from_cache", False) else "📡 Downloaded"
+        )
         remote_path = render_info.get("remote_path", "Unknown")
         cache_path = render_info.get("cache_path", "Unknown")
-        
+
         # Check modification status
         modification_status = ""
         if self.selected_file and self.selected_session:
@@ -489,9 +508,9 @@ class DataDashboard(param.Parameterized):
                     modification_status = '<div><strong>Modified:</strong> <span style="color: #d63384;">📝 Local differs from remote</span></div>'
                 else:
                     modification_status = '<div><strong>Modified:</strong> <span style="color: #198754;">💾 Matches remote</span></div>'
-            except Exception as e:
+            except Exception:
                 modification_status = '<div><strong>Modified:</strong> <span style="color: #6c757d;">❓ Unknown</span></div>'
-        
+
         return f"""
         <div style="background-color: #f0f0f0; padding: 10px; margin-bottom: 10px; border-radius: 4px; font-size: 12px;">
             <div><strong>Status:</strong> {cache_status}</div>
@@ -503,37 +522,40 @@ class DataDashboard(param.Parameterized):
 
     def _cleanup_ply_viewer(self):
         """Hide the reusable VTK container but keep VTK pane for reuse."""
-        if hasattr(self, 'persistent_vtk_container'):
+        if hasattr(self, "persistent_vtk_container"):
             logger.info("🙈 HIDING reusable VTK container (keeping VTK pane for reuse)")
             # Just collapse and hide the container - DON'T clear it or reset vtk_pane
             self.persistent_vtk_container.height = 0
             self.persistent_vtk_container.styles = {"display": "none"}
-            
+
             # Keep the VTK pane alive for reuse - don't set to None
-            if hasattr(self, 'vtk_pane') and self.vtk_pane is not None:
+            if hasattr(self, "vtk_pane") and self.vtk_pane is not None:
                 logger.info("✅ VTK pane preserved for reuse")
         else:
             logger.debug("🙈 VTK container not found")
-
 
     def _update_view_container(self):
         """Update visibility of persistent VTK container."""
         # No need to change container objects since persistent_vtk_container is always there
         # Just control its visibility
-        logger.info("📋 LAYOUT: Using persistent VTK container approach - no container changes needed")
+        logger.info(
+            "📋 LAYOUT: Using persistent VTK container approach - no container changes needed"
+        )
 
     def _update_file_viewer(self, render_info: Dict[str, Any]):
         """Update the file viewer based on render info."""
-        logger.info(f"🔍 UPDATING file viewer for type: {render_info.get('type', 'unknown')}")
+        logger.info(
+            f"🔍 UPDATING file viewer for type: {render_info.get('type', 'unknown')}"
+        )
         # ALWAYS clean up any existing PLY viewer first, regardless of file type
         self._cleanup_ply_viewer()
-        
+
         if render_info["type"] == "text":
             # Text content with syntax highlighting
             content = render_info["content"]
             # language = render_info.get("language", "text")  # Available for future syntax highlighting
             path_info = self._get_file_path_info(render_info)
-            
+
             self._update_view_container()
 
             # Display text content with basic syntax highlighting
@@ -550,7 +572,7 @@ class DataDashboard(param.Parameterized):
             stats = render_info["stats"]
             html_table = render_info["html"]
             path_info = self._get_file_path_info(render_info)
-            
+
             self._update_view_container()
 
             header = f"""
@@ -574,29 +596,31 @@ class DataDashboard(param.Parameterized):
             size_mb = render_info["size_mb"]
             path_info = self._get_file_path_info(render_info)
             codec_info = render_info.get("codec_info", {})
-            
+
             self._update_view_container()
-            
+
             # Build codec information display
             codec_name = codec_info.get("codec_name", "unknown")
             browser_compatible = codec_info.get("browser_compatible")
             width = codec_info.get("width")
             height = codec_info.get("height")
-            
+
             # Format codec details
             codec_details = f"<p><strong>Codec:</strong> {codec_name}"
             if width and height:
                 codec_details += f" | <strong>Resolution:</strong> {width}×{height}"
             codec_details += "</p>"
-            
+
             # Show/hide conversion buttons based on codec compatibility
             # Only show convert button for incompatible or limited codecs that aren't already H.264/AVC
             safe_codecs = ["h264", "avc"]
-            needs_conversion = (browser_compatible in [False, "limited"] and 
-                              codec_name.lower() not in safe_codecs)
+            needs_conversion = (
+                browser_compatible in [False, "limited"]
+                and codec_name.lower() not in safe_codecs
+            )
             self.convert_video_button.visible = needs_conversion
             self.convert_video_button.disabled = False
-            
+
             # Show compatibility warning for incompatible codecs
             compatibility_warning = ""
             if browser_compatible is False:
@@ -616,12 +640,12 @@ class DataDashboard(param.Parameterized):
                 </div>
                 """
             elif browser_compatible is True:
-                compatibility_warning = f"""
+                compatibility_warning = """
                 <div style="background-color: #d4edda; border: 1px solid #c3e6cb; padding: 5px 10px; margin: 10px 0; border-radius: 4px; font-size: 12px;">
                     ✅ Widely supported codec
                 </div>
                 """
-            
+
             if size_mb > 50:  # Large video warning
                 self.file_viewer.object = f"""
                 <div>
@@ -654,28 +678,30 @@ class DataDashboard(param.Parameterized):
             # PLY 3D mesh visualization
             path_info = self._get_file_path_info(render_info)
             stats = render_info.get("stats", {})
-            
+
             # Build statistics display based on data type
             is_point_cloud = stats.get("is_point_cloud", False)
             data_type = "Point Cloud" if is_point_cloud else "3D Mesh"
             stats_html = f"<h4>{data_type} Statistics</h4><ul>"
-            
+
             if stats.get("points"):
                 stats_html += f"<li><strong>Points:</strong> {stats['points']:,}</li>"
             if stats.get("cells") and not is_point_cloud:
                 stats_html += f"<li><strong>Cells:</strong> {stats['cells']:,}</li>"
             if stats.get("area"):
-                stats_html += f"<li><strong>Surface Area:</strong> {stats['area']:.2f}</li>"
+                stats_html += (
+                    f"<li><strong>Surface Area:</strong> {stats['area']:.2f}</li>"
+                )
             if stats.get("volume"):
                 stats_html += f"<li><strong>Volume:</strong> {stats['volume']:.2f}</li>"
             if stats.get("bounds"):
                 bounds = stats["bounds"]
                 stats_html += f"<li><strong>Bounds:</strong> X: [{bounds[0]:.2f}, {bounds[1]:.2f}], Y: [{bounds[2]:.2f}, {bounds[3]:.2f}], Z: [{bounds[4]:.2f}, {bounds[5]:.2f}]</li>"
             stats_html += "</ul>"
-            
+
             # Get the render window to update the persistent VTK pane
             render_window = render_info.get("render_window")
-            
+
             if render_window:
                 info_section = f"""
                 <div>
@@ -694,10 +720,10 @@ class DataDashboard(param.Parameterized):
                 </div>
                 """
                 self.file_viewer.object = info_section
-                
+
                 # Create or update the reusable VTK pane with new render window
-                logger.info(f"🔄 Creating/updating VTK pane with new render window")
-                
+                logger.info("🔄 Creating/updating VTK pane with new render window")
+
                 try:
                     # Create VTK pane on demand if it doesn't exist
                     if self.vtk_pane is None:
@@ -707,70 +733,89 @@ class DataDashboard(param.Parameterized):
                             width=800,
                             height=600,
                             sizing_mode="fixed",
-                            enable_keybindings=True, orientation_widget=True,
+                            enable_keybindings=True,
+                            orientation_widget=True,
                         )
-                        
+
                         # Add to the container
                         self.persistent_vtk_container.clear()
                         self.persistent_vtk_container.append(self.vtk_pane)
                         logger.info("✅ VTK pane created ONCE and added to container")
-                        
+
                         # The camera should already be properly set by PyVista, but ensure it's visible
                         logger.info("📷 Initial camera view set by PyVista")
                     else:
                         # Update existing VTK pane with new render window
-                        logger.info("🔄 REUSING existing VTK pane, updating render window")
-                        self.vtk_pane.object = render_window
-                        
+                        logger.info(
+                            "🔄 REUSING existing VTK pane, updating render window"
+                        )
+                        self.vtk_pane.object = render_window  # type: ignore[attr-defined]
+
                         # Reset camera view to properly frame the new data
                         logger.info("📷 Resetting camera view for new PLY data")
                         try:
                             # Get mesh bounds and center for better camera positioning
                             mesh_bounds = render_info.get("mesh_bounds")
                             mesh_center = render_info.get("mesh_center")
-                            
+
                             # Access the render window from the VTK pane and reset camera
-                            ren_win = self.vtk_pane.object
-                            if ren_win and hasattr(ren_win, 'GetRenderers'):
+                            ren_win = self.vtk_pane.object  # type: ignore[attr-defined]
+                            if ren_win and hasattr(ren_win, "GetRenderers"):
                                 renderers = ren_win.GetRenderers()
                                 if renderers.GetNumberOfItems() > 0:
                                     renderer = renderers.GetFirstRenderer()
                                     if renderer:
                                         # Reset camera to fit the bounds
                                         renderer.ResetCamera()
-                                        
+
                                         # If we have mesh center, position camera for better iso view
-                                        if mesh_center is not None and mesh_bounds is not None:
+                                        if (
+                                            mesh_center is not None
+                                            and mesh_bounds is not None
+                                        ):
                                             camera = renderer.GetActiveCamera()
                                             # Calculate a good distance from the bounds
                                             bounds_range = max(
-                                                mesh_bounds[1] - mesh_bounds[0],  # x range
-                                                mesh_bounds[3] - mesh_bounds[2],  # y range  
-                                                mesh_bounds[5] - mesh_bounds[4]   # z range
+                                                mesh_bounds[1]
+                                                - mesh_bounds[0],  # x range
+                                                mesh_bounds[3]
+                                                - mesh_bounds[2],  # y range
+                                                mesh_bounds[5]
+                                                - mesh_bounds[4],  # z range
                                             )
-                                            distance = bounds_range * 2.0  # Good viewing distance
-                                            
+                                            distance = (
+                                                bounds_range * 2.0
+                                            )  # Good viewing distance
+
                                             # Set isometric view position
                                             camera.SetPosition(
                                                 mesh_center[0] + distance,
-                                                mesh_center[1] + distance, 
-                                                mesh_center[2] + distance
+                                                mesh_center[1] + distance,
+                                                mesh_center[2] + distance,
                                             )
-                                            camera.SetFocalPoint(mesh_center[0], mesh_center[1], mesh_center[2])
+                                            camera.SetFocalPoint(
+                                                mesh_center[0],
+                                                mesh_center[1],
+                                                mesh_center[2],
+                                            )
                                             camera.SetViewUp(0, 0, 1)  # Z-up
                                             renderer.ResetCameraClippingRange()
-                                        
+
                                         ren_win.Render()
-                                        logger.info("✅ Camera view reset with mesh bounds successfully")
+                                        logger.info(
+                                            "✅ Camera view reset with mesh bounds successfully"
+                                        )
                         except Exception as camera_error:
-                            logger.warning(f"⚠️ Could not reset camera view: {camera_error}")
-                    
-                    # Show and expand the VTK container 
-                    logger.info(f"📦 EXPANDING VTK container")
+                            logger.warning(
+                                f"⚠️ Could not reset camera view: {camera_error}"
+                            )
+
+                    # Show and expand the VTK container
+                    logger.info("📦 EXPANDING VTK container")
                     self.persistent_vtk_container.height = 600
                     self.persistent_vtk_container.margin = 5
                     self.persistent_vtk_container.styles = {"display": "block"}
-                    
+
                 except Exception as vtk_error:
                     logger.error(f"🚨 VTK pane creation/update failed: {vtk_error}")
                     # Fall back to error section if VTK pane creation fails
@@ -784,7 +829,7 @@ class DataDashboard(param.Parameterized):
                     </div>
                     """
                     self.file_viewer.object = error_section
-                
+
             else:
                 # Fallback if render window failed
                 error_section = f"""
@@ -798,16 +843,16 @@ class DataDashboard(param.Parameterized):
                 """
                 self.file_viewer.object = error_section
                 # Make sure VTK container is collapsed but keep VTK pane for reuse
-                if hasattr(self, 'persistent_vtk_container'):
+                if hasattr(self, "persistent_vtk_container"):
                     self.persistent_vtk_container.height = 0
                     self.persistent_vtk_container.styles = {"display": "none"}
                 # Keep VTK pane alive for reuse
 
         elif render_info["type"] == "error":
             path_info = self._get_file_path_info(render_info)
-            
+
             self._update_view_container()
-            
+
             self.file_viewer.object = f"""
             <div>
                 {path_info}
@@ -819,9 +864,9 @@ class DataDashboard(param.Parameterized):
 
         elif render_info["type"] == "unknown":
             path_info = self._get_file_path_info(render_info)
-            
+
             self._update_view_container()
-            
+
             self.file_viewer.object = f"""
             <div>
                 {path_info}
@@ -870,7 +915,7 @@ class DataDashboard(param.Parameterized):
             )
 
             edited_content = self.file_editor.value
-            
+
             # Save to local cache only (not to cloud)
             self._save_to_local_cache(bucket, full_path, edited_content)
 
@@ -879,7 +924,9 @@ class DataDashboard(param.Parameterized):
             cache_path = self.file_manager._get_cache_path(bucket, full_path)
             if cache_path.exists():
                 # Reload the file content directly
-                content, render_info = self.file_manager.get_file_content_with_progress(bucket, full_path)
+                content, render_info = self.file_manager.get_file_content_with_progress(
+                    bucket, full_path
+                )
                 self.current_file_content = content
                 self.current_file_info = render_info
                 self._update_file_viewer(render_info)
@@ -887,13 +934,13 @@ class DataDashboard(param.Parameterized):
             # Exit edit mode
             self._exit_edit_mode()
 
-            self.status_pane.object = (
-                f"<p style='color:green'>💾 Saved to local cache: {self.selected_file} - Use 'Replace in Cloud' to upload</p>"
-            )
+            self.status_pane.object = f"<p style='color:green'>💾 Saved to local cache: {self.selected_file} - Use 'Replace in Cloud' to upload</p>"
 
         except Exception as e:
             logger.error(f"Error saving file to cache: {e}")
-            self.status_pane.object = f"<p style='color:red'>Error saving file to cache: {e}</p>"
+            self.status_pane.object = (
+                f"<p style='color:red'>Error saving file to cache: {e}</p>"
+            )
 
     def _save_to_local_cache(self, bucket: str, full_path: str, edited_content: str):
         """Save edited content to local cache file only."""
@@ -901,14 +948,14 @@ class DataDashboard(param.Parameterized):
         viewer = self.file_manager.viewer_registry.get_viewer(full_path)
         if not viewer or not viewer.can_edit():
             raise ValueError(f"File {full_path} is not editable")
-        
+
         # Process the content (e.g., encode to bytes)
         processed_content = viewer.process_edit(edited_content, full_path)
-        
+
         # Get cache path and write directly to cache
         cache_path = self.file_manager._get_cache_path(bucket, full_path)
         cache_path.write_bytes(processed_content)
-        
+
         logger.info(f"Saved edited content to cache: {cache_path}")
 
     def _cancel_edit(self, _):
@@ -943,30 +990,33 @@ class DataDashboard(param.Parameterized):
         self, session_name: str, bucket_type: str, file_path: str
     ) -> str:
         """Get cache and modification indicator icon for a file."""
-        is_cached = self.file_manager.is_file_cached(session_name, bucket_type, file_path)
-        
+        # Get the actual bucket name from session_manager
+        if bucket_type == "curated":
+            bucket = self.session_manager.curated_bucket
+        else:
+            bucket = self.session_manager.processed_bucket
+
+        # Construct the full path
+        full_path = f"{session_name}/{file_path.strip('/')}"
+
+        # Check if file is cached
+        cache_path = self.file_manager._get_cache_path(bucket, full_path)
+        is_cached = cache_path.exists()
+
         if not is_cached:
             return "📡"  # Remote only
-        
+
         # File is cached, check if modified
         try:
-            # Construct bucket name and full path for modification check
-            bucket = f"fieldwork_{bucket_type}"
-            if bucket_type == "curated":
-                full_path = f"{session_name}/{file_path.strip('/')}"
-            else:  # processed
-                full_path = f"{session_name}/{file_path.strip('/')}"
-            
             is_modified = self.file_manager.is_file_modified(bucket, full_path)
             if is_modified:
                 return "📝"  # Cached and modified
             else:
                 return "💾"  # Cached, not modified
-                
+
         except Exception as e:
             logger.warning(f"Error checking modification status for {file_path}: {e}")
             return "💾"  # Default to cached if we can't check
-
 
     def _reselect_current_file(self):
         """Re-select the current file after file tree update."""
@@ -1094,76 +1144,87 @@ class DataDashboard(param.Parameterized):
         """Hide the blocking loading modal."""
         self.loading_modal.object = ""
         self.loading_modal.visible = False
-    
+
     def _convert_video(self, _):
         """Convert current video to H.264 format."""
         if not self.selected_file or not self.selected_session:
             return
-        
+
         try:
             # Show loading
             self._show_loading("Converting video to H.264...")
             self.convert_video_button.disabled = True
-            
+
             # Get bucket and full path
             bucket, full_path = self.session_manager.get_file_path(
                 self.selected_session, self.current_bucket_type, self.selected_file
             )
-            
+
             # Convert video
-            success, message, converted_path = self.file_manager.convert_video_to_h264(bucket, full_path)
-            
+            success, message, converted_path = self.file_manager.convert_video_to_h264(
+                bucket, full_path
+            )
+
             if success:
                 self.status_pane.object = f"<p style='color:green'>✅ {message} - Use 'Replace in Cloud' button to upload</p>"
-                # Replace the local cached file with the converted version  
+                # Replace the local cached file with the converted version
                 self._replace_local_video_and_reload(bucket, full_path, converted_path)
             else:
                 self.status_pane.object = f"<p style='color:red'>❌ {message}</p>"
                 self.convert_video_button.disabled = False
-            
+
         except Exception as e:
             logger.error(f"Error in video conversion: {e}")
-            self.status_pane.object = f"<p style='color:red'>❌ Conversion error: {e}</p>"
+            self.status_pane.object = (
+                f"<p style='color:red'>❌ Conversion error: {e}</p>"
+            )
             self.convert_video_button.disabled = False
         finally:
             self._hide_loading()
-    
-    def _replace_local_video_and_reload(self, bucket: str, full_path: str, converted_path: str):
+
+    def _replace_local_video_and_reload(
+        self, bucket: str, full_path: str, converted_path: str
+    ):
         """Replace local cached video with converted version and reload viewer."""
         try:
             # Get original cache path
             original_cache_path = self.file_manager.get_cache_path(bucket, full_path)
-            
+
             # Replace the cached file with the converted version
             import shutil
             import os
+
             shutil.copy2(converted_path, original_cache_path)
-            logger.info(f"Replaced cached video with H.264 version: {original_cache_path}")
-            
+            logger.info(
+                f"Replaced cached video with H.264 version: {original_cache_path}"
+            )
+
             # Clean up the temporary _h264 file to avoid duplicates
             try:
                 os.remove(converted_path)
                 logger.info(f"Cleaned up temporary converted file: {converted_path}")
             except Exception as cleanup_error:
-                logger.warning(f"Could not clean up temporary file {converted_path}: {cleanup_error}")
-            
+                logger.warning(
+                    f"Could not clean up temporary file {converted_path}: {cleanup_error}"
+                )
+
             # Reload the current file to show the converted version
             self._on_file_select_by_path(self.selected_file)
-            
+
             # Refresh the file list to show updated cache status
             self._refresh_file_list()
-            
+
         except Exception as e:
             logger.error(f"Error replacing local video: {e}")
             self.status_pane.object = f"<p style='color:orange'>⚠️ Conversion successful but couldn't replace local file: {e}</p>"
-    
+
     def _update_file_management_buttons(self):
         """Update visibility and state of file management buttons based on current file."""
         has_file = bool(self.selected_file and self.selected_session)
-        
+
         # Show the entire file management controls container when a file is loaded
         self.file_management_controls.visible = has_file
-        
+
         if has_file:
             # Check if file is modified to show/hide buttons appropriately
             try:
@@ -1171,17 +1232,17 @@ class DataDashboard(param.Parameterized):
                     self.selected_session, self.current_bucket_type, self.selected_file
                 )
                 is_modified = self.file_manager.is_file_modified(bucket, full_path)
-                
+
                 # Show replace button only if file is modified
                 self.replace_file_button.visible = is_modified
                 if is_modified:
                     self.replace_file_button.name = "Replace in Cloud (Modified)"
                 else:
                     self.replace_file_button.name = "Replace in Cloud"
-                
+
                 # Show download original button only if file is modified
                 self.download_original_button.visible = is_modified
-                    
+
             except Exception as e:
                 logger.warning(f"Error checking file modification status: {e}")
                 # Default to visible if we can't check
@@ -1192,73 +1253,77 @@ class DataDashboard(param.Parameterized):
             # Hide individual buttons when no file is selected
             self.replace_file_button.visible = False
             self.download_original_button.visible = False
-    
+
     def _replace_file_in_cloud(self, _):
         """Replace the current file in cloud with the cached version."""
         if not self.selected_file or not self.selected_session:
             return
-        
+
         try:
             # Show loading
             self._show_loading("Replacing file in cloud...")
             self.replace_file_button.disabled = True
-            
+
             # Get bucket and full path
             bucket, full_path = self.session_manager.get_file_path(
                 self.selected_session, self.current_bucket_type, self.selected_file
             )
-            
+
             # Replace file
-            success, message = self.file_manager.replace_file_from_cache(bucket, full_path)
-            
+            success, message = self.file_manager.replace_file_from_cache(
+                bucket, full_path
+            )
+
             if success:
                 self.status_pane.object = f"<p style='color:green'>✅ {message}</p>"
                 # Refresh the file list to show the _old backup file
                 self._refresh_file_list()
             else:
                 self.status_pane.object = f"<p style='color:red'>❌ {message}</p>"
-            
+
         except Exception as e:
             logger.error(f"Error replacing file in cloud: {e}")
             self.status_pane.object = f"<p style='color:red'>❌ Replace error: {e}</p>"
         finally:
             self.replace_file_button.disabled = False
             self._hide_loading()
-    
+
     def _download_original_file(self, _):
         """Download the original file from cloud, overwriting local cache."""
         if not self.selected_file or not self.selected_session:
             return
-        
+
         try:
             # Show loading
             self._show_loading("Downloading original file from cloud...")
             self.download_original_button.disabled = True
-            
+
             # Get bucket and full path
             bucket, full_path = self.session_manager.get_file_path(
                 self.selected_session, self.current_bucket_type, self.selected_file
             )
-            
+
             # Download original file from cloud and overwrite cache
             try:
                 content = self.file_manager.client.read_file(bucket, full_path)
                 cache_path = self.file_manager._get_cache_path(bucket, full_path)
                 cache_path.write_bytes(content)
                 logger.info(f"Downloaded original file to cache: {cache_path}")
-                
+
                 # Reload the file to show original content
                 self._on_file_select_by_path(self.selected_file)
-                
+
                 # Refresh the file list to show updated cache status
                 self._refresh_file_list()
-                
-                self.status_pane.object = f"<p style='color:green'>✅ Downloaded original version from cloud</p>"
-                
+
+                self.status_pane.object = "<p style='color:green'>✅ Downloaded original version from cloud</p>"
+
             except Exception as e:
                 logger.error(f"Error downloading original file: {e}")
-                self.status_pane.object = f"<p style='color:red'>❌ Failed to download original: {e}</p>"
-                
+                self.status_pane.object = (
+                    f"<p style='color:red'>❌ Failed to download original: {e}</p>"
+                )
+
         except Exception as e:
             logger.error(f"Error in download original: {e}")
             self.status_pane.object = f"<p style='color:red'>❌ Download error: {e}</p>"
@@ -1270,44 +1335,44 @@ class DataDashboard(param.Parameterized):
         """Show the deletion confirmation modal."""
         self.modal_message.object = f"<p style='margin: 15px 0;'>Are you sure you want to delete <strong>'{file_name}'</strong>?<br/><span style='color: #666; font-size: 0.9em;'>This will remove it from both local cache and cloud storage.</span></p>"
         self.modal_dialog.visible = True
-    
+
     def _hide_modal(self):
         """Hide the deletion confirmation modal."""
         self.modal_dialog.visible = False
-    
+
     def _confirm_delete(self, _):
         """Handle confirm delete button click."""
         self._hide_modal()
         self._perform_file_deletion()
-    
+
     def _cancel_delete(self, _):
         """Handle cancel delete button click."""
         self._hide_modal()
         self.status_pane.object = "<p>Deletion cancelled</p>"
-    
+
     def _delete_file(self, _):
         """Delete the current file from cloud and cache with confirmation."""
         if not self.selected_file or not self.selected_session:
             return
-        
+
         # Show modal confirmation dialog
         self._show_modal(self.selected_file)
-    
+
     def _perform_file_deletion(self):
         """Actually perform the file deletion after confirmation."""
         try:
             # Show loading
             self._show_loading("Deleting file...")
             self.delete_file_button.disabled = True
-            
+
             # Get bucket and full path
             bucket, full_path = self.session_manager.get_file_path(
                 self.selected_session, self.current_bucket_type, self.selected_file
             )
-            
+
             # Delete file
             success, message = self.file_manager.delete_file(bucket, full_path)
-            
+
             if success:
                 self.status_pane.object = f"<p style='color:green'>✅ {message}</p>"
                 # Clear the current file selection
@@ -1320,14 +1385,14 @@ class DataDashboard(param.Parameterized):
                 self._refresh_file_list()
             else:
                 self.status_pane.object = f"<p style='color:red'>❌ {message}</p>"
-            
+
         except Exception as e:
             logger.error(f"Error deleting file: {e}")
             self.status_pane.object = f"<p style='color:red'>❌ Delete error: {e}</p>"
         finally:
             self.delete_file_button.disabled = False
             self._hide_loading()
-    
+
     def _refresh_file_list(self):
         """Refresh the file list to show updated files (including _old backups)."""
         try:
@@ -1335,7 +1400,7 @@ class DataDashboard(param.Parameterized):
                 session = self.session_manager.load_session_files(self.selected_session)
                 if session:
                     self._update_file_tree(session)
-                    self.status_pane.object = f"<p>📄 File list refreshed</p>"
+                    self.status_pane.object = "<p>📄 File list refreshed</p>"
         except Exception as e:
             logger.error(f"Error refreshing file list: {e}")
 
@@ -1357,20 +1422,16 @@ class DataDashboard(param.Parameterized):
         )
 
         # Video conversion controls (only video-specific buttons)
-        self.video_controls = pn.Row(
-            self.convert_video_button,
-            margin=(10, 0)
-        )
-        
+        self.video_controls = pn.Row(self.convert_video_button, margin=(10, 0))
 
         # Main content area with file name header
         # Create a container for the view content that can be dynamically updated
         self.view_container = pn.Column(
-            self.file_viewer, 
+            self.file_viewer,
             self.persistent_vtk_container,  # Always present, but collapsed when not needed
-            self.video_controls
+            self.video_controls,
         )
-        
+
         viewer_tabs = pn.Tabs(
             ("View", self.view_container),
             (
@@ -1407,31 +1468,33 @@ class DataDashboard(param.Parameterized):
 
         # Create a simple modal dialog using Panel's overlay approach
         self.modal_message = pn.pane.HTML("")
-        
+
         # Simple modal dialog content - no complex CSS positioning
         self.modal_dialog = pn.Column(
-            pn.pane.HTML("<h3>⚠️ Confirm Deletion</h3>", 
-                        styles={"color": "#d32f2f", "margin": "0 0 10px 0"}),
+            pn.pane.HTML(
+                "<h3>⚠️ Confirm Deletion</h3>",
+                styles={"color": "#d32f2f", "margin": "0 0 10px 0"},
+            ),
             self.modal_message,
             pn.Row(
                 self.confirm_delete_button,
                 pn.Spacer(width=20),
                 self.cancel_delete_button,
-                align="center"
+                align="center",
             ),
             margin=20,
             width=400,
             height=180,
             styles={
                 "background": "white",
-                "border": "3px solid #d32f2f", 
+                "border": "3px solid #d32f2f",
                 "border-radius": "10px",
                 "padding": "20px",
-                "box-shadow": "0 8px 24px rgba(0, 0, 0, 0.3)"
+                "box-shadow": "0 8px 24px rgba(0, 0, 0, 0.3)",
             },
-            visible=False
+            visible=False,
         )
-        
+
         return pn.template.MaterialTemplate(
             title="CIS Data Dashboard",
             sidebar=[nav_panel],
@@ -1440,17 +1503,25 @@ class DataDashboard(param.Parameterized):
                 self.loading_modal,
                 self.modal_dialog,
                 status_panel,
-                content_panel
+                content_panel,
             ],
             header_background="#2596be",
             sidebar_width=600,  # Much wider sidebar for file tree
         )
 
 
-def create_app():
+def create_app(
+    remote_name: Optional[str] = None,
+    curated_bucket: Optional[str] = None,
+    processed_bucket: Optional[str] = None,
+):
     """Create and return the dashboard application."""
     try:
-        dashboard = DataDashboard()
+        dashboard = DataDashboard(
+            remote_name=remote_name,
+            curated_bucket=curated_bucket,
+            processed_bucket=processed_bucket,
+        )
         return dashboard.create_layout()
     except Exception as e:
         logger.error(f"Failed to create dashboard: {e}")
@@ -1470,9 +1541,20 @@ def create_app():
         return error_pane
 
 
-def serve_dashboard(port: int = 5007, show: bool = True, autoreload: bool = True):
+def serve_dashboard(
+    port: int = 5007,
+    show: bool = True,
+    autoreload: bool = True,
+    remote_name: Optional[str] = None,
+    curated_bucket: Optional[str] = None,
+    processed_bucket: Optional[str] = None,
+):
     """Serve the dashboard application."""
-    app = create_app()
+    app = create_app(
+        remote_name=remote_name,
+        curated_bucket=curated_bucket,
+        processed_bucket=processed_bucket,
+    )
 
     return pn.serve(
         app,

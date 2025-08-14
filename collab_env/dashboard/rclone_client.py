@@ -164,7 +164,11 @@ class RcloneClient:
 
         try:
             # Use rclone rcat to write content
-            subprocess.run(["rclone", "rcat", "--gcs-bucket-policy-only", remote_path], input=content, check=True)
+            subprocess.run(
+                ["rclone", "rcat", "--gcs-bucket-policy-only", remote_path],
+                input=content,
+                check=True,
+            )
             logger.info(f"Successfully wrote file to {remote_path}")
         except subprocess.CalledProcessError as e:
             logger.error(f"Failed to write file {remote_path}: {e}")
@@ -230,108 +234,134 @@ class RcloneClient:
             return True
         except subprocess.CalledProcessError:
             return False
-    
-    def copy_file(self, source_bucket: str, source_path: str, dest_bucket: str, dest_path: str) -> bool:
+
+    def copy_file(
+        self, source_bucket: str, source_path: str, dest_bucket: str, dest_path: str
+    ) -> bool:
         """
         Copy a file from one location to another using rclone copyto.
-        
+
         Args:
             source_bucket: Source bucket name
             source_path: Source file path within bucket
-            dest_bucket: Destination bucket name  
+            dest_bucket: Destination bucket name
             dest_path: Destination file path within bucket
-            
+
         Returns:
             True if copy successful, False otherwise
         """
-        source_remote_path = f"{self.remote_name}:{source_bucket}/{source_path.strip('/')}"
+        source_remote_path = (
+            f"{self.remote_name}:{source_bucket}/{source_path.strip('/')}"
+        )
         dest_remote_path = f"{self.remote_name}:{dest_bucket}/{dest_path.strip('/')}"
-        
+
         try:
             result = subprocess.run(
-                ["rclone", "copyto", "--gcs-bucket-policy-only", source_remote_path, dest_remote_path],
+                [
+                    "rclone",
+                    "copyto",
+                    "--gcs-bucket-policy-only",
+                    source_remote_path,
+                    dest_remote_path,
+                ],
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=60,
             )
-            
+
             if result.returncode == 0:
-                logger.info(f"Successfully copied file: {source_bucket}/{source_path} -> {dest_bucket}/{dest_path}")
+                logger.info(
+                    f"Successfully copied file: {source_bucket}/{source_path} -> {dest_bucket}/{dest_path}"
+                )
                 return True
             else:
                 logger.error(f"Failed to copy file: {result.stderr}")
                 return False
-                
+
         except Exception as e:
             logger.error(f"Error copying file: {e}")
             return False
-    
-    def copy_local_to_remote(self, local_path: str, bucket: str, remote_path: str) -> bool:
+
+    def copy_local_to_remote(
+        self, local_path: str, bucket: str, remote_path: str
+    ) -> bool:
         """
         Copy a local file to remote bucket using rclone copyto.
-        
+
         Args:
             local_path: Local file path
             bucket: Destination bucket name
             remote_path: Destination file path within bucket
-            
+
         Returns:
             True if copy successful, False otherwise
         """
         dest_remote_path = f"{self.remote_name}:{bucket}/{remote_path.strip('/')}"
-        
+
         try:
             result = subprocess.run(
-                ["rclone", "copyto", "--gcs-bucket-policy-only", local_path, dest_remote_path],
+                [
+                    "rclone",
+                    "copyto",
+                    "--gcs-bucket-policy-only",
+                    local_path,
+                    dest_remote_path,
+                ],
                 capture_output=True,
                 text=True,
-                timeout=120
+                timeout=120,
             )
-            
+
             if result.returncode == 0:
-                logger.info(f"Successfully copied local file to remote: {local_path} -> {bucket}/{remote_path}")
+                logger.info(
+                    f"Successfully copied local file to remote: {local_path} -> {bucket}/{remote_path}"
+                )
                 return True
             else:
                 logger.error(f"Failed to copy local file to remote: {result.stderr}")
                 return False
-                
+
         except Exception as e:
             logger.error(f"Error copying local file to remote: {e}")
             return False
-    
-    def get_file_checksum(self, bucket: str, file_path: str, hash_type: str = "md5") -> str:
+
+    def get_file_checksum(
+        self, bucket: str, file_path: str, hash_type: str = "md5"
+    ) -> str:
         """
         Get checksum of a remote file using rclone hashsum.
-        
+
         Args:
             bucket: Bucket name
             file_path: Path to file within bucket
             hash_type: Hash algorithm (md5, sha1, sha256, etc.)
-            
+
         Returns:
             Checksum string, or empty string if failed
         """
         remote_path = f"{self.remote_name}:{bucket}/{file_path.strip('/')}"
-        
+
         try:
             result = subprocess.run(
                 ["rclone", "hashsum", hash_type, remote_path],
                 capture_output=True,
                 text=True,
-                timeout=60
+                timeout=60,
             )
-            
+
             if result.returncode == 0:
                 # rclone hashsum output format: "checksum filename"
                 output = result.stdout.strip()
                 if output:
                     checksum = output.split()[0]
-                    logger.debug(f"Remote {hash_type} checksum for {bucket}/{file_path}: {checksum}")
+                    logger.debug(
+                        f"Remote {hash_type} checksum for {bucket}/{file_path}: {checksum}"
+                    )
                     return checksum
-                    
+
             logger.warning(f"Failed to get remote checksum: {result.stderr}")
             return ""
-            
+
         except Exception as e:
             logger.error(f"Error getting remote checksum: {e}")
             return ""

@@ -226,28 +226,36 @@ class VideoViewer(BaseViewer):
         """Analyze video codec using ffprobe."""
         try:
             cmd = [
-                "ffprobe", "-v", "quiet", "-print_format", "json",
-                "-show_format", "-show_streams", temp_path
+                "ffprobe",
+                "-v",
+                "quiet",
+                "-print_format",
+                "json",
+                "-show_format",
+                "-show_streams",
+                temp_path,
             ]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
-            
+
             if result.returncode == 0:
                 probe_data = json.loads(result.stdout)
-                
+
                 # Find video stream
                 video_stream = None
                 for stream in probe_data.get("streams", []):
                     if stream.get("codec_type") == "video":
                         video_stream = stream
                         break
-                
+
                 if video_stream:
                     codec_name = video_stream.get("codec_name", "unknown")
                     profile = video_stream.get("profile", "")
-                    
+
                     # Check browser compatibility
-                    browser_compatible = self._is_browser_compatible(codec_name, profile)
-                    
+                    browser_compatible = self._is_browser_compatible(
+                        codec_name, profile
+                    )
+
                     return {
                         "codec_name": codec_name,
                         "profile": profile,
@@ -256,9 +264,9 @@ class VideoViewer(BaseViewer):
                         "height": video_stream.get("height"),
                         "duration": video_stream.get("duration"),
                     }
-            
+
             return {"codec_name": "unknown", "browser_compatible": False}
-            
+
         except Exception as e:
             logger.warning(f"Could not analyze video codec: {e}")
             return {"codec_name": "unknown", "browser_compatible": None}
@@ -267,31 +275,31 @@ class VideoViewer(BaseViewer):
         """Check if video codec is compatible with modern browsers."""
         # Well-supported codecs across major browsers
         well_supported = {
-            "h264": True,     # Most widely supported (AVC)
-            "avc": True,      # Same as h264
-            "vp8": True,      # WebM - good support
-            "vp9": True,      # WebM - good support
-            "av1": True,      # Modern codec, growing support
+            "h264": True,  # Most widely supported (AVC)
+            "avc": True,  # Same as h264
+            "vp8": True,  # WebM - good support
+            "vp9": True,  # WebM - good support
+            "av1": True,  # Modern codec, growing support
         }
-        
+
         # Limited support codecs (work in some browsers)
         limited_support = {
-            "hevc": "limited",    # Safari, some Chrome versions
-            "h265": "limited",    # Same as hevc
-            "mpeg4": "limited",   # MPEG-4 Visual - very limited (Firefox 3GP only, ChromeOS)
+            "hevc": "limited",  # Safari, some Chrome versions
+            "h265": "limited",  # Same as hevc
+            "mpeg4": "limited",  # MPEG-4 Visual - very limited (Firefox 3GP only, ChromeOS)
         }
-        
+
         # Clearly unsupported codecs
         unsupported = {
-            "msmpeg4": False, # Microsoft MPEG-4
-            "flv1": False,    # Flash Video
-            "wmv": False,     # Windows Media Video
+            "msmpeg4": False,  # Microsoft MPEG-4
+            "flv1": False,  # Flash Video
+            "wmv": False,  # Windows Media Video
             "mpeg1video": False,  # MPEG-1
             "mpeg2video": False,  # MPEG-2
         }
-        
+
         codec_lower = codec_name.lower()
-        
+
         if codec_lower in unsupported:
             return False
         elif codec_lower in well_supported:
@@ -316,19 +324,22 @@ class VideoViewer(BaseViewer):
             }
 
             mime_type = mime_types.get(file_ext, "video/mp4")
-            
+
             # Analyze codec compatibility by writing to a temporary file
             import tempfile
+
             codec_info = {"codec_name": "unknown", "browser_compatible": None}
-            
+
             try:
-                with tempfile.NamedTemporaryFile(suffix=file_ext, delete=False) as temp_file:
+                with tempfile.NamedTemporaryFile(
+                    suffix=file_ext, delete=False
+                ) as temp_file:
                     temp_file.write(content)
                     temp_path = temp_file.name
-                
+
                 codec_info = self._analyze_video_codec(temp_path)
                 os.unlink(temp_path)  # Clean up temp file
-                
+
             except Exception as e:
                 logger.warning(f"Could not analyze video codec for {file_path}: {e}")
 
@@ -357,7 +368,7 @@ class VideoViewer(BaseViewer):
 
 class PLYViewer(BaseViewer):
     """Viewer for PLY 3D mesh files using PyVista."""
-    
+
     # Track if VTK has been used - only allow one VTK viewer per session
     _vtk_used = False
 
@@ -365,79 +376,80 @@ class PLYViewer(BaseViewer):
         """Render PLY file using PyVista and Panel's VTK integration."""
         try:
             import pyvista as pv
-            import panel as pn
             import tempfile
             import os
-            
+
             # Create a temporary file to save the PLY content
-            with tempfile.NamedTemporaryFile(suffix='.ply', delete=False) as tmp_file:
+            with tempfile.NamedTemporaryFile(suffix=".ply", delete=False) as tmp_file:
                 tmp_file.write(content)
                 temp_path = tmp_file.name
-            
+
             try:
                 # Load the PLY file using PyVista
                 mesh = pv.read(temp_path)
-                
+
                 # Check if this is a point cloud or mesh
                 is_point_cloud = mesh.n_cells == 0 or mesh.n_cells == mesh.n_points
                 has_faces = mesh.n_cells > 0 and not is_point_cloud
-                
+
                 # Create VTK pane that will be inserted into the persistent container
                 try:
                     # Create PyVista plotter for Panel VTK
                     plotter = pv.Plotter(
                         window_size=[800, 600],
                         off_screen=False,  # Keep on-screen for Panel VTK
-                        notebook=False     # Disable notebook mode
+                        notebook=False,  # Disable notebook mode
                     )
-                    
+
                     # Configure plotter appearance
                     plotter.background_color = (0.95, 0.95, 0.95)  # type: ignore
-                    
+
                     if is_point_cloud:
                         # Render as points for point clouds
                         plotter.add_mesh(
                             mesh,  # type: ignore
-                            color='lightblue',
+                            color="lightblue",
                             point_size=3.0,
                             render_points_as_spheres=True,
-                            opacity=0.8
+                            opacity=0.8,
                         )
                     else:
                         # Render as mesh with edges for surfaces
                         plotter.add_mesh(
                             mesh,  # type: ignore
-                            color='lightblue',
+                            color="lightblue",
                             show_edges=True,
-                            edge_color='gray',
+                            edge_color="gray",
                             smooth_shading=True,
-                            opacity=0.9
+                            opacity=0.9,
                         )
-                    
-                    plotter.camera_position = 'iso'
+
+                    plotter.camera_position = "iso"
                     plotter.reset_camera()  # type: ignore
-                    
+
                     # Store mesh bounds for camera reset in app
-                    mesh_bounds = mesh.bounds if hasattr(mesh, 'bounds') else None
-                    mesh_center = mesh.center if hasattr(mesh, 'center') else None
-                    
+                    mesh_bounds = mesh.bounds if hasattr(mesh, "bounds") else None
+                    mesh_center = mesh.center if hasattr(mesh, "center") else None
+
                     # Return the render window instead of creating a VTK pane
                     render_window = plotter.ren_win
-                    
-                    logger.info(f"🎮 CREATED RENDER WINDOW for reusable VTK pane: {file_path}")
-                    
+
+                    logger.info(
+                        f"🎮 CREATED RENDER WINDOW for reusable VTK pane: {file_path}"
+                    )
+
                 except Exception as vtk_error:
                     logger.error(f"VTK render window creation failed: {vtk_error}")
                     render_window = None
-                
+
                 # Get mesh/point cloud statistics
                 stats = {
                     "points": mesh.n_points,
                     "cells": mesh.n_cells,
-                    "bounds": list(mesh.bounds) if hasattr(mesh, 'bounds') else None,
+                    "bounds": list(mesh.bounds) if hasattr(mesh, "bounds") else None,
                     "is_point_cloud": is_point_cloud,
                 }
-                
+
                 # Only compute surface properties for meshes with faces
                 if has_faces:
                     try:
@@ -450,7 +462,7 @@ class PLYViewer(BaseViewer):
                 else:
                     stats["area"] = None
                     stats["volume"] = None
-                
+
                 return {
                     "type": "ply_3d",
                     "render_window": render_window,
@@ -458,27 +470,27 @@ class PLYViewer(BaseViewer):
                     "mesh_bounds": mesh_bounds,
                     "mesh_center": mesh_center,
                     "success": True,
-                    "error": None
+                    "error": None,
                 }
-                
+
             finally:
                 # Clean up temporary file
                 try:
                     os.unlink(temp_path)
                 except OSError:
                     pass
-                    
+
         except ImportError as e:
             return {
                 "type": "error",
                 "error": f"PyVista not available: {e}",
-                "success": False
+                "success": False,
             }
         except Exception as e:
             return {
-                "type": "error", 
+                "type": "error",
                 "error": f"Failed to render PLY file: {e}",
-                "success": False
+                "success": False,
             }
 
 
@@ -505,41 +517,37 @@ class FileContentManager:
         cache_filename = f"{safe_name}{file_ext}"
         return self.cache_dir / cache_filename
 
-    def is_file_cached(
-        self, session_name: str, bucket_type: str, file_path: str
-    ) -> bool:
-        """Check if a file is cached locally."""
-        # Construct bucket name from session and type info
-        bucket = f"fieldwork_{bucket_type}"  # Simplified for now
-        
-        # Need to construct the full path that matches what's used during download
-        # The download uses session_manager.get_file_path() which returns full_path
-        # We need to simulate this to get the same cache path
-        if bucket_type == "curated":
-            # Match the pattern used in session_manager.get_file_path()
-            full_path = f"{session_name}/{file_path.strip('/')}"
-        else:  # processed
-            full_path = f"{session_name}/{file_path.strip('/')}"
-            
-        cache_path = self._get_cache_path(bucket, full_path)
+    def is_file_cached(self, bucket: str, file_path: str) -> bool:
+        """Check if a file is cached locally.
+
+        Args:
+            bucket: Actual bucket name
+            file_path: Full path to file in bucket
+
+        Returns:
+            True if file is cached, False otherwise
+        """
+        cache_path = self._get_cache_path(bucket, file_path)
         return cache_path.exists()
 
     def get_cache_location(self) -> str:
         """Get the cache directory location."""
         return str(self.cache_dir)
-    
+
     def get_cache_path(self, bucket: str, file_path: str) -> str:
         """Get the cache file path for a bucket/file combination (public method)."""
         return str(self._get_cache_path(bucket, file_path))
-    
-    def convert_video_to_h264(self, bucket: str, file_path: str) -> Tuple[bool, str, Optional[str]]:
+
+    def convert_video_to_h264(
+        self, bucket: str, file_path: str
+    ) -> Tuple[bool, str, Optional[str]]:
         """
         Convert a video file to H.264 format.
-        
+
         Args:
             bucket: Bucket name
             file_path: Path to file
-            
+
         Returns:
             Tuple of (success, message, converted_file_path)
         """
@@ -548,52 +556,65 @@ class FileContentManager:
             cache_path = self._get_cache_path(bucket, file_path)
             if not cache_path.exists():
                 return False, "File not cached locally", None
-            
+
             # Create output path for converted file
             input_path = Path(cache_path)
             output_path = input_path.parent / f"{input_path.stem}_h264.mp4"
-            
+
             # Check if conversion already exists
             if output_path.exists():
                 return True, "H.264 version already exists", str(output_path)
-            
+
             # Run ffmpeg conversion
             cmd = [
-                "ffmpeg", "-i", str(cache_path),
-                "-c:v", "libx264",  # H.264 video codec
-                "-crf", "23",       # Constant rate factor (good quality)
-                "-preset", "medium", # Encoding speed vs compression
-                "-c:a", "aac",      # AAC audio codec
-                "-movflags", "+faststart",  # Web optimization
-                "-y",               # Overwrite output file
-                str(output_path)
+                "ffmpeg",
+                "-i",
+                str(cache_path),
+                "-c:v",
+                "libx264",  # H.264 video codec
+                "-crf",
+                "23",  # Constant rate factor (good quality)
+                "-preset",
+                "medium",  # Encoding speed vs compression
+                "-c:a",
+                "aac",  # AAC audio codec
+                "-movflags",
+                "+faststart",  # Web optimization
+                "-y",  # Overwrite output file
+                str(output_path),
             ]
-            
+
             logger.info(f"Converting video: {' '.join(cmd)}")
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            
+
             if result.returncode == 0:
                 logger.info(f"Successfully converted video to H.264: {output_path}")
-                return True, f"Successfully converted to H.264 ({self._format_file_size(output_path.stat().st_size)})", str(output_path)
+                return (
+                    True,
+                    f"Successfully converted to H.264 ({self._format_file_size(output_path.stat().st_size)})",
+                    str(output_path),
+                )
             else:
-                error_msg = result.stderr[-500:] if result.stderr else "Unknown ffmpeg error"
+                error_msg = (
+                    result.stderr[-500:] if result.stderr else "Unknown ffmpeg error"
+                )
                 logger.error(f"Video conversion failed: {error_msg}")
                 return False, f"Conversion failed: {error_msg}", None
-                
+
         except subprocess.TimeoutExpired:
             return False, "Conversion timed out (>5 minutes)", None
         except Exception as e:
             logger.error(f"Error converting video: {e}")
             return False, f"Conversion error: {e}", None
-    
+
     def replace_file_from_cache(self, bucket: str, file_path: str) -> Tuple[bool, str]:
         """
         Replace a file in the cloud with the cached version, backing up the original.
-        
+
         Args:
             bucket: Bucket name
             file_path: Path to file in bucket
-            
+
         Returns:
             Tuple of (success, message)
         """
@@ -602,69 +623,82 @@ class FileContentManager:
             cache_path = self._get_cache_path(bucket, file_path)
             if not cache_path.exists():
                 return False, "File not cached locally"
-            
+
             # Create backup filename with _old suffix
             original_path = Path(file_path)
             backup_filename = f"{original_path.stem}_old{original_path.suffix}"
             backup_file_path = str(original_path.parent / backup_filename)
-            
+
             # Step 1: Backup original file using rclone copyto
             try:
-                backup_success = self.client.copy_file(bucket, file_path, bucket, backup_file_path)
+                backup_success = self.client.copy_file(
+                    bucket, file_path, bucket, backup_file_path
+                )
                 if backup_success:
                     logger.info(f"Backed up original file: {bucket}/{backup_file_path}")
                 else:
-                    logger.warning(f"Could not backup original file using rclone copyto")
+                    logger.warning("Could not backup original file using rclone copyto")
             except Exception as e:
                 logger.warning(f"Could not backup original file: {e}")
                 # Continue anyway - backup failure shouldn't stop the upload
-            
+
             # Step 2: Upload cached file directly using rclone copyto
-            success = self.client.copy_local_to_remote(str(cache_path), bucket, file_path)
+            success = self.client.copy_local_to_remote(
+                str(cache_path), bucket, file_path
+            )
             if not success:
                 return False, "Failed to upload cached file to remote"
-            
-            logger.info(f"Replaced cloud file with cached version: {bucket}/{file_path}")
-            return True, f"Successfully replaced cloud file with cached version (backup saved as {backup_filename})"
-            
+
+            logger.info(
+                f"Replaced cloud file with cached version: {bucket}/{file_path}"
+            )
+            return (
+                True,
+                f"Successfully replaced cloud file with cached version (backup saved as {backup_filename})",
+            )
+
         except Exception as e:
             logger.error(f"Error replacing file from cache: {e}")
             return False, f"Replace failed: {e}"
-    
+
     def delete_file(self, bucket: str, file_path: str) -> Tuple[bool, str]:
         """
         Delete a file from the cloud storage.
-        
+
         Args:
             bucket: Bucket name
             file_path: Path to file in bucket
-            
+
         Returns:
             Tuple of (success, message)
         """
         try:
             # Use rclone to delete the file
-            cmd = ["rclone", "delete", f"{self.client.remote_name}:{bucket}/{file_path}"]
+            cmd = [
+                "rclone",
+                "delete",
+                f"{self.client.remote_name}:{bucket}/{file_path}",
+            ]
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-            
+
             if result.returncode == 0:
                 logger.info(f"Deleted file: {bucket}/{file_path}")
-                
+
                 # Also remove from local cache
                 cache_path = self._get_cache_path(bucket, file_path)
                 if cache_path.exists():
                     cache_path.unlink()
                     logger.info(f"Removed from cache: {cache_path}")
-                
+
                 return True, f"Successfully deleted {file_path}"
             else:
                 error_msg = result.stderr or "Unknown rclone error"
                 return False, f"Delete failed: {error_msg}"
-                
+
         except Exception as e:
             logger.error(f"Error deleting file: {e}")
             return False, f"Delete failed: {e}"
-    
+
     def _format_file_size(self, size_bytes: int) -> str:
         """Format file size in human readable format."""
         if size_bytes < 1024:
@@ -675,59 +709,62 @@ class FileContentManager:
             return f"{size_bytes / (1024**2):.1f} MB"
         else:
             return f"{size_bytes / (1024**3):.1f} GB"
-    
+
     def _get_local_file_checksum(self, file_path: Path, hash_type: str = "md5") -> str:
         """Get checksum of a local file."""
         try:
             import hashlib
+
             hash_func = getattr(hashlib, hash_type)()
-            
-            with open(file_path, 'rb') as f:
+
+            with open(file_path, "rb") as f:
                 for chunk in iter(lambda: f.read(4096), b""):
                     hash_func.update(chunk)
-            
+
             checksum = hash_func.hexdigest()
             logger.debug(f"Local {hash_type} checksum for {file_path}: {checksum}")
             return checksum
-            
+
         except Exception as e:
             logger.error(f"Error calculating local checksum: {e}")
             return ""
-    
+
     def is_file_modified(self, bucket: str, file_path: str) -> bool:
         """
         Check if local cached file differs from remote file using checksums.
-        
+
         Args:
             bucket: Bucket name
             file_path: Path to file
-            
+
         Returns:
             True if local file differs from remote, False if same or no cache
         """
         cache_path = self._get_cache_path(bucket, file_path)
         if not cache_path.exists():
             return False  # No local cache, so not modified
-        
+
         try:
             # Get local checksum
             local_checksum = self._get_local_file_checksum(cache_path)
             if not local_checksum:
                 return False
-            
+
             # Get remote checksum
             remote_checksum = self.client.get_file_checksum(bucket, file_path)
             if not remote_checksum:
                 return False  # Can't compare, assume not modified
-            
+
             is_different = local_checksum != remote_checksum
             if is_different:
-                logger.info(f"File modified: {bucket}/{file_path} (local: {local_checksum[:8]}..., remote: {remote_checksum[:8]}...)")
+                logger.info(
+                    f"File modified: {bucket}/{file_path} (local: {local_checksum[:8]}..., remote: {remote_checksum[:8]}...)"
+                )
             else:
                 logger.debug(f"File unchanged: {bucket}/{file_path}")
-                
+
             return is_different
-            
+
         except Exception as e:
             logger.error(f"Error checking if file is modified: {e}")
             return False
@@ -824,7 +861,7 @@ class FileContentManager:
             content = cache_path.read_bytes()
         else:
             content = self.client.read_file(bucket, file_path)
-        
+
         viewer = self.viewer_registry.get_viewer(file_path)
 
         if not viewer or not viewer.can_edit():

@@ -78,9 +78,23 @@ def main():
                 "💡 For better autoreload experience, use: panel serve dashboard_app.py --dev --show"
             )
             # For autoreload, let Panel manage browser behavior to avoid new tabs
-            serve_dashboard(port=args.port, show=show_browser, autoreload=True)
+            serve_dashboard(
+                port=args.port,
+                show=show_browser,
+                autoreload=True,
+                remote_name=args.remote_name,
+                curated_bucket=args.curated_bucket,
+                processed_bucket=args.processed_bucket,
+            )
         else:
-            serve_dashboard(port=args.port, show=show_browser, autoreload=False)
+            serve_dashboard(
+                port=args.port,
+                show=show_browser,
+                autoreload=False,
+                remote_name=args.remote_name,
+                curated_bucket=args.curated_bucket,
+                processed_bucket=args.processed_bucket,
+            )
     except KeyboardInterrupt:
         logger.info("Dashboard stopped by user")
     except Exception as e:
