@@ -101,6 +101,8 @@ def test_rclone_client_integration():
 
 def test_file_viewers():
     """Test file viewer functionality."""
+    import tempfile
+    import os
     from collab_env.dashboard.file_viewers import (
         FileViewerRegistry,
         TextViewer,
@@ -121,13 +123,25 @@ def test_file_viewers():
     assert table_viewer is not None
     assert isinstance(table_viewer, TableViewer)
 
-    # Test text rendering
-    test_content = b"test: value\nother: 123"
-    render_info = text_viewer.render_view(test_content, "test.yml")
-    assert render_info["type"] == "text"
-    assert "content" in render_info
-    assert render_info["content"] == "test: value\nother: 123"
-    assert render_info["language"] == "yaml"
+    # Test text rendering with actual file
+    test_content = "test: value\nother: 123"
+
+    # Create temporary file for testing
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".yml", delete=False
+    ) as temp_file:
+        temp_file.write(test_content)
+        temp_file_path = temp_file.name
+
+    try:
+        render_info = text_viewer.render_view(temp_file_path, "test.yml")
+        assert render_info["type"] == "text"
+        assert "content" in render_info
+        assert render_info["content"] == test_content
+        assert render_info["language"] == "yaml"
+    finally:
+        # Clean up temporary file
+        os.unlink(temp_file_path)
 
     # Test editing capabilities
     assert text_viewer.can_edit()
