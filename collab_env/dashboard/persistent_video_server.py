@@ -12,7 +12,7 @@ from threading import Lock
 app = Flask(__name__)
 
 # Thread-safe storage for multiple video/CSV combinations
-videos_data = {}
+videos_data: dict[str, dict] = {}
 data_lock = Lock()
 
 HTML_TEMPLATE = """
@@ -186,7 +186,30 @@ HTML_TEMPLATE = """
         let currentVideoId = null;
         let currentBboxData = {};
         let currentFps = 30.0;
+        let videoActualFps = null;  // Will be set from video metadata
         let trails = {};
+        
+        // Clear all state when switching videos
+        function clearVideoState() {
+            currentVideoId = null;
+            currentBboxData = {};
+            currentFps = 30.0;
+            videoActualFps = null;
+            trails = {};
+            
+            // Clear canvas
+            if (ctx) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+            
+            // Reset video
+            if (video) {
+                video.src = '';
+                video.load();
+            }
+            
+            console.log('🧽 Cleared all video state');
+        }
 
         // Get elements
         const videoSelect = document.getElementById('videoSelect');
@@ -244,7 +267,14 @@ HTML_TEMPLATE = """
             const videoId = videoSelect.value;
             if (!videoId) {
                 videoContent.style.display = 'none';
+                clearVideoState();
                 return;
+            }
+            
+            // Clear previous video state to prevent contamination
+            if (currentVideoId !== videoId) {
+                console.log(`🔄 Switching from ${currentVideoId} to ${videoId}`);
+                clearVideoState();
             }
 
             try {
@@ -259,7 +289,7 @@ HTML_TEMPLATE = """
                 const data = await response.json();
                 currentVideoId = videoId;
                 currentBboxData = data.bbox_data;
-                currentFps = data.fps;
+                currentFps = data.fps;  // This is the FPS we calculated from, keep as reference
                 
                 // Update video info
                 videoInfo.innerHTML = `
@@ -275,11 +305,11 @@ HTML_TEMPLATE = """
                 // Set video source
                 video.src = `/api/video/${videoId}/stream`;
                 
-                // Show video content
-                videoContent.style.display = 'block';
-                
                 // Reset trails
                 trails = {};
+                
+                // Show video content
+                videoContent.style.display = 'block';
                 
                 updateStatus(`Video loaded: ${data.name}`);
                 console.log('📊 Loaded bbox data for', Object.keys(currentBboxData).length, 'frames');
@@ -309,10 +339,17 @@ HTML_TEMPLATE = """
                 return;
             }
 
-            // Get current frame
+            // Get current frame - use the video's actual timing
             const currentTime = video.currentTime;
-            const currentFrame = Math.floor(currentTime * currentFps);
+            const usedFps = videoActualFps || currentFps;
+            const currentFrame = Math.floor(currentTime * usedFps);
             const frameData = currentBboxData[currentFrame] || [];
+            
+            // Debug: log timing info occasionally
+            if (Math.floor(currentTime) !== Math.floor((window.lastLoggedTime || 0)) && settings.showDebug) {
+                console.log(`🕰️ Time: ${currentTime.toFixed(2)}s, Frame: ${currentFrame}, FPS used: ${usedFps.toFixed(2)}, Data points: ${frameData.length}`);
+                window.lastLoggedTime = currentTime;
+            }
 
             if (frameData.length === 0) {
                 return;
@@ -418,8 +455,12 @@ HTML_TEMPLATE = """
 
             ctx.globalAlpha = 1.0;
 
+            // Update status with timing info
             if (frameData.length > 0) {
-                updateStatus(`Frame ${currentFrame}: ${frameData.length} objects tracked`);
+                const timingInfo = videoActualFps ? ` (${usedFps.toFixed(1)} fps)` : '';
+                updateStatus(`Frame ${currentFrame}${timingInfo}: ${frameData.length} objects tracked`);
+            } else if (settings.showDebug) {
+                updateStatus(`Frame ${currentFrame}: No data (time: ${currentTime.toFixed(2)}s)`);
             }
         }
 
@@ -427,7 +468,25 @@ HTML_TEMPLATE = """
         video.addEventListener('timeupdate', drawOverlay);
         video.addEventListener('seeked', drawOverlay);
         video.addEventListener('loadeddata', drawOverlay);
-        video.addEventListener('loadedmetadata', drawOverlay);
+        video.addEventListener('loadedmetadata', function() {
+            // Try to detect the video's actual frame rate from duration and estimated frame count
+            // This is an approximation, but better than using a fixed FPS
+            if (video.duration && Object.keys(currentBboxData).length > 0) {
+                const maxFrame = Math.max(...Object.keys(currentBboxData).map(f => parseInt(f)));
+                const estimatedFps = maxFrame / video.duration;
+                if (estimatedFps > 5 && estimatedFps < 120) {  // Sanity check
+                    videoActualFps = estimatedFps;
+                    console.log(`📽️ Estimated video FPS: ${videoActualFps.toFixed(2)} (duration: ${video.duration.toFixed(2)}s, max frame: ${maxFrame})`);
+                } else {
+                    videoActualFps = currentFps;
+                    console.log(`⚠️ FPS estimation failed (${estimatedFps.toFixed(2)}), using CSV FPS: ${currentFps}`);
+                }
+            } else {
+                videoActualFps = currentFps;
+                console.log(`📊 Using CSV FPS: ${currentFps}`);
+            }
+            drawOverlay();
+        });
 
         // Control event listeners
         showIdsCheck.addEventListener('change', function() {
@@ -463,180 +522,219 @@ HTML_TEMPLATE = """
 </html>
 """
 
-@app.route('/')
+
+@app.route("/")
 def index():
     """Main page with video selector and viewer."""
     return render_template_string(HTML_TEMPLATE)
 
-@app.route('/api/video/<video_id>')
+
+@app.route("/api/video/<video_id>")
 def get_video_data(video_id):
     """Get video metadata and bbox data."""
     with data_lock:
         if video_id not in videos_data:
-            return jsonify({'error': 'Video not found'}), 404
-        
+            return jsonify({"error": "Video not found"}), 404
+
         video_info = videos_data[video_id]
-        
+
         # Detect data format
-        if video_info['bbox_data'] and 'x1' in list(video_info['bbox_data'].values())[0][0]:
+        if (
+            video_info["bbox_data"]
+            and "x1" in list(video_info["bbox_data"].values())[0][0]
+        ):
             data_format = "Bounding Boxes (x1, y1, x2, y2)"
         else:
             data_format = "Centroids (x, y)"
-        
+
         # Get track info
         track_ids = set()
-        for frame_data in video_info['bbox_data'].values():
+        for frame_data in video_info["bbox_data"].values():
             for annotation in frame_data:
-                track_ids.add(annotation['track_id'])
-        
-        return jsonify({
-            'name': video_info['name'],
-            'data_format': data_format,
-            'num_tracks': len(track_ids),
-            'num_frames': len(video_info['bbox_data']),
-            'fps': video_info['fps'],
-            'bbox_data': video_info['bbox_data']
-        })
+                track_ids.add(annotation["track_id"])
 
-@app.route('/api/video/<video_id>/stream')
+        return jsonify(
+            {
+                "name": video_info["name"],
+                "data_format": data_format,
+                "num_tracks": len(track_ids),
+                "num_frames": len(video_info["bbox_data"]),
+                "fps": video_info["fps"],
+                "bbox_data": video_info["bbox_data"],
+            }
+        )
+
+
+@app.route("/api/video/<video_id>/stream")
 def stream_video(video_id):
     """Stream video file."""
     with data_lock:
         if video_id not in videos_data:
             return "Video not found", 404
-        
-        video_path = videos_data[video_id]['video_path']
-        return send_file(video_path, mimetype='video/mp4')
 
-@app.route('/api/add_video', methods=['POST'])
+        video_path = videos_data[video_id]["video_path"]
+        return send_file(video_path, mimetype="video/mp4")
+
+
+@app.route("/api/add_video", methods=["POST"])
 def api_add_video():
     """API endpoint to add a video/CSV combination."""
     try:
         from flask import request
         import traceback
-        
-        print(f"🔄 API add_video called")
-        
+
+        print("🔄 API add_video called")
+
         # Get JSON data
         data = request.get_json()
         if not data:
             error_msg = "No JSON data received"
             print(f"❌ {error_msg}")
-            return jsonify({'error': error_msg}), 400
-        
+            return jsonify({"error": error_msg}), 400
+
         print(f"📝 Received data: {data}")
-        
-        video_id = data.get('video_id')
-        video_path = data.get('video_path')
-        csv_path = data.get('csv_path')
-        fps = data.get('fps', 30.0)
-        
+
+        video_id = data.get("video_id")
+        video_path = data.get("video_path")
+        csv_path = data.get("csv_path")
+        fps = data.get("fps", 30.0)
+
         print(f"📹 Video ID: {video_id}")
         print(f"🎥 Video path: {video_path}")
         print(f"📊 CSV path: {csv_path}")
         print(f"⏱️ FPS: {fps}")
-        
+
         if not all([video_id, video_path, csv_path]):
             error_msg = f"Missing fields - video_id: {bool(video_id)}, video_path: {bool(video_path)}, csv_path: {bool(csv_path)}"
             print(f"❌ {error_msg}")
-            return jsonify({'error': error_msg}), 400
-        
+            return jsonify({"error": error_msg}), 400
+
         # Check if files exist
         if not Path(video_path).exists():
             error_msg = f"Video file not found: {video_path}"
             print(f"❌ {error_msg}")
-            return jsonify({'error': error_msg}), 400
-            
+            return jsonify({"error": error_msg}), 400
+
         if not Path(csv_path).exists():
             error_msg = f"CSV file not found: {csv_path}"
             print(f"❌ {error_msg}")
-            return jsonify({'error': error_msg}), 400
-        
+            return jsonify({"error": error_msg}), 400
+
         # Add video using internal function
-        print(f"🚀 Adding video to server...")
+        print("🚀 Adding video to server...")
         success = add_video(video_id, video_path, csv_path, fps)
-        
+
         if success:
             print(f"✅ Video added successfully: {video_id}")
-            return jsonify({'success': True, 'video_id': video_id})
+            return jsonify({"success": True, "video_id": video_id})
         else:
             error_msg = "Failed to add video (unknown error)"
             print(f"❌ {error_msg}")
-            return jsonify({'error': error_msg}), 500
-            
+            return jsonify({"error": error_msg}), 500
+
     except Exception as e:
         error_msg = f"Exception in add_video: {str(e)}"
         print(f"❌ {error_msg}")
         print(f"📜 Traceback: {traceback.format_exc()}")
-        return jsonify({'error': error_msg}), 500
+        return jsonify({"error": error_msg}), 500
 
-@app.route('/api/videos')
+
+@app.route("/api/videos")
 def list_videos_api():
     """API endpoint to list all videos."""
     with data_lock:
         video_list = []
         for video_id, info in videos_data.items():
-            video_list.append({
-                'id': video_id,
-                'name': info['name'],
-                'tracks': len(set(
-                    ann['track_id'] 
-                    for frame_data in info['bbox_data'].values() 
-                    for ann in frame_data
-                ))
-            })
+            video_list.append(
+                {
+                    "id": video_id,
+                    "name": info["name"],
+                    "tracks": len(
+                        set(
+                            ann["track_id"]
+                            for frame_data in info["bbox_data"].values()
+                            for ann in frame_data
+                        )
+                    ),
+                }
+            )
         print(f"📝 API /api/videos returning {len(video_list)} videos")
         return jsonify(video_list)
 
-@app.route('/api/health')
+
+@app.route("/api/health")
 def health_check():
     """Simple health check endpoint."""
     with data_lock:
-        return jsonify({
-            'status': 'ok',
-            'videos_count': len(videos_data),
-            'videos': list(videos_data.keys())
-        })
+        return jsonify(
+            {
+                "status": "ok",
+                "videos_count": len(videos_data),
+                "videos": list(videos_data.keys()),
+            }
+        )
+
+
+@app.route("/api/clear", methods=["POST"])
+def clear_all_videos():
+    """Clear all video data from the server."""
+    with data_lock:
+        old_count = len(videos_data)
+        videos_data.clear()
+        print(f"🧽 Cleared {old_count} videos from server")
+        return jsonify({"success": True, "cleared_count": old_count})
+
+
+@app.route("/api/remove_video/<video_id>", methods=["DELETE"])
+def remove_video_endpoint(video_id):
+    """Remove a specific video from the server."""
+    with data_lock:
+        if video_id in videos_data:
+            del videos_data[video_id]
+            print(f"🗑️ Removed video: {video_id}")
+            return jsonify({"success": True, "video_id": video_id})
+        else:
+            return jsonify({"error": "Video not found"}), 404
+
 
 def prepare_bbox_data(df: pd.DataFrame) -> dict:
     """Convert DataFrame to frame-indexed dictionary."""
-    data_by_frame = {}
-    
+    data_by_frame: dict[int, list] = {}
+
     # Detect format
-    if 'x1' in df.columns:
+    if "x1" in df.columns:
         data_format = "bbox"
-        required_cols = ['x1', 'y1', 'x2', 'y2']
     else:
         data_format = "centroid"
-        required_cols = ['x', 'y']
-    
+
     for _, row in df.iterrows():
-        frame = int(row['frame'])
-        track_id = row['track_id']
-        
+        frame = int(row["frame"])
+        track_id = row["track_id"]
+
         if frame not in data_by_frame:
             data_by_frame[frame] = []
-        
+
         if data_format == "bbox":
             annotation = {
-                'track_id': track_id,
-                'x1': float(row['x1']),
-                'y1': float(row['y1']),
-                'x2': float(row['x2']),
-                'y2': float(row['y2']),
-                'type': 'bbox'
+                "track_id": track_id,
+                "x1": float(row["x1"]),
+                "y1": float(row["y1"]),
+                "x2": float(row["x2"]),
+                "y2": float(row["y2"]),
+                "type": "bbox",
             }
         else:
             annotation = {
-                'track_id': track_id,
-                'x': float(row['x']),
-                'y': float(row['y']),
-                'type': 'centroid'
+                "track_id": track_id,
+                "x": float(row["x"]),
+                "y": float(row["y"]),
+                "type": "centroid",
             }
-        
+
         data_by_frame[frame].append(annotation)
-    
+
     return data_by_frame
+
 
 def add_video(video_id: str, video_path: str, csv_path: str, fps: float = 30.0):
     """Add a video/CSV combination to the server."""
@@ -644,22 +742,23 @@ def add_video(video_id: str, video_path: str, csv_path: str, fps: float = 30.0):
         # Load CSV data
         df = pd.read_csv(csv_path)
         bbox_data = prepare_bbox_data(df)
-        
+
         with data_lock:
             videos_data[video_id] = {
-                'name': Path(video_path).name,
-                'video_path': video_path,
-                'csv_path': csv_path,
-                'fps': fps,
-                'bbox_data': bbox_data
+                "name": Path(video_path).name,
+                "video_path": video_path,
+                "csv_path": csv_path,
+                "fps": fps,
+                "bbox_data": bbox_data,
             }
-        
+
         print(f"✅ Added video: {video_id} ({Path(video_path).name})")
         return True
-        
+
     except Exception as e:
         print(f"❌ Failed to add video {video_id}: {e}")
         return False
+
 
 def remove_video(video_id: str):
     """Remove a video from the server."""
@@ -670,20 +769,22 @@ def remove_video(video_id: str):
             return True
         return False
 
+
 def list_videos():
     """List all loaded videos."""
     with data_lock:
         return list(videos_data.keys())
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     import argparse
-    
-    parser = argparse.ArgumentParser(description='Persistent Video Bbox Overlay Server')
-    parser.add_argument('--port', type=int, default=5050, help='Port to run on')
-    parser.add_argument('--host', default='localhost', help='Host to run on')
-    
+
+    parser = argparse.ArgumentParser(description="Persistent Video Bbox Overlay Server")
+    parser.add_argument("--port", type=int, default=5050, help="Port to run on")
+    parser.add_argument("--host", default="localhost", help="Host to run on")
+
     args = parser.parse_args()
-    
+
     print(f"🚀 Starting persistent video server at http://{args.host}:{args.port}")
     print("📝 API endpoints available:")
     print("  - GET  / (homepage)")
@@ -692,5 +793,7 @@ if __name__ == '__main__':
     print("  - GET  /api/health (health check)")
     print("  - GET  /api/video/<id> (video data)")
     print("  - GET  /api/video/<id>/stream (video stream)")
-    
-    app.run(host=args.host, port=args.port, debug=True, threaded=True)  # Enable debug for better error messages
+
+    app.run(
+        host=args.host, port=args.port, debug=True, threaded=True
+    )  # Enable debug for better error messages

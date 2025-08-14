@@ -226,7 +226,7 @@ class TableViewer(BaseViewer):
 
 class VideoViewer(BaseViewer):
     """Viewer for video files."""
-    
+
     def __init__(self):
         self._current_bucket = None
         self._rclone_client = None
@@ -235,43 +235,52 @@ class VideoViewer(BaseViewer):
         """Find matching bbox CSV files in the same directory as the video."""
         try:
             from .rclone_client import RcloneClient
-            
+
             # Get directory path from video_path (without bucket)
             video_path_obj = Path(video_path)
-            dir_path = str(video_path_obj.parent) if video_path_obj.parent != Path('.') else ""
-            
+            dir_path = (
+                str(video_path_obj.parent) if video_path_obj.parent != Path(".") else ""
+            )
+
             # Use rclone to list files in the same directory
             rclone_client = RcloneClient()
-            
+
             try:
                 # List files in the same directory
                 files = rclone_client.list_directory(bucket, dir_path)
-                
+
                 # Filter for CSV files ending with '_bboxes.csv'
                 bbox_csvs = []
                 for file_info in files:
-                    file_name = file_info.get('Name', '')  # rclone uses 'Name' field
-                    
-                    if (file_name.lower().endswith('_bboxes.csv') or 
-                        file_name.lower().endswith('.csv')):  # Be flexible initially
+                    file_name = file_info.get("Name", "")  # rclone uses 'Name' field
+
+                    if file_name.lower().endswith(
+                        "_bboxes.csv"
+                    ) or file_name.lower().endswith(".csv"):  # Be flexible initially
                         # Construct full path for validation (without bucket prefix)
-                        full_csv_path = str(Path(dir_path) / file_name) if dir_path else file_name
-                        
+                        full_csv_path = (
+                            str(Path(dir_path) / file_name) if dir_path else file_name
+                        )
+
                         # Check if it's actually a bbox CSV by examining columns
                         if self._is_bbox_csv_with_bucket(bucket, full_csv_path):
-                            bbox_csvs.append({
-                                'name': file_name,
-                                'path': full_csv_path,  # Path without bucket prefix
-                                'size': file_info.get('Size', 0)
-                            })
-                
-                logger.info(f"Found {len(bbox_csvs)} bbox CSV files for video {bucket}/{video_path}")
+                            bbox_csvs.append(
+                                {
+                                    "name": file_name,
+                                    "path": full_csv_path,  # Path without bucket prefix
+                                    "size": file_info.get("Size", 0),
+                                }
+                            )
+
+                logger.info(
+                    f"Found {len(bbox_csvs)} bbox CSV files for video {bucket}/{video_path}"
+                )
                 return bbox_csvs
-                
+
             except Exception as e:
                 logger.warning(f"Could not list directory for bbox detection: {e}")
                 return []
-                
+
         except Exception as e:
             logger.error(f"Error finding bbox CSV files: {e}")
             return []
@@ -283,48 +292,50 @@ class VideoViewer(BaseViewer):
             import pandas as pd
             import tempfile
             import os
-            
+
             rclone_client = RcloneClient()
-            
+
             # Download a small sample of the CSV to check columns
-            with tempfile.NamedTemporaryFile(suffix='.csv', delete=False) as temp_file:
+            with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as temp_file:
                 temp_path = temp_file.name
-                
+
             try:
                 # Download the file using read_file method
                 csv_content = rclone_client.read_file(bucket, csv_path)
-                
+
                 # Write to temp file
-                with open(temp_path, 'wb') as f:
+                with open(temp_path, "wb") as f:
                     f.write(csv_content)
-                
+
                 # Read just the first few rows to check columns
                 df = pd.read_csv(temp_path, nrows=5)
-                
+
                 # Check for required columns for bbox/tracking data
-                required_cols = {'track_id', 'frame'}
-                bbox_cols = {'x1', 'y1', 'x2', 'y2'}
-                centroid_cols = {'x', 'y'}
-                
+                required_cols = {"track_id", "frame"}
+                bbox_cols = {"x1", "y1", "x2", "y2"}
+                centroid_cols = {"x", "y"}
+
                 df_cols = set(df.columns)
-                
+
                 # Must have track_id and frame, plus either bbox or centroid columns
                 has_required = required_cols.issubset(df_cols)
                 has_bbox = bbox_cols.issubset(df_cols)
                 has_centroid = centroid_cols.issubset(df_cols)
-                
+
                 is_valid = has_required and (has_bbox or has_centroid)
-                
+
                 if is_valid:
-                    logger.info(f"Valid bbox CSV detected: {bucket}/{csv_path} (format: {'bbox' if has_bbox else 'centroid'})")
-                
+                    logger.info(
+                        f"Valid bbox CSV detected: {bucket}/{csv_path} (format: {'bbox' if has_bbox else 'centroid'})"
+                    )
+
                 return is_valid
-                
+
             finally:
                 # Clean up temp file
                 if os.path.exists(temp_path):
                     os.unlink(temp_path)
-                    
+
         except Exception as e:
             logger.warning(f"Could not validate CSV file {bucket}/{csv_path}: {e}")
             return False
@@ -451,9 +462,11 @@ class VideoViewer(BaseViewer):
             data_url = f"data:{mime_type};base64,{video_b64}"
 
             file_size = Path(local_file_path).stat().st_size
-            
+
             # Check for matching bbox CSV files in the same directory
-            bbox_csvs = []  # Will be set after render_info is created with bucket info
+            bbox_csvs: list[
+                dict
+            ] = []  # Will be set after render_info is created with bucket info
 
             return {
                 "type": "video",
@@ -911,14 +924,22 @@ class FileContentManager:
                 # Add bucket info for viewers that need it (like video bbox detection)
                 render_info["bucket"] = bucket
                 render_info["full_path"] = file_path
-                
+
                 # For video files, check for bbox CSV files now that we have bucket info
-                if render_info.get("type") == "video" and hasattr(viewer, '_find_bbox_csv_files_with_bucket'):
+                if render_info.get("type") == "video" and hasattr(
+                    viewer, "_find_bbox_csv_files_with_bucket"
+                ):
                     try:
-                        logger.info(f"Checking for bbox CSV files in {bucket}/{file_path}")
-                        bbox_csvs = viewer._find_bbox_csv_files_with_bucket(bucket, file_path)
+                        logger.info(
+                            f"Checking for bbox CSV files in {bucket}/{file_path}"
+                        )
+                        bbox_csvs = viewer._find_bbox_csv_files_with_bucket(
+                            bucket, file_path
+                        )
                         render_info["bbox_csvs"] = bbox_csvs
-                        logger.info(f"Bbox CSV detection complete: found {len(bbox_csvs)} files")
+                        logger.info(
+                            f"Bbox CSV detection complete: found {len(bbox_csvs)} files"
+                        )
                     except Exception as e:
                         logger.warning(f"Error detecting bbox CSV files: {e}")
                         render_info["bbox_csvs"] = []
