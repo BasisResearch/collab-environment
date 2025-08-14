@@ -58,14 +58,22 @@ class FlaskVideoServer:
         logger.info(f"Created temp CSV: {temp_path}")
         return temp_path
     
-    def start(self) -> str:
+    def set_csv_path(self, csv_path: str):
+        """Use an existing CSV file instead of creating a temp one."""
+        self.temp_csv = csv_path
+        logger.info(f"Using existing CSV: {csv_path}")
+    
+    def start(self, csv_path: str = None) -> str:
         """Start the Flask server and return the URL."""
         if self.process and self.process.poll() is None:
             # Server already running
             return f"http://localhost:{self.port}"
         
-        # Create temporary CSV file
-        csv_path = self._create_temp_csv()
+        # Use provided CSV path or create temporary CSV file
+        if csv_path:
+            self.set_csv_path(csv_path)
+        else:
+            csv_path = self._create_temp_csv()
         
         # Get the Flask app script path
         flask_app_path = Path(__file__).parent.parent.parent / "video_overlay_webapp.py"

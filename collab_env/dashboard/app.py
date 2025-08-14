@@ -7,6 +7,7 @@ import param
 from typing import Dict, Optional, List, Any
 from pathlib import Path
 import traceback
+import subprocess
 from loguru import logger
 
 from .rclone_client import RcloneClient
@@ -133,6 +134,16 @@ class DataDashboard(param.Parameterized):
             name="Convert to H.264", button_type="primary", width=120, visible=False
         )
 
+        # Video bbox viewer button
+        self.bbox_viewer_button = pn.widgets.Button(
+            name="View with Overlays", button_type="success", width=140, visible=False
+        )
+        
+        # Stop persistent video server button
+        self.stop_all_viewers_button = pn.widgets.Button(
+            name="Stop Server", button_type="warning", width=100, visible=False
+        )
+
         # General file management buttons
         self.replace_file_button = pn.widgets.Button(
             name="Replace in Cloud", button_type="primary", width=140
@@ -164,6 +175,13 @@ class DataDashboard(param.Parameterized):
         # Panel VTK pane requires a valid render window, can't be created with None
         self.vtk_pane: Optional[pn.pane.VTK] = None
         logger.info("🔨 VTK pane creation deferred until first PLY file is loaded")
+        
+        # Track available bbox CSV files for current video
+        self._current_bbox_csvs = []
+        
+        # Single persistent Flask server
+        self._persistent_flask_process = None
+        self._persistent_flask_port = 5050
 
         # Container that holds the VTK pane (starts empty, VTK pane added on demand)
         self.persistent_vtk_container = pn.Column(
@@ -197,6 +215,8 @@ class DataDashboard(param.Parameterized):
         self.cancel_edit_button.on_click(self._cancel_edit)
         self.clear_cache_button.on_click(self._clear_cache)
         self.convert_video_button.on_click(self._convert_video)
+        self.bbox_viewer_button.on_click(self._open_bbox_viewer)
+        self.stop_all_viewers_button.on_click(self._stop_all_bbox_viewers)
         self.replace_file_button.on_click(self._replace_file_in_cloud)
         self.download_original_button.on_click(self._download_original_file)
         self.delete_file_button.on_click(self._delete_file)
@@ -421,6 +441,8 @@ class DataDashboard(param.Parameterized):
             self.selected_file = ""
             # Hide all file management buttons when no file selected
             self.convert_video_button.visible = False
+            self.bbox_viewer_button.visible = False
+            self._current_bbox_csvs = []
             self._update_file_management_buttons()
             return
 
@@ -596,6 +618,7 @@ class DataDashboard(param.Parameterized):
             size_mb = render_info["size_mb"]
             path_info = self._get_file_path_info(render_info)
             codec_info = render_info.get("codec_info", {})
+            bbox_csvs = render_info.get("bbox_csvs", [])
 
             self._update_view_container()
 
@@ -620,6 +643,16 @@ class DataDashboard(param.Parameterized):
             )
             self.convert_video_button.visible = needs_conversion
             self.convert_video_button.disabled = False
+
+            # Update bbox viewer button visibility based on available CSV files
+            if bbox_csvs:
+                self.bbox_viewer_button.visible = True
+                self.bbox_viewer_button.disabled = False
+                # Store bbox CSV info for the button click handler
+                self._current_bbox_csvs = bbox_csvs
+            else:
+                self.bbox_viewer_button.visible = False
+                self._current_bbox_csvs = []
 
             # Show compatibility warning for incompatible codecs
             compatibility_warning = ""
@@ -646,6 +679,22 @@ class DataDashboard(param.Parameterized):
                 </div>
                 """
 
+            # Build bbox viewer info section
+            bbox_info = ""
+            if bbox_csvs:
+                bbox_count = len(bbox_csvs)
+                bbox_names = ", ".join([csv['name'] for csv in bbox_csvs[:3]])  # Show first 3 names
+                if bbox_count > 3:
+                    bbox_names += f" (+{bbox_count - 3} more)"
+                
+                bbox_info = f"""
+                <div style="background-color: #e3f2fd; border: 1px solid #90caf9; padding: 10px; margin: 10px 0; border-radius: 4px;">
+                    <strong>📊 Tracking Data Available</strong><br>
+                    Found {bbox_count} CSV file{'s' if bbox_count != 1 else ''} with bounding box data: <code>{bbox_names}</code><br>
+                    <small>Use the "View with Overlays" button below to see video with tracking visualizations.</small>
+                </div>
+                """
+
             if size_mb > 50:  # Large video warning
                 self.file_viewer.object = f"""
                 <div>
@@ -653,6 +702,7 @@ class DataDashboard(param.Parameterized):
                     <h4>Video File ({size_mb:.1f} MB)</h4>
                     {codec_details}
                     {compatibility_warning}
+                    {bbox_info}
                     <p style='color:orange'>Video is large and may take time to load.</p>
                     <video controls width="100%" height="400">
                         <source src="{render_info["data_url"]}" type="{render_info["mime_type"]}">
@@ -667,6 +717,7 @@ class DataDashboard(param.Parameterized):
                     <h4>Video File ({size_mb:.1f} MB)</h4>
                     {codec_details}
                     {compatibility_warning}
+                    {bbox_info}
                     <video controls width="100%" height="400">
                         <source src="{render_info["data_url"]}" type="{render_info["mime_type"]}">
                         Your browser does not support video playback.
@@ -1218,6 +1269,215 @@ class DataDashboard(param.Parameterized):
             logger.error(f"Error replacing local video: {e}")
             self.status_pane.object = f"<p style='color:orange'>⚠️ Conversion successful but couldn't replace local file: {e}</p>"
 
+    def _open_bbox_viewer(self, _):
+        """Open the video bbox viewer using persistent Flask server."""
+        if not self.selected_file or not self.selected_session:
+            return
+            
+        if not hasattr(self, '_current_bbox_csvs') or not self._current_bbox_csvs:
+            self.status_pane.object = "<p style='color:orange'>⚠️ No bbox CSV files available</p>"
+            return
+        
+        try:
+            import subprocess
+            import time
+            import webbrowser
+            import requests
+            
+            # Ensure persistent server is running
+            if not self._ensure_persistent_server_running():
+                return
+            
+            # Get video file info
+            bucket, video_path = self.session_manager.get_file_path(
+                self.selected_session, self.current_bucket_type, self.selected_file
+            )
+            
+            # Get cached video path
+            video_cache_path = self.file_manager.get_cache_path(bucket, video_path)
+            
+            if not Path(video_cache_path).exists():
+                self.status_pane.object = "<p style='color:red'>❌ Video file not cached locally</p>"
+                return
+            
+            # Handle CSV selection
+            bbox_csvs = self._current_bbox_csvs
+            selected_csv = bbox_csvs[0]  # Use first CSV
+            
+            if len(bbox_csvs) > 1:
+                self.status_pane.object = f"<p style='color:blue'>📊 Using first CSV: {selected_csv['name']} ({len(bbox_csvs)} available)</p>"
+            
+            # Get cached CSV path
+            csv_cache_path = self.file_manager.get_cache_path(bucket, selected_csv['path'])
+            
+            if not Path(csv_cache_path).exists():
+                # Download the CSV file if not cached
+                self._show_loading("Downloading CSV file...")
+                try:
+                    csv_content = self.rclone_client.read_file(bucket, selected_csv['path'])
+                    Path(csv_cache_path).write_bytes(csv_content)
+                except Exception as e:
+                    self.status_pane.object = f"<p style='color:red'>❌ Failed to download CSV: {e}</p>"
+                    self._hide_loading()
+                    return
+                finally:
+                    self._hide_loading()
+            
+            # Create unique video ID
+            video_id = f"{Path(video_cache_path).stem}_{Path(csv_cache_path).stem}"
+            
+            self._show_loading("Adding video to persistent server...")
+            
+            try:
+                # Add video to persistent server via HTTP API
+                server_url = f"http://localhost:{self._persistent_flask_port}"
+                
+                # Call the server's API to add video
+                add_video_data = {
+                    'video_id': video_id,
+                    'video_path': str(video_cache_path),
+                    'csv_path': str(csv_cache_path),
+                    'fps': 30.0
+                }
+                
+                logger.info(f"Sending video to persistent server: {add_video_data}")
+                
+                response = requests.post(
+                    f"{server_url}/api/add_video",
+                    json=add_video_data,
+                    timeout=10
+                )
+                
+                logger.info(f"Server response: {response.status_code} - {response.text}")
+                
+                if response.status_code != 200:
+                    try:
+                        error_data = response.json()
+                        error_msg = error_data.get('error', 'Unknown error')
+                    except:
+                        error_msg = response.text
+                    self.status_pane.object = f"<p style='color:red'>❌ Failed to add video: {error_msg}</p>"
+                    return
+                
+                # Open browser to the persistent server
+                url = f"http://localhost:{self._persistent_flask_port}"
+                webbrowser.open(url)
+                
+                # Update status
+                self.status_pane.object = f"""<p style='color:green'>✅ Video added to persistent viewer: <a href="{url}" target="_blank">{url}</a></p>
+                <p><small>💡 Select "{Path(video_cache_path).name}" from the dropdown in the viewer. Server runs until dashboard restart.</small></p>"""
+                
+                # Show stop button
+                if hasattr(self, 'stop_all_viewers_button'):
+                    self.stop_all_viewers_button.visible = True
+                
+            except Exception as e:
+                self.status_pane.object = f"<p style='color:red'>❌ Failed to add video to server: {e}</p>"
+            finally:
+                self._hide_loading()
+            
+        except Exception as e:
+            logger.error(f"Error in bbox viewer: {e}")
+            self.status_pane.object = f"<p style='color:red'>❌ Error opening bbox viewer: {e}</p>"
+            self._hide_loading()
+    
+    def _ensure_persistent_server_running(self) -> bool:
+        """Ensure the persistent Flask server is running."""
+        try:
+            import requests
+            
+            # Check if server is already running and has the API endpoints
+            try:
+                response = requests.get(f"http://localhost:{self._persistent_flask_port}/api/health", timeout=2)
+                if response.status_code == 200:
+                    logger.info("Persistent server already running with API endpoints")
+                    return True
+                else:
+                    logger.warning(f"Server responding but health check failed: {response.status_code}")
+            except requests.exceptions.RequestException:
+                logger.info("No server responding or server without API endpoints")
+                pass
+            
+            # Server not running properly, stop any existing process and start fresh
+            if self._persistent_flask_process and self._persistent_flask_process.poll() is None:
+                # Process exists but not responding properly, kill it
+                logger.info("Stopping existing server process")
+                self._persistent_flask_process.terminate()
+                try:
+                    self._persistent_flask_process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    self._persistent_flask_process.kill()
+                    self._persistent_flask_process.wait()
+            
+            # Start new server
+            flask_app_path = Path(__file__).parent / "persistent_video_server.py"
+            
+            if not flask_app_path.exists():
+                self.status_pane.object = f"<p style='color:red'>❌ Persistent server not found: {flask_app_path}</p>"
+                return False
+            
+            self.status_pane.object = f"<p style='color:blue'>🚀 Starting persistent video server on port {self._persistent_flask_port}...</p>"
+            
+            # Start persistent server
+            self._persistent_flask_process = subprocess.Popen(
+                ["python", str(flask_app_path), "--port", str(self._persistent_flask_port)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            )
+            
+            # Wait for server to start
+            import time
+            for attempt in range(10):
+                time.sleep(0.5)
+                try:
+                    response = requests.get(f"http://localhost:{self._persistent_flask_port}", timeout=1)
+                    if response.status_code == 200:
+                        logger.info(f"Persistent Flask server started on port {self._persistent_flask_port}")
+                        return True
+                except:
+                    continue
+            
+            # Server failed to start
+            self.status_pane.object = f"<p style='color:red'>❌ Failed to start persistent server</p>"
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error ensuring persistent server: {e}")
+            self.status_pane.object = f"<p style='color:red'>❌ Error starting server: {e}</p>"
+            return False
+    
+    def _stop_all_bbox_viewers(self, _=None):
+        """Stop the persistent Flask server."""
+        if not self._persistent_flask_process:
+            self.status_pane.object = "<p style='color:blue'>ℹ️ No persistent server running</p>"
+            return
+        
+        try:
+            if self._persistent_flask_process.poll() is None:  # Still running
+                # Try graceful termination
+                self._persistent_flask_process.terminate()
+                try:
+                    self._persistent_flask_process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    # Force kill if needed
+                    self._persistent_flask_process.kill()
+                    self._persistent_flask_process.wait()
+                
+                logger.info(f"Stopped persistent Flask server (PID: {self._persistent_flask_process.pid})")
+                self.status_pane.object = "<p style='color:green'>✅ Stopped persistent video server</p>"
+            else:
+                self.status_pane.object = "<p style='color:blue'>ℹ️ Server was already stopped</p>"
+            
+        except Exception as e:
+            logger.warning(f"Error stopping persistent server: {e}")
+            self.status_pane.object = f"<p style='color:orange'>⚠️ Error stopping server: {e}</p>"
+        
+        finally:
+            self._persistent_flask_process = None
+            # Hide stop button
+            if hasattr(self, 'stop_all_viewers_button'):
+                self.stop_all_viewers_button.visible = False
+
     def _update_file_management_buttons(self):
         """Update visibility and state of file management buttons based on current file."""
         has_file = bool(self.selected_file and self.selected_session)
@@ -1421,8 +1681,13 @@ class DataDashboard(param.Parameterized):
             # height=500  # Reduced height
         )
 
-        # Video conversion controls (only video-specific buttons)
-        self.video_controls = pn.Row(self.convert_video_button, margin=(10, 0))
+        # Video controls (conversion, bbox viewer, and stop buttons)
+        self.video_controls = pn.Row(
+            self.convert_video_button, 
+            self.bbox_viewer_button,
+            self.stop_all_viewers_button,
+            margin=(10, 0)
+        )
 
         # Main content area with file name header
         # Create a container for the view content (VTK container moved outside tabs)
