@@ -1,3 +1,4 @@
+import pandas as pd
 from typing import Optional
 import numpy as np
 import matplotlib.pyplot as plt
@@ -297,6 +298,79 @@ def render_camera(mesh, width, height, intrinsic=None, extrinsic=None):
     return np.asarray(img), np.asarray(depth_image)
 
 
+##################################################################
+############### Visualizing tracks on mesh #######################
+##################################################################
 
+def plot_tracks_on_image(df_tracks: pd.DataFrame, image: np.ndarray, colors: Optional[dict] = None, line_kwargs: dict = {'linestyle': '-', 'linewidth': 4, 'label': None, 'alpha': 1.0}):
+    # Get image dimensions
+    height, width = image.shape[:2]
+    aspect_ratio = width / height
+    
+    # Create figure and axis with correct aspect ratio
+    fig_size = 10
+    fig = plt.figure(figsize=(fig_size * aspect_ratio, fig_size))
+    ax = fig.add_subplot(111)
+    ax.imshow(image)
 
+    unique_track_ids = df_tracks['track_id'].unique()
 
+    if colors is None:
+        colors = {track_id: np.random.rand(3) for track_id in unique_track_ids}
+    
+    # Plot tracks for each unique track_id
+    for track_id in unique_track_ids:
+        track_data = df_tracks[df_tracks['track_id'] == track_id]
+        ax.plot(track_data['u'], track_data['v'], color=colors[track_id], **line_kwargs)
+    
+    ax.axis('off')
+    fig.tight_layout()
+    plt.close(fig)
+    
+    return fig
+
+# TLB CLEAN UP THIS FUNCTION
+def add_tracks_to_mesh(df_tracks: pd.DataFrame, plotter: pv.Plotter, colors: Optional[dict] = None):
+    """
+    Add points to a mesh
+    
+    Args:
+        df_tracks: DataFrame containing track points
+        plotter: PyVista plotter object
+        colors: Optional dict mapping track_ids to colors. If None, colors will be generated automatically
+               using evenly spaced hues.
+    """
+
+    # If no colors provided, generate evenly spaced colors
+    if colors is None:
+        unique_track_ids = df_tracks.track_id.unique()
+        num_tracks = len(unique_track_ids)
+        # Use golden ratio to generate well-distributed colors
+        golden_ratio = (1 + 5 ** 0.5) / 2
+        hues = [(i * golden_ratio) % 1 for i in range(num_tracks)]
+        colors = {track_id: plt.cm.hsv(hue) for track_id, hue in zip(unique_track_ids, hues)}
+
+    for track_id, df_id in df_tracks.groupby('track_id'):
+        # Get valid points for this track
+        valid_mask = ~df_id[['x', 'y', 'z']].isna().any(axis=1)
+        track_points = df_id.loc[valid_mask, ['x', 'y', 'z']].values
+        
+        if len(track_points) == 0:
+            continue
+            
+        # Create point cloud for this track
+        pts = pv.PolyData(track_points)
+
+        # Get color for this track
+        track_color = colors[track_id]
+
+        # Set default point visualization parameters
+        point_kwargs = dict(
+            color=track_color,
+            point_size=5, 
+            render_points_as_spheres=False
+        )
+
+        # Add points to plotter
+        plotter.add_points(pts, **point_kwargs)
+    return plotter
