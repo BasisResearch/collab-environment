@@ -4,6 +4,126 @@ from torch.func import vmap
 from typing import Optional, Tuple, TypeAlias
 from dataclasses import dataclass
 import open3d as o3d
+from scipy.spatial import cKDTree
+
+from collab_env.utils.utils import array_nan_equal
+
+#########################################################
+####### TLB CLEAN UP THESE BUT PUT HERE FOR NOW #########
+#########################################################
+
+def filter_coords(df_tracks, coord_cols=['u', 'v'], window=3, std_threshold=3):
+    """
+    Filter outlier coordinates based on rolling statistics for a single track
+    
+    Args:
+        track_data: DataFrame containing a single trajectory
+        coord_cols: List of coordinate column names to filter
+        window: Size of rolling window for statistics
+        std_threshold: Number of standard deviations for outlier detection
+    
+    Returns:
+        DataFrame with outliers replaced by rolling mean
+    """
+
+    # Copy as to not modify the original dataframe
+    df_tracks = df_tracks.copy()
+    
+    # Calculate rolling statistics
+    rolling_mean = df_tracks[coord_cols].rolling(
+        window=window,
+        min_periods=1,
+        center=True
+    ).mean()
+    
+    rolling_std = df_tracks[coord_cols].rolling(
+        window=window,
+        min_periods=1,
+        center=True
+    ).std()
+    
+    # Identify outliers
+    z_scores = np.abs((df_tracks[coord_cols] - rolling_mean) / rolling_std)
+    outliers = z_scores > std_threshold
+    
+    # Replace outliers with rolling mean
+    for col in coord_cols:
+        df_tracks.loc[outliers[col], col] = rolling_mean.loc[outliers[col], col]
+        
+    return df_tracks[coord_cols]
+
+def smooth_coords(df_tracks, coord_cols=['u', 'v'], window=3):
+    """
+    Smooth coordinates over time using a rolling average for a single track
+    
+    Args:
+        track_data: DataFrame containing a single trajectory
+        coord_cols: List of coordinate column names to smooth
+        window: Size of rolling window for smoothing
+    
+    Returns:
+        DataFrame with smoothed coordinates
+    """
+    # Apply smoothing
+    smoothed = df_tracks[coord_cols].rolling(
+        window=window,
+        min_periods=1,
+        center=True
+    ).mean()
+
+    return smoothed
+
+### TLB putting here for now but likely a better place or could refactor
+def get_depths_on_mesh(camera, mesh, radius = 0.01, smooth = True):
+
+    # Grab the mesh points and create a KDTree
+    mesh_points = np.asarray(mesh.vertices)
+    tree = cKDTree(mesh_points)
+
+    # Get indices of image
+    image_indices = np.argwhere(camera.depth)
+    image_indices = image_indices[:, [1, 0]]
+
+    # Project image indices to world --> then project back to 2d
+    world_points = camera.project_to_world(image_indices)
+    _, depths = camera.project_to_camera(world_points)
+
+    # Reshape the points to the bounding box shape
+    height, width = camera.depth.shape
+    depth_patch = depths.reshape(height, width)
+
+    # Check if the depths are the same
+    same_depths = array_nan_equal(camera.depth, depth_patch)
+
+    print ("Correctly mapped depths: ", same_depths)
+
+    # Grab the world points that were found
+    true_indices = np.where(~np.isnan(world_points).any(1))[0]
+    true_points = world_points[true_indices]
+    true_depths = depths[true_indices] # Trim depths to those found
+
+    # Find the nearest mesh point for each true point
+    _, indices = tree.query(true_points, k=1)
+
+    sums = np.bincount(indices, weights=true_depths, minlength=len(mesh_points))
+    counts = np.bincount(indices, minlength=len(mesh_points))
+    mesh_depths = sums / np.maximum(counts, 1)  # avoid division by zero
+    mesh_depths[counts == 0] = np.nan  # keep NaN for no matches
+
+    if smooth:
+        # Find neighbors within the radius for all mesh points
+        neighbors_list = tree.query_ball_point(mesh_points, r=radius)
+
+        # Preallocate smoothed array
+        smoothed_depths = np.full_like(mesh_depths, np.nan)
+
+        # Average over neighbors (ignore NaNs)
+        for i, neighbors in enumerate(neighbors_list):
+            smoothed_depths[i] = np.nanmean(mesh_depths[neighbors])
+
+        mesh_depths = smoothed_depths
+
+    return mesh_depths
 
 #########################################################
 ################## Environment ##########################
@@ -273,64 +393,13 @@ class Agent:
 #     def observe(self, batch: State) -> ObservedState:
 #         return self.camera.project_to_world(batch)
 
-def bbox_to_world(camera, bbox, method="bottom_center", bottom_fraction=0.05):
-    """
-    Extract a 3D world point from a bounding box using the given method.
-
-    Args:
-        camera (Camera): Camera object with intrinsics and depth.
-        bbox (tuple): (x1, y1, x2, y2) in pixel coordinates.
-        method (str): One of ['bottom_center', 'center', 'median', 'consistent_bottom'].
-
-    Returns:
-        tuple:
-            - point3d (np.ndarray or None): (3,) world coordinate or None if invalid.
-            - bbox_size (tuple): (width, height) of the bounding box in pixels.
-    """
+def bbox_to_coords(bbox, method="bottom_center"):
     x1, y1, x2, y2 = map(int, bbox)
-    H, W = camera.depth.shape
 
-    # Clamp bbox to image bounds
-    x1, x2 = np.clip([x1, x2], 0, W - 1)
-    y1, y2 = np.clip([y1, y2], 0, H - 1)
-
-    bbox_width = x2 - x1
-    bbox_height = y2 - y1
-    bbox_size = (bbox_height, bbox_width)
-
-    if bbox_width <= 0 or bbox_height <= 0:
-        return None, bbox_size
-
-    if method in ["bottom_center", "center"]:
-        u = (x1 + x2) // 2
-        v = y2 - 1 if method == "bottom_center" else (y1 + y2) // 2
-        points3d = camera.project_to_world(np.array([[u, v]]))
-        return (points3d[0] if len(points3d) else None), bbox_size
-
-    if method == "median":
-        # Generate (u, v) pixel grid inside bbox
-        u, v = np.meshgrid(np.arange(x1, x2), np.arange(y1, y2))
-        pixels = np.stack([u.ravel(), v.ravel()], axis=1)  # (N, 2), (u, v)
-        points3d = camera.project_to_world(pixels)
-        if len(points3d) == 0:
-            return None, bbox_size
-        median_idx = np.argsort(points3d[:, 2])[len(points3d) // 2]
-        return points3d[median_idx], bbox_size
-
-    if method == "consistent_bottom":
-        bottom_rows = max(int(bottom_fraction * bbox_height), 1)
-        v_start = max(y2 - bottom_rows, y1)
-        patch = camera.depth[v_start:y2, x1:x2]
-        if patch.size == 0:
-            return None, bbox_size
-        var_per_col = np.var(patch, axis=0)
-        best_col = np.argmin(var_per_col)
-        u = x1 + best_col
-        v = y2 - 1
-        points3d = camera.project_to_world(np.array([[u, v]]))
-        return (points3d[0] if len(points3d) else None), bbox_size
-
-    raise ValueError(f"Unknown method '{method}'")
+    u = (x1 + x2) // 2
+    v = y2 - 1 if method == "bottom_center" else (y1 + y2) // 2
+    uv = np.stack([u, v])
+    return uv
 
 #########################################################
 ################# Movement generator ####################
