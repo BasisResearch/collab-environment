@@ -1,18 +1,62 @@
+import os
 import json
-from re import U
-from turtle import update
 import numpy as np
-from tqdm import tqdm
+import torch
 import shutil
-from pathlib import Path
-import pyvista as pv
-import matplotlib.pyplot as plt
 import pickle
 import cv2
+from typing import Optional
+
+from pathlib import Path
+from tqdm import tqdm
 
 import pycolmap
 from hloc import extract_features, match_features, pairs_from_exhaustive
 from hloc.localize_sfm import QueryLocalizer, pose_from_cluster
+
+import lpips
+from skimage.metrics import structural_similarity as ssim
+
+#########################################################
+########### Extract frames for alignment ################
+#########################################################
+
+def extract_video_frames(video_path, output_dir, n_frames=1, method='random'):
+    """
+    Extract frames from a video. Realistically, you only need one frame but 
+    build a verbose function for now.
+    """
+
+    cap = cv2.VideoCapture(video_path)
+    frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    os.makedirs(output_dir, exist_ok=True)
+
+    if method == 'random':
+        frame_indices = np.random.randint(0, frame_count, n_frames)
+    elif method == 'evenly_spaced':
+        frame_indices = np.linspace(0, frame_count - 1, n_frames).astype(int)
+    else:
+        raise ValueError(f"Invalid method: {method}")
+
+    # Extract frames
+    frame_fns = []
+
+    for i in frame_indices:
+        cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+        ret, frame = cap.read()
+
+        # Make sure we read the frame
+        if not ret:
+            break
+
+        # Save frame
+        frame_fn = output_dir / f"{i:06d}.png"
+        cv2.imwrite(str(frame_fn), frame)
+        frame_fns.append(frame_fn)
+
+    cap.release()
+    return frame_fns
 
 #########################################################
 ######## Registration of new camera to COLMAP ###########
@@ -26,6 +70,7 @@ def align_to_colmap(
         'estimation': {'ransac': {'max_error': 50}},
         'refinement': {'refine_focal_length': True, 'refine_extra_params': True},
     },
+    return_logs: bool = False,
 ):
     """
     Align a new image to a fit COLMAP model.
@@ -34,6 +79,7 @@ def align_to_colmap(
         preproc_dir: Path to the source directory containing the SfM model.
         query_dir: Path to the query directory containing the new images.
         output_dir: Path to the output directory.
+        return_logs: Whether to return the logs from the localization + model for visualization.
     """
 
     #########################################################
@@ -121,56 +167,25 @@ def align_to_colmap(
         ref_ids = [model.find_image_with_name(n).image_id for n in references_registered]
 
         ret, loc = pose_from_cluster(localizer, image, camera, ref_ids, query_features, query_matches)
+
         poses.append(ret)
-        logs.append(loc)
 
-    return poses, logs
-
-def align_to_splat(preproc_dir, pose, out_dir: str = None):
-
-    # Load COLMAP cameras and align them to nerfstudio format
-    camera_params, transforms = colmap2nerfstudio(preproc_dir)
-    camera_params = extract_camera_params(pose)
-
-    # Apply nerfstudio transforms to our new camera pose
-    camera_params['c2w'] = transforms['transform_matrix'] @ camera_params['c2w'] # Align to splat
-    camera_params['c2w'][:3, 3] *= transforms['scale'] # Scale to splat
-
-    if out_dir is not None:
-        with open(out_dir / "camera_params_splat.pkl", 'wb') as f:
-            pickle.dump(camera_params, f)
-
-    return camera_params
+        logs.append({
+            'query': query_dir / image,
+            'loc': loc,
+        })
     
+    viz_info = {
+        'reconstruction': model,
+        'db_image_dir': preproc_dir / "images",
+    }
 
-def align_to_mesh(preproc_dir, mesh_dir, pose, out_dir: str = None):
+    if return_logs:
+        return poses, logs, viz_info
+    else:
+        return poses
 
-    # Align to splat first --> returns camera params aligned to the splat
-    camera_params = align_to_splat(preproc_dir, pose)
-
-    # Load the mesh transform and compose into matrix
-    transform = np.load(mesh_dir / 'alignment.npz')
-    transform = np.concatenate([
-        transform['R'], 
-        (transform['translation'][..., np.newaxis])
-    ], axis=1)
-
-    # Turn to homogeneous coordinates
-    transform = np.concatenate([
-        transform, 
-        np.array([[0, 0, 0, 1]])
-    ], axis=0)
-
-    # Apply the mesh transform to the camera params
-    camera_params['c2w'] = transform @ camera_params['c2w']
-    
-    if out_dir is not None:
-        with open(out_dir / "camera_params_mesh.pkl", 'wb') as f:
-            pickle.dump(camera_params, f)
-
-    return camera_params
-
-def extract_camera_params(pose):
+def extract_camera_params(pose, alpha=0.5):
     """
     Extract camera parameters from a COLMAP pose (OpenCV convention) and 
     convert to OpenGL convention. 
@@ -194,10 +209,8 @@ def extract_camera_params(pose):
     ], axis=0)
 
     # Convert from COLMAP's camera coordinate system (OpenCV) to ours (OpenGL)
-    c2w[0:3, 1:3] *= -1
     c2w = c2w[np.array([0, 2, 1, 3]), :]
     c2w[2, :] *= -1
-    c2w[:3, 1:3] *= -1
 
     # Get intrinsics
     camera_model = pose['camera'].model.name
@@ -242,7 +255,7 @@ def extract_camera_params(pose):
         [0,  0,  1],
     ])
 
-    K, _ = cv2.getOptimalNewCameraMatrix(K, dist_coeffs, (width, height), 0.5)
+    K, _ = cv2.getOptimalNewCameraMatrix(K, dist_coeffs, (width, height), alpha)
 
     return {
         'fx': fx,
@@ -255,339 +268,345 @@ def extract_camera_params(pose):
         'c2w': c2w,  # 4x4 matrix
     }
 
+
 #########################################################
-######## Mapping of COLMAP to Nerfstudio camera #########
+######## COLMAP / Nerfstudio Alignment Functions ########
 #########################################################
 
-def colmap2nerfstudio(preproc_dir, downscale_factor=2.0, up='y'):
+def load_colmap_cameras(preproc_dir, downscale_factor=2.0):
     """
-    Maps the COLMAP camera parameters to the Nerfstudio camera parameters.
-    Annoying but necessary as splats are created after processing the cameras
-    within nerfstudio.
+    Load fit COLMAP cameras from nerfstudio. This contains the 
+    camera parameters and poses.
 
-    This extrapolates those parameters to the colmap cameras and aligns them
-    to the splat.
+    Args:
+        preproc_dir (Path): Path to the nerfstudio preprocessed directory.
+        downscale_factor (float): Factor to downscale the cameras by.
+
+    Returns:
     """
-
-    if up == 'y':
-        up = np.array([0, 1, 0])
-    elif up == 'z':
-        up = np.array([0, 0, 1])
-    else:
-        raise ValueError(f"Invalid up direction: {up}")
-
-    with open(preproc_dir / "transforms.json", "r", encoding="utf-8") as f:
-        meta = json.load(f)
+    with open(preproc_dir / "transforms.json", "r") as f:
+        cameras = json.load(f)
 
     # Applies to all cameras
     items = ['fl_x', 'fl_y', 'cx', 'cy', 'h', 'w']
     downscale_factor = 1.0 / downscale_factor
-    fx, fy, cx, cy, height, width = [meta[item] * downscale_factor for item in items]
+    fx, fy, cx, cy, height, width = [cameras[item] * downscale_factor for item in items]
+
+    # Extract distortion parameters
+    param_keys = ['k1', 'k2', 'p1', 'p2', 'k3', 'k4', 'k5', 'k6']
+    params = [cameras[key] if key in cameras else 0 for key in param_keys]
+    camera_model = cameras['camera_model']
 
     K = np.array([
         [fx, 0, cx],
-        [0, fy, cy],
+        [0, fy, cy]
         [0,  0,  1],
     ])
 
-    poses = np.stack([cam['transform_matrix'] for cam in meta['frames']])
-    origins = poses[..., :3, 3]
-
-    mean_origin = np.mean(origins, axis=0)
-    translation_diff = origins - mean_origin
-    translation = mean_origin
-
-    # Orient upwards
-    camera_up = np.mean(poses[:, :3, 1], axis=0)
-    camera_up = camera_up / np.linalg.norm(camera_up)
-
-    rotation = rotation_matrix_between(camera_up, up)
-    transform = np.concatenate([rotation, rotation @ -translation[..., None]], axis=-1)
-    poses = transform @ poses
-
-    scale_factor = 1.0
-    scale_factor /= float(np.max(np.abs(poses[:, :3, 3])))
-    poses[:, :3, 3] *= scale_factor
-    
-    # Orient upwards
-    poses[:, :3, 1:3] *= -1
-    
-    # Add homogeneous coordinates to make them 4x4 matrices
-    bottom_row = np.tile([0, 0, 0, 1], (poses.shape[0], 1, 1))
-    poses = np.concatenate([poses, bottom_row], axis=1)
+    poses = np.stack([camera['transform_matrix'] for camera in cameras['frames']])
 
     camera_params = {
         'fx': fx,
         'fy': fy,
         'cx': cx,
         'cy': cy,
-        'K': K,
+        'camera_model': camera_model,
+        'params': params,
         'height': int(height),
         'width': int(width),
+        'K': K,
         'poses': poses,
     }
 
+    return camera_params
+
+def load_nerfstudio_transforms(mesh_dir):
+    """
+    Transforms applied by nerfstudio dataparser to COLMAP coordinate system.
+
+    Provides a transform that 1) centers the cameras and 2) points them in the Z-up direction.
+
+    """
+    nerfstudio_transforms_fn = list(mesh_dir.parent.rglob("dataparser_transforms*"))[0]
+
+    with open(nerfstudio_transforms_fn, "r") as f:
+        nerfstudio_transforms = json.load(f)
+
+    # Apply weird nerfstudio transform conventions
+    transform = np.stack(nerfstudio_transforms['transform'])
     transform = np.concatenate([
-        transform,
-        np.array([0, 0, 0, 1])[np.newaxis, :],
+        transform, 
+        np.array([[0, 0, 0, 1]])
     ], axis=0)
 
-    transforms = {
-        'transform_matrix': transform,
-        'scale': scale_factor,
-    }
+    # Go backwards from nerfstudio's convention to COLMAP
+    transform = transform[:, [0, 2, 1, 3]]
+    transform[:, 2] *= -1
 
-    return camera_params, transforms
+    nerfstudio_transforms['transform'] = transform
 
-def project_image(K, c2w, points, colors):
+    return nerfstudio_transforms
+
+def align_to_splat(camera_params, mesh_dir, out_fn: Optional[str] = None):
     """
-    Project 3D points to 2D image coordinates.
+    Align camera poses to the Nerfstudio coordinate system and apply scaling.
 
     Args:
-        K: Camera intrinsics matrix (3x3)
-        c2w: Camera-to-world transformation matrix (4x4)
-        points: (N, 3) array of 3D points
-        colors: (N, 3) array of colors
+        poses (np.ndarray): Input poses, either shape (3,4) or (N,3,4).
+        mesh_dir (str): Directory containing Nerfstudio transforms file.
 
     Returns:
-        points_proj: (N, 2) array of 2D points
-        colors: (N, 3) array of colors
+        np.ndarray: Transformed poses with homogeneous coordinates, shape
+                    (4,4) or (N,4,4).
     """
 
-    # Convert from camera-to-world to world-to-camera
-    w2c = np.linalg.inv(c2w)
+    # Grab the nerfstudio transforms file
+    nerfstudio_transforms = load_nerfstudio_transforms(mesh_dir)
 
-    # Get rotation and translation
-    R = w2c[:3, :3]
-    t = w2c[:3, 3][:, np.newaxis]
+    # Grab the nerfstudio transforms
+    nerfstudio_transform = np.stack(nerfstudio_transforms['transform'])
+    nerfstudio_scale = nerfstudio_transforms['scale']
 
-    # Apply mapping transforming points in world to camera space
-    points_cam = (R @ points.T + t).T  # (N, 3)
-    points_cam = np.asarray(points_cam)
+    # Apply nerfstudio transforms to our new camera pose
+    c2w = nerfstudio_transform @ camera_params['c2w']
+    c2w[..., :3, 3] *= nerfstudio_scale
+    camera_params['c2w'] = c2w
 
-    # CORRECTION: Apply coordinate system convention
-    # In computer vision, camera looks down -Z axis
-    # So we need to negate the Z coordinate to match PyVista's convention
-    points_cam[:, 2] = -points_cam[:, 2]
-    points_cam[:, 1] = -points_cam[:, 1]
+    if out_fn is not None:
+        with open(out_fn, 'wb') as f:
+            pickle.dump(camera_params, f)
 
-    # Filter out points behind the camera (now positive Z is in front)
-    in_front = points_cam[:, 2] > 0
-    points_cam = points_cam[in_front]
-    colors = colors[in_front]
+    return camera_params
+    
 
-    # Project to 2D
-    points_proj = (K @ points_cam.T) #.T  # (N, 3)
-    points_proj = points_proj[:, :2] / points_proj[:, 2:3]  # normalize
-
-    return points_proj, colors
-
-def plot_projection(H, W, points_proj, colors):
-    image = np.ones((H, W, 3), dtype=np.float32)  # white background
-    # Draw points
-    for pt, color in zip(points_proj, colors):
-        x, y = int(pt[0]), int(pt[1])
-        if 0 <= x < W and 0 <= y < H:
-            image[y, x] = color  # (y, x) because row-major
-
-    return image
-
-def nerfstudio_project_image(camera, points, colors):
-
-    H, W = camera.height, camera.width
-    K = camera.get_intrinsics_matrices().clone().cpu().numpy()
-    c2w = camera.camera_to_worlds.clone().cpu().numpy()
-    c2w = c2w.squeeze(0)
-    c2w = np.asarray(c2w)
-    c2w[:3, 1:3] *= -1
-    c2w = np.concatenate([c2w, np.asarray([0, 0, 0, 1])[np.newaxis, :]], axis=0)
-    w2c = np.linalg.inv(c2w)
-
-    points_proj, colors = project_image(K, w2c, points, colors)
-    proj_image = plot_projection(H, W, points_proj, colors)
-
-    camera_params = {
-        'K': K,
-        'w2c': w2c,
-        'H': H,
-        'W': W,
-    }
-
-    return proj_image, camera_params
-
-#########################################################
-################# Helper Functions ######################
-#########################################################
-
-def rotation_matrix_between(a, b):
-    """Compute the rotation matrix that rotates vector a to vector b.
+def align_to_mesh(camera_params, mesh_dir, out_fn: Optional[str] = None):
+    """
+    Align camera poses to the mesh coordinate system.
 
     Args:
-        a: The vector to rotate.
-        b: The vector to rotate to.
+        poses (np.ndarray): Input poses, either shape (3,4) or (N,3,4). (c2w)
+        mesh_dir (str): Directory containing mesh.
+
     Returns:
-        The rotation matrix.
-
-    Taken from nerfstudio
     """
-    a = a / np.linalg.norm(a)
-    b = b / np.linalg.norm(b)
-    v = np.cross(a, b)  # Axis of rotation.
 
-    # Handle cases where `a` and `b` are parallel.
-    eps = 1e-6
-    if np.sum(np.abs(v)) < eps:
-        x = np.array([1.0, 0, 0]) if abs(a[0]) < eps else np.array([0, 1.0, 0])
-        v = np.cross(a, x)
+    # Align to splat first --> returns camera params aligned to the splat
+    camera_params = align_to_splat(camera_params, mesh_dir) # Wait to flip z
 
-    v = v / np.linalg.norm(v)
-    skew_sym_mat = np.array(
-        [
-            [0, -v[2], v[1]],
-            [v[2], 0, -v[0]],
-            [-v[1], v[0], 0],
-        ]
-    )
-    theta = np.arccos(np.clip(np.dot(a, b), -1, 1))
+    with open(mesh_dir / 'transforms.pkl', 'rb') as f:
+        transform = pickle.load(f)
 
-    # Rodrigues rotation formula. https://en.wikipedia.org/wiki/Rodrigues%27_rotation_formula
-    return np.eye(3) + np.sin(theta) * skew_sym_mat + (1 - np.cos(theta)) * (skew_sym_mat @ skew_sym_mat)
+    # Apply the mesh transform to the camera params
+    camera_params['c2w'] = transform["mesh_transform"] @ camera_params['c2w']
 
-def qvec2rotmat(qvec):
-    """
-    Convert a quaternion to a rotation matrix.
+    if out_fn is not None:
+        with open(out_fn, 'wb') as f:
+            pickle.dump(camera_params, f)
 
-    Args:
-        qvec: (4,) array of quaternion
-    """
-    return np.array(
-        [
-            [
-                1 - 2 * qvec[2] ** 2 - 2 * qvec[3] ** 2,
-                2 * qvec[1] * qvec[2] - 2 * qvec[0] * qvec[3],
-                2 * qvec[3] * qvec[1] + 2 * qvec[0] * qvec[2],
-            ],
-            [
-                2 * qvec[1] * qvec[2] + 2 * qvec[0] * qvec[3],
-                1 - 2 * qvec[1] ** 2 - 2 * qvec[3] ** 2,
-                2 * qvec[2] * qvec[3] - 2 * qvec[0] * qvec[1],
-            ],
-            [
-                2 * qvec[3] * qvec[1] - 2 * qvec[0] * qvec[2],
-                2 * qvec[2] * qvec[3] + 2 * qvec[0] * qvec[1],
-                1 - 2 * qvec[1] ** 2 - 2 * qvec[2] ** 2,
-            ],
-        ]
-    )
+    return camera_params
+
 
 #########################################################
-######### Visualization of alignment ###################
+################ Image Quality Metrics ##################
 #########################################################
 
-def pyvista_camera_view_with_intrinsics(mesh_fn, camera_params, 
-                                      save_path=None, show_info=True):
+def compute_image_similarity(view_image: np.ndarray, frame: np.ndarray, 
+                             mask_method='brightness', 
+                             background_threshold=240,
+                             edge_threshold=50,
+                             morphology_kernel_size=3,
+                             lpips_net='alex'):
     """
-    PyVista visualization that properly uses camera intrinsics to set up the view.
-    
+    Compare two RGB images with different backgrounds: view_image (PyVista render) and frame (camera).
+    Uses the PyVista render to identify mesh regions (non-white pixels) for focused comparison.
+
     Args:
-        mesh_fn: Path to mesh PLY file
-        mesh_alignment_fn: Path to alignment NPZ file
-        localized_params: Dict with 'c2w', 'K', 'height', 'width'
-        save_path: Optional path to save the image
-        show_info: Whether to print camera info
+        view_image (np.ndarray): HxWx3 RGB PyVista render (mesh=dark, background=white)
+        frame (np.ndarray): HxWx3 RGB camera frame 
+        mask_method (str): 'brightness_based', 'edge_based', or 'combined'
+        background_threshold (int): pixels darker than this are considered mesh (default=240)
+        edge_threshold (int): threshold for edge detection
+        morphology_kernel_size (int): kernel size for morphological operations
+        lpips_net (str): LPIPS network type
+
+    Returns:
+        dict: Contains similarity scores and additional info
     """
 
-    # Load mesh with PyVista
-    mesh_pv = pv.read(str(mesh_fn))
+    view_image = view_image.copy()
+    frame = frame.copy()
 
-    # Get camera parameters
-    c2w = camera_params['c2w']
+    # Convert to uint8 if needed
+    if view_image.dtype != np.uint8:
+        view_image = np.clip(view_image * 255, 0, 255).astype(np.uint8)
+    if frame.dtype != np.uint8:
+        frame = np.clip(frame * 255, 0, 255).astype(np.uint8)
+
+    # Create mesh mask from PyVista render (dark pixels = mesh, white pixels = background)
+    mask = create_foreground_mask(view_image, method=mask_method, 
+                                 background_threshold=background_threshold,
+                                 edge_threshold=edge_threshold,
+                                 kernel_size=morphology_kernel_size)
+
+    # Apply mask to both images for fair comparison
+    masked_view, masked_frame = apply_mask_for_comparison(view_image, frame, mask)
+
+    # Calculate SSIM on masked grayscale images
+    gray_view = cv2.cvtColor(masked_view, cv2.COLOR_RGB2GRAY)
+    gray_frame = cv2.cvtColor(masked_frame, cv2.COLOR_RGB2GRAY)
     
-    K = camera_params['K']
-    fx, fy = K[0, 0], K[1, 1]
-    cx, cy = K[0, 2], K[1, 2]
-    h, w = camera_params['height'], camera_params['width']
-    
-    # Calculate field of view from intrinsics
-    fov_y_rad = 2 * np.arctan(h / (2 * fy))
-    fov_x_rad = 2 * np.arctan(w / (2 * fx))
-    fov_y_deg = np.degrees(fov_y_rad)
-    fov_x_deg = np.degrees(fov_x_rad)
-    aspect_ratio = w/h
-    
-    if show_info:
-        print(f"Camera Intrinsics:")
-        print(f"  Resolution: {w} x {h}")
-        print(f"  Focal lengths: fx={fx:.1f}, fy={fy:.1f}")
-        print(f"  Principal point: cx={cx:.1f}, cy={cy:.1f}")
-        print(f"  Field of view: {fov_x_deg:.1f}° (horizontal), {fov_y_deg:.1f}° (vertical)")
-        print(f"  Aspect ratio: {aspect_ratio:.3f}")
-        
-        # Check if principal point is centered
-        if abs(cx - w/2) > 5 or abs(cy - h/2) > 5:
-            print(f"  WARNING: Principal point is off-center by ({cx-w/2:.1f}, {cy-h/2:.1f}) pixels")
-        
-        # Check if fx and fy are similar (square pixels)
-        if abs(fx - fy) > 1:
-            print(f"  WARNING: Non-square pixels detected (fx/fy = {fx/fy:.3f})")
-    
-    # Create plotter with exact resolution
-    plotter = pv.Plotter(
-        off_screen=True, 
-        window_size=(w, h)
-    )
-    
-    # Add mesh
-    if 'RGB' in mesh_pv.point_data:
-        plotter.add_mesh(mesh_pv, scalars='RGB', rgb=True)
+    # Only compute SSIM on valid (non-masked) pixels
+    valid_pixels = mask > 0
+    if np.sum(valid_pixels) > 100:  # Ensure enough pixels for meaningful comparison
+        ssim_score = ssim(gray_view, gray_frame, 
+                         data_range=255,
+                         gaussian_weights=True,
+                         sigma=1.5,
+                         use_sample_covariance=False)
     else:
-        plotter.add_mesh(mesh_pv, color='lightblue')
+        ssim_score = 0.0
+
+    # Calculate LPIPS on masked images
+    lpips_score = compute_masked_lpips(masked_view, masked_frame, mask, lpips_net)
+
+    # Additional metrics
+    mesh_coverage = np.sum(mask > 0) / mask.size  # How much of the image contains mesh
     
-    # Extract camera position and orientation from c2w matrix
-    camera_position = c2w[:3, 3]
-    camera_forward = -c2w[:3, 2]  # -Z axis in camera coordinates
-    camera_up = c2w[:3, 1]        # Y axis in camera coordinates
+    return {
+        'ssim': ssim_score,
+        'lpips': lpips_score,
+        'mesh_coverage': mesh_coverage,
+        'mesh_mask': mask,
+        'masked_view': masked_view,
+        'masked_frame': masked_frame
+    }
+
+
+def create_foreground_mask(view_image, method='brightness', background_threshold=240, 
+                          edge_threshold=50, kernel_size=3):
+    """
+    Create a foreground mask to identify mesh regions (non-white pixels) in the PyVista render.
+    In PyVista renders, mesh = dark pixels, background = white pixels.
+    """
+    gray = cv2.cvtColor(view_image, cv2.COLOR_RGB2GRAY)
     
-    # Set camera position and orientation
-    plotter.camera.position = camera_position
-    plotter.camera.focal_point = camera_position + camera_forward
-    plotter.camera.up = camera_up
-    
-    # Set field of view - PyVista uses vertical FOV
-    plotter.camera.view_angle = fov_y_deg
-    
-    # Handle non-square pixels by adjusting the viewport
-    if abs(fx - fy) > 1:
-        # For non-square pixels, we need to adjust the aspect ratio
-        print(f"Adjusting for non-square pixels (fx={fx:.1f}, fy={fy:.1f})")
-        # This might require additional viewport manipulation
-    
-    # Handle off-center principal point
-    if abs(cx - w/2) > 1 or abs(cy - h/2) > 1:
-        # For off-center principal point, we might need to adjust the camera
-        print(f"Note: Principal point offset may not be perfectly handled in PyVista")
-    
-    try:
-        # Render the image
-        image = plotter.screenshot(return_img=True)
-        plotter.close()
+    if method == 'brightness':
+        # Mesh pixels are darker than the white background
+        # Use < threshold to identify non-white (mesh) pixels
+        mask = gray < background_threshold
         
-        # Display the result
-        plt.figure(figsize=(7, 5))
-        plt.imshow(image)
-        plt.axis('off')
-        plt.title(f'PyVista Camera View ({w}x{h}, FOV: {fov_y_deg:.1f}°)')
-        plt.tight_layout()
+    elif method == 'edge':
+        # First get brightness-based mask as base
+        brightness_mask = gray < background_threshold
         
-        if save_path:
-            plt.savefig(save_path, bbox_inches='tight', dpi=150)
-            print(f"Saved PyVista render to: {save_path}")
+        # Use edge detection to refine boundaries
+        edges = cv2.Canny(gray, edge_threshold, edge_threshold * 2)
         
-        plt.show()
+        # Dilate edges slightly to capture boundary regions
+        kernel = np.ones((kernel_size, kernel_size), np.uint8)
+        dilated_edges = cv2.dilate(edges, kernel, iterations=1)
         
-        return image
+        # Combine brightness mask with edge information
+        mask = np.logical_or(brightness_mask, dilated_edges).astype(np.uint8)
         
-    except Exception as e:
-        print(f"PyVista rendering failed: {e}")
-        print("Falling back to projection method...")
-        return None
+        # Clean up with morphological operations
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+        
+    elif method == 'combined':
+        # Start with brightness thresholding (main approach for PyVista)
+        brightness_mask = gray < background_threshold
+        
+        # Add edge detection for refinement
+        edges = cv2.Canny(gray, edge_threshold, edge_threshold * 2)
+        kernel = np.ones((kernel_size, kernel_size), np.uint8)
+        edge_mask = cv2.dilate(edges, kernel, iterations=1)
+        
+        # Combine: brightness mask OR edge mask
+        mask = np.logical_or(brightness_mask, edge_mask).astype(np.uint8)
+        
+        # Clean up the combined mask
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel, iterations=1)
+    
+    else:
+        raise ValueError(f"Unknown mask method: {method}")
+    
+    return mask.astype(np.uint8)
+
+
+def apply_mask_for_comparison(view_image, frame, mask):
+    """
+    Apply mask to both images for fair comparison.
+    Set background pixels to a neutral value.
+    """
+    masked_view = view_image.copy()
+    masked_frame = frame.copy()
+    
+    # Set masked regions to neutral gray (128) for both images
+    neutral_color = 128
+    masked_view[mask == 0] = neutral_color
+    masked_frame[mask == 0] = neutral_color
+    
+    return masked_view, masked_frame
+
+
+def compute_masked_lpips(view_image, frame, mask, lpips_net='alex'):
+    """
+    Compute LPIPS on masked regions with proper normalization.
+    """
+    def to_tensor(img):
+        img = img.astype(np.float32) / 255.0
+        # LPIPS expects values in [-1, 1]
+        img = img * 2.0 - 1.0
+        return torch.tensor(img).permute(2, 0, 1).unsqueeze(0).float()
+
+    tensor_view = to_tensor(view_image)
+    tensor_frame = to_tensor(frame)
+
+    # Calculate perceptual similarity
+    lpips_fn = lpips.LPIPS(net=lpips_net)
+    with torch.no_grad():
+        lpips_score = lpips_fn(tensor_view, tensor_frame).item()
+
+    return lpips_score
+
+
+def visualize_comparison(view_image, frame, result):
+    """
+    Helper function to visualize the comparison results.
+    """
+    import matplotlib.pyplot as plt
+    
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    
+    # Original images
+    axes[0, 0].imshow(view_image)
+    axes[0, 0].set_title('View Image (Render)')
+    axes[0, 0].axis('off')
+    
+    axes[0, 1].imshow(frame)
+    axes[0, 1].set_title('Frame (Original)')
+    axes[0, 1].axis('off')
+    
+    axes[0, 2].imshow(result['mesh_mask'], cmap='gray')
+    axes[0, 2].set_title('Mesh Mask (White=Mesh)')
+    axes[0, 2].axis('off')
+    
+    # Masked images
+    axes[1, 0].imshow(result['masked_view'])
+    axes[1, 0].set_title('Masked View')
+    axes[1, 0].axis('off')
+    
+    axes[1, 1].imshow(result['masked_frame'])
+    axes[1, 1].set_title('Masked Frame')
+    axes[1, 1].axis('off')
+    
+    # Metrics
+    axes[1, 2].text(0.1, 0.8, f"SSIM: {result['ssim']:.4f}", transform=axes[1, 2].transAxes, fontsize=12)
+    axes[1, 2].text(0.1, 0.6, f"LPIPS: {result['lpips']:.4f}", transform=axes[1, 2].transAxes, fontsize=12)
+    axes[1, 2].text(0.1, 0.4, f"Mesh Coverage: {result['mesh_coverage']:.2%}", transform=axes[1, 2].transAxes, fontsize=12)
+    axes[1, 2].set_title('Metrics')
+    axes[1, 2].axis('off')
+    
+    plt.tight_layout()
+    plt.show()
