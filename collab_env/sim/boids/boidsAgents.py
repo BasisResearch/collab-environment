@@ -130,10 +130,10 @@ class BoidsWorldAgent:
                 """
                 # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
                 # velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
-                velocity[i] = velocity[i] + np.random.normal(1, 0.01, 3) * 0.1
+                velocity[i] = velocity[i] + self.env.np_random.normal(1, 0.01, 3) * 0.1
 
             else:
-                total_force = np.random.normal(0, 0.1, size=3)
+                total_force = self.env.np_random.normal(0, 0.1, size=3)
                 target_force = self.calc_target_force(obs, i)
                 total_force += target_force
                 self.cap_force_and_apply(total_force, velocity, i)
@@ -230,7 +230,7 @@ class BoidsWorldAgent:
                 """
                 # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
                 # velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
-                velocity[i] = velocity[i] + np.random.normal(1, 0.01, 3) * 0.1
+                velocity[i] = velocity[i] + self.env.np_random.normal(1, 0.01, 3) * 0.1
 
             else:
                 # velocity[i] = vel # not sure which is faster, getting the whole thing before or walking through

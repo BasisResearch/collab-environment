@@ -542,17 +542,17 @@ class BoidsWorldSimpleEnv(gym.Env):
                     else:
                         self._target_location[i] = np.array(
                             [
-                                np.random.uniform(
+                                self.np_random.uniform(
                                     low=self.target_init_range_low * self.box_size,
                                     high=self.target_init_range_high * self.box_size,
                                 ),
-                                np.random.uniform(
+                                self.np_random.uniform(
                                     low=self.target_init_range_low
                                     * self.target_height_init_max,
                                     high=self.target_init_range_high
                                     * self.target_height_init_max,
                                 ),
-                                np.random.uniform(
+                                self.np_random.uniform(
                                     low=self.target_init_range_low * self.box_size,
                                     high=self.target_init_range_high * self.box_size,
                                 ),
@@ -564,17 +564,17 @@ class BoidsWorldSimpleEnv(gym.Env):
                     [
                         np.array(
                             [
-                                np.random.uniform(
+                                self.np_random.uniform(
                                     low=self.target_init_range_low * self.box_size,
                                     high=self.target_init_range_high * self.box_size,
                                 ),
-                                np.random.uniform(
+                                self.np_random.uniform(
                                     low=self.target_init_range_low
                                     * self.target_height_init_max,
                                     high=self.target_init_range_high
                                     * self.target_height_init_max,
                                 ),
-                                np.random.uniform(
+                                self.np_random.uniform(
                                     low=self.target_init_range_low * self.box_size,
                                     high=self.target_init_range_high * self.box_size,
                                 ),
@@ -613,12 +613,12 @@ class BoidsWorldSimpleEnv(gym.Env):
                 self._agent_location = [
                     np.array(
                         [
-                            np.random.uniform(
+                            self.np_random.uniform(
                                 low=self.agent_init_range_low * self.box_size,
                                 high=self.agent_init_range_high * self.box_size,
                             ),
                             0.0,
-                            np.random.uniform(
+                            self.np_random.uniform(
                                 low=self.agent_init_range_low * self.box_size,
                                 high=self.agent_init_range_high * self.box_size,
                             ),
@@ -631,11 +631,11 @@ class BoidsWorldSimpleEnv(gym.Env):
                 self._agent_location = [
                     np.array(
                         [
-                            np.random.uniform(
+                            self.np_random.uniform(
                                 low=self.agent_init_range_low * self.box_size,
                                 high=self.agent_init_range_high * self.box_size,
                             ),
-                            np.random.uniform(
+                            self.np_random.uniform(
                                 low=self.agent_height_range_low
                                 * (
                                     self.agent_height_init_max
@@ -649,7 +649,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                                 )
                                 + self.agent_height_init_min,
                             ),
-                            np.random.uniform(
+                            self.np_random.uniform(
                                 low=self.agent_init_range_low * self.box_size,
                                 high=self.agent_init_range_high * self.box_size,
                             ),
@@ -737,6 +737,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
     def init_trajectory_lines(self):
         self.trajectory_line_set = []
+        color_list = []
         blue = (0, 0, 1.0)
         cyan = (0, 1.0, 1.0)
         green = (0, 1.0, 0)
@@ -778,11 +779,16 @@ class BoidsWorldSimpleEnv(gym.Env):
                     logger.debug(
                         f"amount of blue {(end_color[2] - start_color[2]) * (step / steps_per_color)}"
                     )
+
                     color = [
                         start_color[j]
                         + (end_color[j] - start_color[j]) * (step / steps_per_color)
                         for j in range(3)
                     ]
+
+                    if agent_index == 0:
+                        color_list.append(color)
+
                     self.create_trajectory_line_group(
                         agent_index,
                         points[time - 1 if time > 0 else time : time + group_size],
@@ -799,6 +805,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                     if step == 0:
                         color_transition_index += 1
                     logger.debug(f"step = {step}")
+                logger.debug(f"color list\n{color_list}")
             else:
                 # Create a LineSet
                 """
@@ -1016,7 +1023,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                         > self.box_size
                     ):
                         self._agent_velocity[i][coordinate] = (
-                            np.random.normal(-0.8, 0.1, size=1)
+                            self.np_random.normal(-0.8, 0.1, size=1)
                             * self._agent_velocity[i][coordinate]
                         )
 
