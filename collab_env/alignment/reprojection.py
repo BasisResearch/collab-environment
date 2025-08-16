@@ -12,70 +12,66 @@ from collab_env.utils.utils import array_nan_equal
 ####### TLB CLEAN UP THESE BUT PUT HERE FOR NOW #########
 #########################################################
 
-def filter_coords(df_tracks, coord_cols=['u', 'v'], window=3, std_threshold=3):
+
+def filter_coords(df_tracks, coord_cols=["u", "v"], window=3, std_threshold=3):
     """
     Filter outlier coordinates based on rolling statistics for a single track
-    
+
     Args:
         track_data: DataFrame containing a single trajectory
         coord_cols: List of coordinate column names to filter
         window: Size of rolling window for statistics
         std_threshold: Number of standard deviations for outlier detection
-    
+
     Returns:
         DataFrame with outliers replaced by rolling mean
     """
 
     # Copy as to not modify the original dataframe
     df_tracks = df_tracks.copy()
-    
+
     # Calculate rolling statistics
-    rolling_mean = df_tracks[coord_cols].rolling(
-        window=window,
-        min_periods=1,
-        center=True
-    ).mean()
-    
-    rolling_std = df_tracks[coord_cols].rolling(
-        window=window,
-        min_periods=1,
-        center=True
-    ).std()
-    
+    rolling_mean = (
+        df_tracks[coord_cols].rolling(window=window, min_periods=1, center=True).mean()
+    )
+
+    rolling_std = (
+        df_tracks[coord_cols].rolling(window=window, min_periods=1, center=True).std()
+    )
+
     # Identify outliers
     z_scores = np.abs((df_tracks[coord_cols] - rolling_mean) / rolling_std)
     outliers = z_scores > std_threshold
-    
+
     # Replace outliers with rolling mean
     for col in coord_cols:
         df_tracks.loc[outliers[col], col] = rolling_mean.loc[outliers[col], col]
-        
+
     return df_tracks[coord_cols]
 
-def smooth_coords(df_tracks, coord_cols=['u', 'v'], window=3):
+
+def smooth_coords(df_tracks, coord_cols=["u", "v"], window=3):
     """
     Smooth coordinates over time using a rolling average for a single track
-    
+
     Args:
         track_data: DataFrame containing a single trajectory
         coord_cols: List of coordinate column names to smooth
         window: Size of rolling window for smoothing
-    
+
     Returns:
         DataFrame with smoothed coordinates
     """
     # Apply smoothing
-    smoothed = df_tracks[coord_cols].rolling(
-        window=window,
-        min_periods=1,
-        center=True
-    ).mean()
+    smoothed = (
+        df_tracks[coord_cols].rolling(window=window, min_periods=1, center=True).mean()
+    )
 
     return smoothed
 
-### TLB putting here for now but likely a better place or could refactor
-def get_depths_on_mesh(camera, mesh, radius = 0.01, smooth = True):
 
+### TLB putting here for now but likely a better place or could refactor
+def get_depths_on_mesh(camera, mesh, radius=0.01, smooth=True):
     # Grab the mesh points and create a KDTree
     mesh_points = np.asarray(mesh.vertices)
     tree = cKDTree(mesh_points)
@@ -95,12 +91,12 @@ def get_depths_on_mesh(camera, mesh, radius = 0.01, smooth = True):
     # Check if the depths are the same
     same_depths = array_nan_equal(camera.depth, depth_patch)
 
-    print ("Correctly mapped depths: ", same_depths)
+    print("Correctly mapped depths: ", same_depths)
 
     # Grab the world points that were found
     true_indices = np.where(~np.isnan(world_points).any(1))[0]
     true_points = world_points[true_indices]
-    true_depths = depths[true_indices] # Trim depths to those found
+    true_depths = depths[true_indices]  # Trim depths to those found
 
     # Find the nearest mesh point for each true point
     _, indices = tree.query(true_points, k=1)
@@ -125,6 +121,7 @@ def get_depths_on_mesh(camera, mesh, radius = 0.01, smooth = True):
 
     return mesh_depths
 
+
 #########################################################
 ################## Environment ##########################
 #########################################################
@@ -133,51 +130,52 @@ Camera represents a view within the environment. It contains a
 set of transformations that relate the world points to the image
 """
 
+
 @dataclass
 class Camera:
     # A camera is a set of transformations that relates the world points to the camera
-    def __init__(self, K, c2w, width, height):
-        self.K = K
-        self.c2w = c2w
-        self.width = width
-        self.height = height
-        self.image = None
-        self.depth = None
+    def __init__(self, K: np.ndarray, c2w: np.ndarray, width: int, height: int):
+        self.K: np.ndarray = K
+        self.c2w: np.ndarray = c2w
+        self.width: int = width
+        self.height: int = height
+        self.image: Optional[np.ndarray] = None
+        self.depth: Optional[np.ndarray] = None
 
-    def set_view(self, image: np.ndarray, depth: np.ndarray):
+    def set_view(self, image: np.ndarray, depth: np.ndarray) -> None:
         self.image = image
         self.depth = depth
 
-    def get_view(self):
+    def get_view(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         return self.image, self.depth
 
     @property
     def fx(self):
         return self.K[0, 0]
-    
+
     @property
     def fy(self):
         return self.K[1, 1]
-    
+
     @property
     def cx(self):
         return self.K[0, 2]
-    
+
     @property
     def cy(self):
         return self.K[1, 2]
-    
+
     @property
     def w2c(self):
         return np.linalg.inv(self.c2w)
-    
+
     #########################################################
     ################# Camera projections ####################
     #########################################################
 
     def project_to_camera(self, points3d):
         """
-        Project a 3D point (x,y,z) in the world frame to 
+        Project a 3D point (x,y,z) in the world frame to
         a 2D point (u,v) in the camera frame.
 
         Args:
@@ -188,14 +186,16 @@ class Camera:
         """
 
         # Convert to homogeneous coordinates (N, 4) --> enables matrix multiplication
-        points_world_homogenous = np.concatenate([points3d, np.ones((points3d.shape[0], 1))], axis=1)
+        points_world_homogenous = np.concatenate(
+            [points3d, np.ones((points3d.shape[0], 1))], axis=1
+        )
 
         # Step 2: Project to camera space
-        points_cam = self.w2c @ points_world_homogenous.T # (4,4) @ (4,N) = (4,N)
+        points_cam = self.w2c @ points_world_homogenous.T  # (4,4) @ (4,N) = (4,N)
 
         # Step 3: Perspective division (to normalize by z)
         x, y, z, _ = points_cam
-        
+
         # Avoid division by zero
         z = np.clip(z, 1e-6, None)
 
@@ -229,7 +229,9 @@ class Camera:
         u = np.clip(points2d[:, 0], 0, self.depth.shape[1] - 1)  # col index (width)
         v = np.clip(points2d[:, 1], 0, self.depth.shape[0] - 1)  # row index (height)
 
-        depth = self.depth[v, u].reshape(-1, 1)  # note depth indexed by [row, col] = [v, u]
+        depth = self.depth[v, u].reshape(
+            -1, 1
+        )  # note depth indexed by [row, col] = [v, u]
 
         valid_mask = depth.squeeze() > 0
         if not np.any(valid_mask):
@@ -246,6 +248,7 @@ class Camera:
 
         return points_world
 
+
 #########################################################
 ################## Environment ##########################
 #########################################################
@@ -253,6 +256,7 @@ class Camera:
 Environment is what surrounds the Agents and Cameras. Cameras
 can observe the environment and the Agents can move in the environment.
 """
+
 
 @dataclass
 class MeshEnvironment:
@@ -289,11 +293,13 @@ class MeshEnvironment:
         Render the camera view of the mesh.
         """
 
-        if camera.image is not None:
-            return camera.get_view()
-        
+        if camera.image is not None and camera.depth is not None:
+            return camera.image, camera.depth
+
         # Create renderer
-        renderer = o3d.visualization.rendering.OffscreenRenderer(camera.width, camera.height)
+        renderer = o3d.visualization.rendering.OffscreenRenderer(
+            camera.width, camera.height
+        )
         renderer.scene.set_background([1, 1, 1, 1])  # white bg
 
         # Set material to use vertex colors
@@ -305,7 +311,7 @@ class MeshEnvironment:
 
         # Set up camera
         renderer.setup_camera(camera.K, camera.w2c, camera.width, camera.height)
-        
+
         # Render
         image = renderer.render_to_image()
         depth = renderer.render_to_depth_image(z_in_view_space=True)
@@ -315,12 +321,13 @@ class MeshEnvironment:
 
         camera.set_view(
             image=image,
-            depth=depth # depth is in world units
+            depth=depth,  # depth is in world units
         )
 
         del renderer
 
         return image, depth
+
 
 ################################
 ########### Observer ###########
@@ -329,22 +336,27 @@ class MeshEnvironment:
 
 """
 
-State: TypeAlias = Tuple[torch.Tensor, torch.Tensor] # positions, sizes
-ObservedState: TypeAlias = Tuple[torch.Tensor, torch.Tensor] # projected centroids, projected areas
-StateTrajectory: TypeAlias = State # each tensor has extra dimension
+State: TypeAlias = Tuple[torch.Tensor, torch.Tensor]  # positions, sizes
+ObservedState: TypeAlias = Tuple[
+    torch.Tensor, torch.Tensor
+]  # projected centroids, projected areas
+StateTrajectory: TypeAlias = State  # each tensor has extra dimension
+
 
 @dataclass
 class Observer:
-    def __init__(self, mesh: MeshEnvironment, camera: Camera, observe_fx: Optional[str] = None):
+    def __init__(
+        self, mesh: MeshEnvironment, camera: Camera, observe_fx: Optional[str] = None
+    ):
         """
         Observer is a class that uses a camera projection to observe movement
-        on a mesh environment. 
+        on a mesh environment.
         """
 
         self.mesh = mesh
         self.camera = camera
         self.observe_fx = observe_fx
-    
+
     def __observe__(self, *args) -> ObservedState:
         """
         Observe from the camera frame.
@@ -353,15 +365,17 @@ class Observer:
             return self.camera.project_to_world(args)
         else:
             return getattr(self.camera, self.observe_fx)(args)
-    
+
     def observe(self, batch: State) -> ObservedState:
-        
         agent = batch[0].shape[:-1]
         # create the tuple of tensors
         # obs_tuple = (torch.zeros(shp + (2,)), torch.zeros(shp + (1,)))
-        vmap_observe = vmap(self.__observe__, in_dims = 0)(*tuple(item.view(-1, item.shape[-1]) for item in batch))
-        
+        vmap_observe = vmap(self.__observe__, in_dims=0)(
+            *tuple(item.view(-1, item.shape[-1]) for item in batch)
+        )
+
         return tuple(state.view(*agent, -1) for state in vmap_observe)
+
 
 ################################
 ########### Agent ##############
@@ -372,6 +386,7 @@ Agent is an object that moves within the environment. It
 starts from an initial position.
 """
 
+
 @dataclass
 class Agent:
     def __init__(self, position: torch.Tensor, size: torch.Tensor):
@@ -381,7 +396,7 @@ class Agent:
     @property
     def area(self):
         return np.prod(self.size)
-    
+
     @property
     def state(self) -> State:
         return self.position, self.area
@@ -390,8 +405,10 @@ class Agent:
     def state(self, state: State):
         self.position, self.size = state
 
+
 #     def observe(self, batch: State) -> ObservedState:
 #         return self.camera.project_to_world(batch)
+
 
 def bbox_to_coords(bbox, method="bottom_center"):
     x1, y1, x2, y2 = map(int, bbox)
@@ -401,23 +418,27 @@ def bbox_to_coords(bbox, method="bottom_center"):
     uv = np.stack([u, v])
     return uv
 
+
 #########################################################
 ################# Movement generator ####################
 #########################################################
+
 
 @dataclass
 class DynamicMovementGenerator:
     def __init__(self, mesh: MeshEnvironment, spatial_increment: torch.Tensor):
         self.mesh = mesh
-        assert spatial_increment.shape[-1] == 2, \
+        assert spatial_increment.shape[-1] == 2, (
             f"Spatial increment parameters must have shape (..., 2), but got {spatial_increment.shape}"
+        )
         self.spatial_increment = spatial_increment
-    
+
+
 #     def next_state(self, state: State, ind: int) -> State:
 #         # extract components
 #         position, size = state
 #         x_3d, y_3d, z_3d = position[..., 0], position[..., 1], position[..., 2]
-        
+
 #         state_constrained = self.mesh.constraint(state)
 #         assert torch.allclose(state[0], state_constrained[0]), \
 #             f"Environment constraints violated: state={state}, state_constrained={state_constrained}"
@@ -426,24 +447,24 @@ class DynamicMovementGenerator:
 #         # Sample independent increments for each agent (dim=-2)
 #         batch_shape = pos.shape[:-1]  # Get all dimensions except the last one
 #         pos_increment = self.spatial_increment_parameters * pyro.sample(
-#             f"pos_increment_{ind}", 
+#             f"pos_increment_{ind}",
 #             dist.Normal(0, 1).expand(batch_shape + self.spatial_increment_parameters.shape).to_event(2)
 #         )
 #         x_3d_new = x_3d + pos_increment[..., 0]
 #         z_3d_new = z_3d + pos_increment[..., 1]
 #         y_3d_new = y_3d.reshape(x_3d_new.shape)
-        
+
 #         pos_new = torch.stack([x_3d_new, y_3d_new, z_3d_new], dim=-1)
-        
+
 #         # sample independent increments in angles
 #         # Sample independent increments for each agent (dim=-2)
 #         angle_increment = self.angle_increment_parameters * pyro.sample(
-#             f"angle_increment_{ind}", 
+#             f"angle_increment_{ind}",
 #             dist.Normal(0, 1).expand(batch_shape + self.angle_increment_parameters.shape).to_event(2)
 #         )
 #         angle_new = angle + angle_increment
 #         return self.env.constrain((pos_new, size, angle_new))
-    
+
 #     def generate_trajectory(self, init_state: State, n_steps: int) -> StateTrajectory:
 #         state = init_state
 #         # trajectory = [state]
