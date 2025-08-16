@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Union
 import gcsfs
 from dotenv import load_dotenv
 from google.cloud import storage
@@ -10,6 +11,7 @@ from collab_env.data.file_utils import expand_path, get_project_root
 
 DEFAULT_PROJECT_ID = "collab-data-463313"
 DEFAULT_GCS_CREDENTIALS_PATH = "config-local/collab-data-463313-c340ad86b28e.json"
+
 
 class GCSClient:
     is_initialized = False
@@ -181,6 +183,80 @@ class GCSClient:
         self._gcs.put(local_path, gcs_path)
         logger.info(f"Uploaded file {local_path} to {gcs_path}.")
 
+    def upload_folder(self, local_path: Union[str, Path], gcs_path: str):
+        """
+        Upload a local folder to GCS.
+
+        Args:
+            local_path: Local path of the folder to upload
+            gcs_path: GCS path where folder should be uploaded
+        """
+        assert self.is_initialized, (
+            "GCSClient must be initialized before uploading a folder"
+        )
+        logger.info(f"Uploading folder {local_path} to {gcs_path}.")
+
+        local_path_obj = Path(local_path)
+        for root, _, files in os.walk(local_path_obj):
+            for file in files:
+                file_path = Path(root) / file
+                relative_path = file_path.relative_to(local_path_obj)
+                gcs_file_path = f"{gcs_path}/{relative_path.as_posix()}"
+                self.upload_file(str(file_path), gcs_file_path)
+
+        logger.info(f"Finished uploading folder {local_path} to {gcs_path}.")
+
+    def download_folder(
+        self, gcs_path: str, local_path: Union[str, Path], overwrite: bool = False
+    ):
+        """
+        Download a folder from GCS.
+
+        Args:
+            gcs_path: GCS path of the folder to download
+            local_path: Local path where folder should be downloaded
+        """
+        assert self.is_initialized, (
+            "GCSClient must be initialized before downloading a folder"
+        )
+        logger.info(f"Downloading folder {gcs_path} to {local_path}.")
+
+        # Ensure gcs_path ends with slash for folder operations
+        if not gcs_path.endswith("/"):
+            gcs_path += "/"
+
+        # Create local directory if it doesn't exist
+        local_path_obj = Path(local_path)
+        local_path_obj.mkdir(parents=True, exist_ok=True)
+
+        # Get all files recursively in the GCS folder and subdirectories
+        files = self.glob(f"{gcs_path}**")
+
+        for gcs_file_path in files:
+            # Skip folder markers
+            if gcs_file_path.endswith("/.folder_marker"):
+                continue
+
+            # Calculate relative path from gcs_path
+            relative_path = gcs_file_path[len(gcs_path) :]
+            if not relative_path:  # Skip if it's the folder itself
+                continue
+
+            # Create local file path
+            local_file_path = local_path_obj / relative_path
+
+            # Create parent directories if they don't exist
+            local_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if local_file_path.exists() and not overwrite:
+                continue
+
+            # Download the file
+            logger.info(f"Downloading {gcs_file_path} to {local_file_path}")
+            self._gcs.get(gcs_file_path, str(local_file_path))
+
+        logger.info(f"Finished downloading folder {gcs_path} to {local_path}.")
+
     def delete_path(self, gcs_path: str):
         """
         Delete a path in GCS.
@@ -195,57 +271,57 @@ class GCSClient:
     def is_folder(self, path: str) -> bool:
         """
         Check if a path represents a folder in GCS.
-        
+
         In GCS, folders are logical constructs. This method checks:
         1. If a folder marker exists (.folder_marker file)
         2. If any objects exist with the path as a prefix
         3. If the path itself exists as an object
-        
+
         Args:
             path: The GCS path to check
-            
+
         Returns:
             bool: True if the path represents a folder, False otherwise
         """
         assert self.is_initialized, (
             "GCSClient must be initialized before checking if path is folder"
         )
-        
+
         # Ensure path ends with slash for folder check
         if not path.endswith("/"):
             path += "/"
-        
+
         # Method 1: Check for folder marker
         marker_blob = path.rstrip("/") + "/.folder_marker"
         if self._gcs.exists(marker_blob):
             return True
-        
+
         # Method 2: Check if any objects exist with this path prefix
         objects = self.glob(f"{path}*")
         if len(objects) > 0:
             return True
-        
+
         # Method 3: Check if the path itself exists as an object
         if self._gcs.exists(path.rstrip("/")):
             return True
-        
+
         return False
 
     def list_folder_contents(self, folder_path: str) -> list[str]:
         """
         List contents of a folder in GCS.
-        
+
         Args:
             folder_path: The GCS folder path
-            
+
         Returns:
             list[str]: List of object paths in the folder
         """
         assert self.is_initialized, (
             "GCSClient must be initialized before listing folder contents"
         )
-        
+
         if not folder_path.endswith("/"):
             folder_path += "/"
-        
+
         return self.glob(f"{folder_path}*")
