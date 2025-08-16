@@ -10,6 +10,7 @@ import pandas as pd
 from tqdm import tqdm
 from ultralytics.trackers.byte_tracker import BYTETracker
 
+
 def video_to_frames(video_path, out_dir, prefix="frame"):
     """
     Extracts frames from a video and saves them as .jpg.
@@ -278,6 +279,7 @@ def run_tracking(
             for frame_idx, (x, y) in points:
                 f.write(f"{tid},{frame_idx},{x},{y}\n")
     print(f"✅ Tracking results saved to {output_csv}")
+
 
 def output_tracked_bboxes_csv(
     track_csv: Path,

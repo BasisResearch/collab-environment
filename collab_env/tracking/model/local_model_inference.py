@@ -124,6 +124,7 @@ def infer_with_yolo(
     if writer:
         print(f"Visualization video saved to {output_video_path}")
 
+
 def process_video_with_rfdetr(
     video_path, output_csv_path, output_video_path, checkpoint_path, confidence=0.5
 ):

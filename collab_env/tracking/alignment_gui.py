@@ -508,6 +508,7 @@ def manual_temporal_alignment(
     rgb_cap.release()
     thm_cap.release()
 
+
 ### steps to run the full alignment pipeline
 
 
@@ -658,6 +659,7 @@ def align_videos(
     save_temporally_adjusted_video(
         warped_thermal_path, adjusted_thermal_path, frame_offset, frame_size
     )
+
 
 def cropping_step(rgb_frame, thm_frame, frame_size=(640, 480)):
     """
