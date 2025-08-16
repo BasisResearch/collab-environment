@@ -2,7 +2,6 @@ import os
 from pathlib import Path
 from typing import Union
 import gcsfs
-from dotenv import load_dotenv
 from google.cloud import storage
 from google.oauth2 import service_account
 from loguru import logger
@@ -11,7 +10,6 @@ from collab_env.data.file_utils import expand_path, get_project_root
 
 DEFAULT_PROJECT_ID = "collab-data-463313"
 DEFAULT_GCS_CREDENTIALS_PATH = "config-local/collab-data-463313-c340ad86b28e.json"
-
 
 class GCSClient:
     is_initialized = False
