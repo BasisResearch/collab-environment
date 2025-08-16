@@ -1,13 +1,13 @@
 import gymnasium as gym
-import torch
-from gymnasium import spaces
 import numpy as np
 import open3d
+import torch
+from gymnasium import spaces
 
 # from Boids.sim_utils import calc_angles
 from loguru import logger
 
-from collab_env.data.file_utils import get_project_root, expand_path
+from collab_env.data.file_utils import expand_path, get_project_root
 
 HIT_DISTANCE = 0.01
 SPEED = 0.1
@@ -598,7 +598,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         for i in range(self.num_agents):
             """
             TOC -- 072625
-            We have the acceleration in the BoidsAgent where it chooses actions. That is what we 
+            We have the acceleration in the BoidsAgent where it chooses actions. That is what we
             need I think to compute the orientation of the agent meshes. Or not.
             """
 
@@ -708,8 +708,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         if self.render_mode == "human":
             if self.vis is None:
                 """
-                TOC -- 073125 
-                Is this the right way to visualize. Kind of think there may have been a newer way to do this. 
+                TOC -- 073125
+                Is this the right way to visualize. Kind of think there may have been a newer way to do this.
                 """
                 # Initialize Open3D visualizer
                 self.vis = open3d.visualization.Visualizer()

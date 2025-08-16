@@ -1,9 +1,7 @@
 from collections import defaultdict
-from loguru import logger
-
 import gymnasium as gym
 import numpy as np
-
+from loguru import logger
 
 class BoidsWorldAgent:
     """ """
@@ -101,12 +99,12 @@ class BoidsWorldAgent:
         location = np.array(obs["agent_loc"])
         for i in range(self.num_agents):
             """
-            TOC -- 072325 -- 03:29PM 
-            If we get too close to the ground, reverse direction. This will likely be too abrupt 
+            TOC -- 072325 -- 03:29PM
+            If we get too close to the ground, reverse direction. This will likely be too abrupt
             and needs to be fixed.
-            
-            TOC -- 072925 -- 11:56AM 
-            Add a turning factor to make this less abrupt instead of just turning directly around (vanhunteradams uses this) 
+
+            TOC -- 072925 -- 11:56AM
+            Add a turning factor to make this less abrupt instead of just turning directly around (vanhunteradams uses this)
             """
             if (not self.walking) and (
                 obs["mesh_distance"][i] < self.min_ground_separation
@@ -193,10 +191,10 @@ class BoidsWorldAgent:
                 # cohesion
                 if (num_neighbors > 0) and (self.cohesion_weight > 0.0):
                     """
-                    TOC -- 072225 -- 12:54PM -- This was supposed to be location not velocity. 
-                    
-                    TOC -- 072925 -- 10:14AM 
-                    Take out the normalization, max_force will be applied to accumulated force later. 
+                    TOC -- 072225 -- 12:54PM -- This was supposed to be location not velocity.
+
+                    TOC -- 072925 -- 10:14AM
+                    Take out the normalization, max_force will be applied to accumulated force later.
                     """
                     steer = avg_cohesion_vector - obs["agent_loc"][i]
                     # cohesion_force = steer / np.linalg.norm(steer) * self.max_force
@@ -278,7 +276,8 @@ class BoidsWorldAgent:
                 # apply force
                 if np.linalg.norm(total_force) > 0:
                     """
-                    TOC -- 072225 10:29AM -- Why was this subtraction? Oops. That fixed a lot of problems.   
+                    TOC -- 072225 10:29AM -- Why was this subtraction? Oops. That fixed a lot of problems.
+
                     """
                     velocity[i] = total_force + velocity[i]
 

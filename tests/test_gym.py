@@ -1,5 +1,7 @@
-import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
+
 import gymnasium as gym
+
+import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
 
 
 def test_gym_env_init():

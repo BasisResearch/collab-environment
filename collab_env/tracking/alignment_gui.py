@@ -503,9 +503,10 @@ def manual_temporal_alignment(
             alpha = min(1.0, alpha + 0.1)
             print(f"Alpha increased to {alpha:.1f}")
         cv2.waitKey(3)
-
-    cv2.destroyAllWindows()
-
+    cv2.destroyWindow(window_name)
+    cv2.destroyAllWindows()  # Ensure all windows are closed
+    rgb_cap.release()
+    thm_cap.release()
 
 ### steps to run the full alignment pipeline
 
@@ -533,7 +534,6 @@ def step1_crop_and_prepare(
     if not (ret_rgb and ret_thm):
         raise RuntimeError("Could not read videos for preview/cropping.")
 
-    # Use the new cropping_step function
     crop_rect, angle = cropping_step(rgb_sample, thm_sample, frame_size=frame_size)
 
     if crop_rect is None:
@@ -650,10 +650,14 @@ def align_videos(
     )
 
     adjusted_rgb_path = os.path.join(output_dir_rgb, "adjusted_rgb.mp4")
+    adjusted_thermal_path = os.path.join(output_dir_thm, "adjusted_thermal.mp4")
     save_temporally_adjusted_video(
         cropped_rgb_path, adjusted_rgb_path, frame_offset, frame_size
     )
 
+    save_temporally_adjusted_video(
+        warped_thermal_path, adjusted_thermal_path, frame_offset, frame_size
+    )
 
 def cropping_step(rgb_frame, thm_frame, frame_size=(640, 480)):
     """
