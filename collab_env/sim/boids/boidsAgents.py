@@ -361,7 +361,8 @@ class BoidsWorldAgent:
                 take precedence.
                 """
                 if (
-                    not self.walking
+                    self.ground_weight > 0.0
+                    and not self.walking
                     and obs["mesh_distance"][i] < self.min_ground_separation
                 ):
                     logger.debug(f"mesh distance {obs['mesh_distance'][i]}")

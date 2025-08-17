@@ -7,7 +7,7 @@ simulator:
   num_ground_targets: 2
   submesh_target: False
   num_episodes: 1
-  num_frames: 5
+  num_frames: 20
   target_creation_time: 2000
   show_box: True
   run_main_folder: "sim-output/tests-sim-runs"
@@ -73,11 +73,13 @@ agent:
 
 meshes:
     # mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
-    mesh_scene: 'meshes/query-tree.ply'
+    # mesh_scene: 'meshes/query-tree.ply'
+    mesh_scene: ''
     scene_angle: [-90.0, 0.0, 0.0]
     # mesh_scene: 'meshes/example_mesh.ply'
     #scene_angle: [-10.0, 0.0, -115.0]
-    sub_mesh_target: 'meshes/labeled_meshes/query-tree_top-cluster.ply'
+    # sub_mesh_target: 'meshes/labeled_meshes/query-tree_top-cluster.ply'
+    sub_mesh_target: False
 
 files:
     output_folder_prefix: 'boids_sim_runs'

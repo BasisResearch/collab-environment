@@ -1514,17 +1514,32 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         """
 
-        """
-        TOC -- 080525
-        Right now all targets will be created at the same time. This needs to be changed 
-        to have configurable times for each target. 
-        """
-        for i in range(self.num_targets):
-            self.vis.add_geometry(self.mesh_target_list[i])
-        # if self.walking:
-        #     self.vis.add_geometry(self.mesh_ground_target[i])
-        # else:
-        #     self.vis.add_geometry(self.mesh_target)
+        if self.submesh_target:
+            color = [0.0, 1.0, 0.0]
+            colors = np.asarray(self.mesh_scene.vertex_colors)
+
+            # # If no existing colors, create a default white array
+            # if len(colors) == 0:
+            #     colors = np.ones_like(vertices)
+
+            # Modify colors for specific indices
+            colors[self.submesh_vertex_indices] = color
+
+            # Update mesh vertex colors
+            self.mesh_scene.vertex_colors = open3d.utility.Vector3dVector(colors)
+            self.vis.update_geometry(self.mesh_scene)
+        else:
+            """
+            TOC -- 080525
+            Right now all targets will be created at the same time. This needs to be changed 
+            to have configurable times for each target. 
+            """
+            for i in range(self.num_targets):
+                self.vis.add_geometry(self.mesh_target_list[i])
+            # if self.walking:
+            #     self.vis.add_geometry(self.mesh_ground_target[i])
+            # else:
+            #     self.vis.add_geometry(self.mesh_target)
 
     def init_sub_mesh_target(self):
         """
@@ -1659,22 +1674,23 @@ class BoidsWorldSimpleEnv(gym.Env):
         not visualizing.   
         """
         if self.mesh_scene is not None:
-            """
-            TOC -- 081425 11:32AM
-            Change the color of the target submesh so it is discernible in the visualizer. 
-            """
-            color = [0.0, 0.0, 1.0]
-            colors = np.asarray(self.mesh_scene.vertex_colors)
+            if self.submesh_target:
+                """
+                TOC -- 081425 11:32AM
+                Change the color of the target submesh so it is discernible in the visualizer. 
+                """
+                color = [0.0, 0.0, 1.0]
+                colors = np.asarray(self.mesh_scene.vertex_colors)
 
-            # # If no existing colors, create a default white array
-            # if len(colors) == 0:
-            #     colors = np.ones_like(vertices)
+                # # If no existing colors, create a default white array
+                # if len(colors) == 0:
+                #     colors = np.ones_like(vertices)
 
-            # Modify colors for specific indices
-            colors[self.submesh_vertex_indices] = color
+                # Modify colors for specific indices
+                colors[self.submesh_vertex_indices] = color
 
-            # Update mesh vertex colors
-            self.mesh_scene.vertex_colors = open3d.utility.Vector3dVector(colors)
+                # Update mesh vertex colors
+                self.mesh_scene.vertex_colors = open3d.utility.Vector3dVector(colors)
             self.vis.add_geometry(self.mesh_scene)
 
         # self.vis.add_geometry(self.mesh_top_corner)

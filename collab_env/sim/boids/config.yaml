@@ -1,6 +1,6 @@
 
 simulator:
-  seed: [342] # one seed required for each episode
+  seed: [1250] # one seed required for each episode
   walking: False
   num_agents: 20
   num_targets: 1
@@ -20,7 +20,7 @@ simulator:
 
 
 visuals:
-  store_video: True
+  store_video: False
   show_visualizer: True
   width: 1920
   height: 1280
@@ -46,7 +46,7 @@ environment:
   target_speed: 0.0
   init_range_low: 0.4
   init_range_high: 0.6
-  height_init_max: 500
+  height_init_max: 450
   target_position: [[750, 20, 750]]
 
 agent:
@@ -60,7 +60,7 @@ agent:
   alignment_weight: 1.0
   cohesion_weight: 0.5
   ground_weight: 0.0
-  target_weight: [0.01]
+  target_weight: [0.002]
   max_speed: 1.0
   min_speed: 0.1
   max_force: 0.1
@@ -71,8 +71,8 @@ agent:
   height_range_low: 0.0
   height_range_high: 1.0
   height_init_min: 200
-  height_init_max: 500
-  random_walk: False
+  height_init_max: 400
+  random_walk: True
 
 meshes:
     # mesh_scene: ''

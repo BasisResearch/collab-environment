@@ -31,16 +31,35 @@ Setup
 Usage
 -----
 
-Running a Simple Boids Simulation
+Running a Boids Simulation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-To run a simple boids simulation with 40 agents:
+To run a boids simulation:
 
 .. code:: sh
 
-   python -m collab_env.sim.boids.runBoidsSimple
+   python -m collab_env.sim.boids.run_boids_simulation
 
-This will start a 3D visualization of the boids simulation. To stop the simulation, press ``Ctrl-C`` in the terminal.
+This will start a 3D visualization of the boids simulation using the default
+configuration file collab_env/sim/boids/config.yaml. To specify a
+different configuration file, add a command line argument:
+
+.. code:: sh
+
+    python -m collab_env.sim.boids.run_boids_simulation -cf <path_to_config_file>
+
+There are many configurable parameters. See the example configuration file for details.
+If the configuration file indicates that the visualizer should be shown, the following
+key commands are available while the visualizer is running:
+
+* Q - quits the current episode
+
+* P - saves an image of the current frame to a file. The images saved will be numbered consecutively (image-1.png, image-2.png, etc.) in the run folder, which is also specified in the config file
+
+* R - resets the viewer orientation to the initial orientation
+
+To stop the simulation prematurely when there is no visualizer window,
+press ``Ctrl-C`` in the terminal.
 
 
 Contributing

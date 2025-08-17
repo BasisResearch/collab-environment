@@ -2,6 +2,7 @@ import struct
 
 import numpy as np
 import pandas as pd
+from tqdm import tqdm
 
 
 def function_filter(function_list):
@@ -193,7 +194,7 @@ def plot_trajectories(df, env, frame_limit=None):
 
     num_agents = df.loc[df["type"] == "agent"]["id"].max()
     agent_trajectories = []  # = np.zeros((num_time_steps+1, num_agents, 3))
-    for i in range(num_agents):
+    for i in tqdm(range(num_agents)):
         trajectory = []
         """
         TOC -- 080825 11:58 AM
