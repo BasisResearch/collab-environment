@@ -224,6 +224,10 @@ if __name__ == "__main__":
     )
 
     #
+    # There should be one seed for each episode
+    #
+    seed_list = config["simulator"]["seed"]
+    #
     # Run the episodes
     #
     for episode in tqdm(range(config["simulator"]["num_episodes"])):
@@ -232,7 +236,7 @@ if __name__ == "__main__":
         logger.debug(f"main(): starting episode {episode}")
 
         # Reset the environment
-        obs, info = env.reset()
+        obs, info = env.reset(seed=seed_list[episode])
 
         # TOC -- 080225 8:58AM
         # create the dataframe for the simulation output
