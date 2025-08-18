@@ -42,6 +42,11 @@ CAMERA_KWARGS = {
     "color": "red",
 }
 
+LINE_KWARGS = {
+    "line_width": 6,
+    "opacity": 1.0,
+}
+
 ######################################################################
 ################## PyVista Visualization Functions ###################
 ######################################################################
@@ -146,7 +151,12 @@ def visualize_splat(
 
 
 def create_camera_frustum_pyvista(
-    pose, scale=0.02, aspect_ratio=1.33, fov=60, show_axes=False
+    pose: np.ndarray,
+    scale=0.02,
+    aspect_ratio=1.33,
+    fov=60,
+    show_axes=False,
+    show_frustum=True,
 ):
     """
     Create a camera frustum using PyVista
@@ -356,25 +366,26 @@ def plot_tracks_on_image(
     return fig
 
 
-# TLB CLEAN UP THIS FUNCTION
 def add_tracks_to_mesh(
-    df_tracks: pd.DataFrame, plotter: pv.Plotter, colors: Optional[dict] = None
+    df_tracks: pd.DataFrame,
+    plotter: pv.Plotter,
+    colors: Optional[dict] = None,
+    line_kwargs: dict = {},
 ):
     """
-    Add points to a mesh
+    Add tracks as connected line segments to a PyVista plotter.
 
     Args:
-        df_tracks: DataFrame containing track points
+        df_tracks: DataFrame with columns ['track_id', 'x', 'y', 'z']
         plotter: PyVista plotter object
-        colors: Optional dict mapping track_ids to colors. If None, colors will be generated automatically
-               using evenly spaced hues.
+        colors: Optional dict mapping track_ids to colors. If None, colors are auto-generated.
+        line_kwargs: Optional dict of kwargs passed to `plotter.add_mesh` for lines.
     """
 
     # If no colors provided, generate evenly spaced colors
     if colors is None:
         unique_track_ids = df_tracks.track_id.unique()
         num_tracks = len(unique_track_ids)
-        # Use golden ratio to generate well-distributed colors
         golden_ratio = (1 + 5**0.5) / 2
         hues = [(i * golden_ratio) % 1 for i in range(num_tracks)]
         colors = {
@@ -383,24 +394,28 @@ def add_tracks_to_mesh(
         }
 
     for track_id, df_id in df_tracks.groupby("track_id"):
-        # Get valid points for this track
+        # Ensure temporal order (important for smooth tracks)
+        if "frame_id" in df_id.columns:
+            df_id = df_id.sort_values("frame_id")
+        elif "t" in df_id.columns:
+            df_id = df_id.sort_values("t")
+
+        # Get valid points
         valid_mask = ~df_id[["x", "y", "z"]].isna().any(axis=1)
         track_points = df_id.loc[valid_mask, ["x", "y", "z"]].values
 
-        if len(track_points) == 0:
+        if len(track_points) < 2:
             continue
 
-        # Create point cloud for this track
-        pts = pv.PolyData(track_points)
+        # Polyline connectivity
+        n_pts = len(track_points)
+        cells = np.concatenate(([n_pts], np.arange(n_pts)))
 
-        # Get color for this track
-        track_color = colors[track_id]
+        line = pv.PolyData()
+        line.points = track_points
+        line.lines = cells
 
-        # Set default point visualization parameters
-        point_kwargs = dict(
-            color=track_color, point_size=5, render_points_as_spheres=False
-        )
+        # Add to plotter with kwargs
+        plotter.add_mesh(line, color=colors[track_id], **line_kwargs)
 
-        # Add points to plotter
-        plotter.add_points(pts, **point_kwargs)
     return plotter

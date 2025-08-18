@@ -192,7 +192,7 @@ def align_to_colmap(
         return poses
 
 
-def extract_camera_params(pose, alpha=0.5):
+def extract_camera_params(pose: dict, alpha: float = 0.0) -> dict:
     """
     Extract camera parameters from a COLMAP pose (OpenCV convention) and
     convert to OpenGL convention.
