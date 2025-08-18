@@ -424,6 +424,7 @@ def generate_thermal_masks_from_bboxes(
     cap.release()
     print(f"✅ Thermal masks saved to: {output_mask_dir}")
 
+
 def plot_tracks_at_frame_bbox_from_video(
     tracked_bboxes_csv: Path,
     video_path: Path,
