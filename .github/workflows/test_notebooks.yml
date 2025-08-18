@@ -60,7 +60,9 @@ jobs:
                 export GITHUB_ACTION=true
       
       - name: Main Environment Setup 
-        run: ./setup.sh
+        run: |
+          chmod +x ./setup.sh
+          ./setup.sh
         
       - name: Install Python dependencies
         run: |

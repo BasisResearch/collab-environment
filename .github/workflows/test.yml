@@ -60,7 +60,7 @@ jobs:
                 export GITHUB_ACTION=true
            
       - name: Main Environment Setup 
-        run: ./setup.sh
+        run:  bash ./setup.sh
                 
       - name: Development Environment Setup
         run: |
