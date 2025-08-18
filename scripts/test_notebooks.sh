@@ -6,6 +6,8 @@ INCLUDED_NOTEBOOKS="docs/"
 EXCLUDED_NOTEBOOKS=(
     "docs/data/gcloud_example_download.ipynb"
     "docs/tracking/full_pipeline.ipynb"
+    "docs/alignment/align.ipynb"
+    "docs/alignment/reprojection.ipynb"
 )
 
 # Build the ignore flags

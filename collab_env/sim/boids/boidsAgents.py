@@ -1,5 +1,4 @@
 from collections import defaultdict
-
 import gymnasium as gym
 import numpy as np
 from loguru import logger
@@ -279,6 +278,7 @@ class BoidsWorldAgent:
                 if np.linalg.norm(total_force) > 0:
                     """
                     TOC -- 072225 10:29AM -- Why was this subtraction? Oops. That fixed a lot of problems.
+
                     """
                     velocity[i] = total_force + velocity[i]
 
