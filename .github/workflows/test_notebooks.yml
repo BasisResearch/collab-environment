@@ -58,7 +58,10 @@ jobs:
         run: |
                 export GOOGLE_APPLICATION_CREDENTIALS="$(pwd)/config-local/collab-data-463313-c340ad86b28e.json"
                 export GITHUB_ACTION=true
-            
+      
+      - name: Main Environment Setup 
+        run: ./setup.sh
+        
       - name: Install Python dependencies
         run: |
             pip install --upgrade pip

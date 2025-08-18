@@ -5,6 +5,7 @@ import torch
 
 from collab_env.gnn.gnn import build_edge_index
 
+
 def test_build_edge_index():
     positions1 = (
         np.hstack(
