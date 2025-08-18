@@ -50,7 +50,7 @@ environment:
   target_position: [[750, 20, 750]]
 
 agent:
-  min_ground_separation: 5.0
+  min_ground_separation: 7.5
   ground_avoidance_mean: 1.0
   ground_avoidance_variance: 0.01
   ground_avoidance_max_speed: 0.1
@@ -70,9 +70,9 @@ agent:
   init_range_high: 0.6
   height_range_low: 0.0
   height_range_high: 1.0
-  height_init_min: 200
-  height_init_max: 400
-  random_walk: True
+  height_init_min: 100
+  height_init_max: 300
+  random_walk: False
 
 meshes:
     # mesh_scene: ''

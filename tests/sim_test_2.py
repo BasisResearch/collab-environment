@@ -3,6 +3,7 @@ from glob import glob
 
 # import pandas as pd
 import pyarrow.parquet as pq
+from loguru import logger
 
 # import pyarrow as pa
 from collab_env.data.file_utils import get_project_root, expand_path
@@ -40,7 +41,7 @@ def test_sim_files_visualizer():
 
     # Test to see the proper number of episodes were recorded. Should be 3 episodes.
     result_file_list = glob(f"{folder_list[0]}/*.parquet")
-    print(f"parquet folder list for {folder_list[0]} = {result_file_list}")
+    logger.info(f"parquet folder list for {folder_list[0]} = {result_file_list}")
     assert len(result_file_list) == 1
 
     # Test to see the proper number of frames were recorded for the first episode. Should be 5 frames.

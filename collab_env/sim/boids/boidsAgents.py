@@ -113,7 +113,7 @@ class BoidsWorldAgent:
 
     def random_action(self, obs):
         velocity = np.array(obs["agent_vel"])  # using ADP style
-        # location = np.array(obs["agent_loc"])
+        location = np.array(obs["agent_loc"])
         for i in range(self.num_agents):
             """
             TOC -- 080825 3:53PM
@@ -124,13 +124,14 @@ class BoidsWorldAgent:
                 and self.env_has_mesh_scene
                 and (obs["mesh_distance"][i] < self.min_ground_separation)
             ):
-                """
-                TOC -- 081125 
-                These constants need to be configurable. 
-                """
-                # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
-                # velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
-                velocity[i] = velocity[i] + self.env.np_random.normal(1, 0.01, 3) * 0.1
+                self.mesh_avoidance(velocity, location, i, obs)
+                # """
+                # TOC -- 081125
+                # These constants need to be configurable.
+                # """
+                # # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
+                # # velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
+                # velocity[i] = velocity[i] + self.env.np_random.normal(1, 0.01, 3) * 0.1
 
             else:
                 total_force = self.env.np_random.normal(0, 0.1, size=3)
@@ -202,6 +203,36 @@ class BoidsWorldAgent:
                 velocity[agent_index] / norm_velocity * self.min_speed
             )
 
+    def mesh_avoidance(self, velocity, location, agent_index, obs):
+        """
+        TOC -- 081125 -- 9:44AM
+        These numbers need to be configurable.
+        """
+        # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
+        # velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
+
+        # velocity[i] = velocity[i] + self.env.np_random.normal(0.1, 0.01, 3)
+
+        """
+        TOC -- 081725 6:50PM
+        Let's try going in the opposite direction of the closest point instead of up, front, right. 
+        """
+        closest_point = obs["mesh_closest_points"][agent_index]
+        acceleration = self.min_ground_separation**2 / (
+            location[agent_index] - closest_point
+        )
+        acceleration[1] = np.abs(acceleration[1])  # make sure we move up.
+        self.cap_force_and_apply(acceleration, velocity, agent_index)
+
+        """
+        TOC -- 081725 6:01PM
+        With this approach they get stuck on obstacles.
+        Capping and applying the force causes boids to go into a tree and disappear.
+        """
+        # acceleration = -velocity[i]/np.linalg.norm(velocity[i]) * self.max_force
+        # self.cap_force_and_apply(acceleration, velocity, i)
+        # velocity[i] = velocity[i] + acceleration + self.env.np_random.normal(0, 0.02, 3)
+
     def simple_boids_action(self, obs, random_walk=False):
         # logger.debug(f"called with obs: {obs}")
         velocity = np.array(obs["agent_vel"])  # using ADP style
@@ -224,13 +255,35 @@ class BoidsWorldAgent:
                 and self.env_has_mesh_scene
                 and (obs["mesh_distance"][i] < self.min_ground_separation)
             ):
-                """
-                TOC -- 081125 -- 9:44AM
-                These numbers need to be configurable.  
-                """
-                # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
-                # velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
-                velocity[i] = velocity[i] + self.env.np_random.normal(1, 0.01, 3) * 0.1
+                self.mesh_avoidance(velocity, location, i, obs)
+                # """
+                # TOC -- 081125 -- 9:44AM
+                # These numbers need to be configurable.
+                # """
+                # # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
+                # # velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
+                #
+                #
+                # # velocity[i] = velocity[i] + self.env.np_random.normal(0.1, 0.01, 3)
+                #
+                #
+                # '''
+                # TOC -- 081725 6:50PM
+                # Let's try going in the opposite direction of the closest point instead of up, front, right.
+                # '''
+                # closest_point = obs['mesh_closest_points'][i]
+                # acceleration = self.min_ground_separation**2/(location[i] - closest_point)
+                # acceleration[1] = np.abs(acceleration[1]) # make sure we move up.
+                # self.cap_force_and_apply(acceleration, velocity, i)
+                #
+                # '''
+                # TOC -- 081725 6:01PM
+                # With this approach they get stuck on obstacles.
+                # Capping and applying the force causes boids to go into a tree and disappear.
+                # '''
+                # # acceleration = -velocity[i]/np.linalg.norm(velocity[i]) * self.max_force
+                # # self.cap_force_and_apply(acceleration, velocity, i)
+                # # velocity[i] = velocity[i] + acceleration + self.env.np_random.normal(0, 0.02, 3)
 
             else:
                 # velocity[i] = vel # not sure which is faster, getting the whole thing before or walking through
@@ -402,23 +455,24 @@ class BoidsWorldAgent:
                 may be that we want some of the forces not to be limited and so having an option for finer granularity 
                 may be important. 
                 """
-                norm_total_force = np.linalg.norm(total_force)
-                if norm_total_force > self.max_force:
-                    total_force = total_force / norm_total_force * self.max_force
-                    logger.debug(f"adjusted total force: {total_force}")
-
-                # apply force
-                if np.linalg.norm(total_force) > 0:
-                    """
-                    TOC -- 072225 10:29AM -- Why was this subtraction? Oops. That fixed a lot of problems.   
-                    """
-                    velocity[i] = total_force + velocity[i]
-
-                norm_velocity = np.linalg.norm(velocity[i])
-                if norm_velocity > self.max_speed:
-                    velocity[i] = velocity[i] / norm_velocity * self.max_speed
-                elif norm_velocity < self.min_speed:
-                    velocity[i] = velocity[i] / norm_velocity * self.min_speed
+                self.cap_force_and_apply(total_force, velocity, agent_index=i)
+                # norm_total_force = np.linalg.norm(total_force)
+                # if norm_total_force > self.max_force:
+                #     total_force = total_force / norm_total_force * self.max_force
+                #     logger.debug(f"adjusted total force: {total_force}")
+                #
+                # # apply force
+                # if np.linalg.norm(total_force) > 0:
+                #     """
+                #     TOC -- 072225 10:29AM -- Why was this subtraction? Oops. That fixed a lot of problems.
+                #     """
+                #     velocity[i] = total_force + velocity[i]
+                #
+                # norm_velocity = np.linalg.norm(velocity[i])
+                # if norm_velocity > self.max_speed:
+                #     velocity[i] = velocity[i] / norm_velocity * self.max_speed
+                # elif norm_velocity < self.min_speed:
+                #     velocity[i] = velocity[i] / norm_velocity * self.min_speed
 
         logger.debug("returning velocity: " + str(velocity))
         return velocity
