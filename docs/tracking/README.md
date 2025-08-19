@@ -10,8 +10,7 @@ This guide provides best practices and instructions for using the script effecti
 
 ## **Overview**
 
-What is the data?
--------------
+### What is the data?
 
 Our fieldwork data is stored in Google Cloud, with unprocessed data in an internal google drive. The metadata YML file for each session should contain the following fields:
 
@@ -50,8 +49,7 @@ YYYY_MM_DD-session_0001/             # Unique session folder
 - `Metadata.yaml` includes session notes, project tags, and metadata for all sources, described above.
 
 
-Data processing
------------------
+### Data processing
 
 `thermal_processing.py` is a tool for converting .csq files into mp4s. 
 
@@ -67,7 +65,7 @@ The alignment process involves three main steps:
 
 ---
 ## **Tips and Tricks**
-#### Best Practices for Thermal Processing
+### Best Practices for Thermal Processing
 * Selecting vmin and vmax  
     **What are vmin and vmax?**  
     These values define the minimum and maximum pixel intensities for visualizing thermal data. Often, the optimal contrast for thermal videos is not the full range of captured temperatures. If autodetection does not produce good visual results, use the preview mode (`--preview` in the command line or `preview = True` in notebook) to manually adjust these parameters.  
@@ -83,7 +81,7 @@ The alignment process involves three main steps:
         If you are working with large .csq files, use the --max_frames argument to limit the number of frames processed for faster results.  
         Ensure the --fps value matches the original frame rate of the thermal camera for accurate playback. In the `data` folder, all videos are at a frame rate of 30fps.  
 
-#### Best Practices for Alignment
+### Best Practices for Alignment
 The alignment mechanism is manual, requiring some user input. The field of view (FOV) of the RGB videos is far larger than that of the thermal camera. To match the FOVs, you may need to crop, rotate, and translate the videos.
 
 * Cropping and Rotation
@@ -127,19 +125,19 @@ python alignment_gui.py \
     --skip_translation
 ```
 
-## Inference
-Downloading Model Weights and running inference
-=============================================
+### Inference
+#### Downloading Model Weights and running inference
+
 
 This section explains how to download training images from the cloud and train various models (YOLO, RF-DETR) using either the Roboflow API or local scripts. This section is useful if you want to fine-tune a model more. 
 
-Downloading Training Images or weights
---------------------------------------
+#### Downloading Training Images or weights
+
 To access training images please download the zip file from the roboflow_model bucket in the google cloud. 
 The bucket should contain a .pt file containing the model weights (yolo11_weights) for an rf-detr model and a zip file containing the images, labels, and annotations in YOLO v7 PyTorch format, as well as in the COCO format.
 
 
-### Downloading from Google Cloud
+#### Downloading from Google Cloud
 1. **Install the Google Cloud CLI**:
    If you haven't already, install the Google Cloud CLI by following the instructions [here](https://cloud.google.com/sdk/docs/install).
 

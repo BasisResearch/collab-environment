@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Optional
 
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
@@ -422,3 +423,75 @@ def generate_thermal_masks_from_bboxes(
 
     cap.release()
     print(f"✅ Thermal masks saved to: {output_mask_dir}")
+
+
+def plot_tracks_at_frame_bbox_from_video(
+    tracked_bboxes_csv: Path,
+    video_path: Path,
+    output_image: Path,
+    frame_number: int = 1000,
+    max_frame: int = 1000,
+):
+    """
+    Plot all track traces up to max_frame on top of a given frame extracted from a video.
+    Args:
+        tracked_bboxes_csv: CSV with columns track_id, frame, x1, y1, x2, y2
+        video_path: Path to the video file
+        output_image: Path to save the output image
+        frame_number: Frame number to extract as background
+        max_frame: Only show motion up to this frame
+    """
+    # Read tracks
+    df = pd.read_csv(tracked_bboxes_csv)
+    df = df[df["frame"] <= max_frame]
+    df["track_id"] = df["track_id"].astype(int)
+    df["x_center"] = (df["x1"] + df["x2"]) / 2
+    df["y_center"] = (df["y1"] + df["y2"]) / 2
+
+    # Extract frame from video
+    cap = cv2.VideoCapture(str(video_path))
+    cap.set(cv2.CAP_PROP_POS_FRAMES, frame_number)
+    ret, img = cap.read()
+    cap.release()
+    if not ret:
+        raise ValueError(f"Could not read frame {frame_number} from {video_path}")
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    ax.imshow(img)
+
+    track_ids = df["track_id"].unique()
+    colors = plt.cm.get_cmap("tab20", len(track_ids))
+
+    for i, tid in enumerate(track_ids):
+        track = df[df["track_id"] == tid].sort_values("frame")
+        ax.plot(
+            track["x_center"],
+            track["y_center"],
+            "-",
+            color=colors(i),
+            linewidth=2,
+            alpha=0.8,
+        )
+        if not track.empty:
+            ax.plot(
+                track["x_center"].iloc[-1],
+                track["y_center"].iloc[-1],
+                "o",
+                color=colors(i),
+                markersize=8,
+            )
+            ax.text(
+                track["x_center"].iloc[-1] + 5,
+                track["y_center"].iloc[-1],
+                f"ID {tid}",
+                color=colors(i),
+                fontsize=10,
+            )
+
+    ax.set_title(f"Tracks up to frame {max_frame}")
+    ax.axis("off")
+    plt.tight_layout()
+    plt.savefig(output_image, dpi=200)
+    plt.close(fig)
+    print(f"✅ Track plot saved to: {output_image}")
