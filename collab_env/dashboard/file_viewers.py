@@ -15,7 +15,7 @@ from loguru import logger
 
 from .rclone_client import RcloneClient
 
-
+import panel as pn
 class FileViewerRegistry:
     """Registry for file viewers by file extension."""
 
@@ -44,10 +44,22 @@ class FileViewerRegistry:
         ply_viewer = PLYViewer()
         self.viewers[".ply"] = ply_viewer
 
+        # PKL pickle file viewer
+        pkl_viewer = PKLViewer()
+        for ext in [".pkl", ".pickle"]:
+            self.viewers[ext] = pkl_viewer
+
     def get_viewer(self, file_path: str) -> Optional["BaseViewer"]:
-        """Get viewer for a file based on its extension."""
+        """Get viewer for a file based on its extension and file-specific criteria."""
         ext = Path(file_path).suffix.lower()
-        return self.viewers.get(ext)
+        viewer = self.viewers.get(ext)
+        
+        # If viewer has a can_handle_file method, check if it can handle this specific file
+        if viewer and hasattr(viewer, 'can_handle_file'):
+            if not viewer.can_handle_file(file_path):
+                return None
+                
+        return viewer
 
     def register_viewer(self, extensions: list, viewer: "BaseViewer"):
         """Register a custom viewer for file extensions."""
@@ -528,11 +540,291 @@ class VideoViewer(BaseViewer):
             }
 
 
+class PKLViewer(BaseViewer):
+    """Viewer for camera parameter pickle files only (filtered by name)."""
+    
+    def get_supported_extensions(self) -> list[str]:
+        return [".pkl", ".pickle"]
+    
+    def can_handle_file(self, file_path: str) -> bool:
+        """Only handle camera parameter files based on naming pattern."""
+        filename = Path(file_path).name.lower()
+        
+        # Specific patterns for camera parameter files we've seen:
+        # - *_mesh-aligned.pkl (most common)
+        # - *camera*.pkl 
+        # - *intrinsic*.pkl, *extrinsic*.pkl
+        camera_patterns = [
+            'mesh-aligned',     # rgb_1_mesh-aligned.pkl  
+            'camera',           # camera_params.pkl, camera_intrinsics.pkl
+            'intrinsic',        # intrinsics.pkl
+            'extrinsic',        # extrinsics.pkl
+            'calibration',      # calibration.pkl
+        ]
+        
+        return any(pattern in filename for pattern in camera_patterns)
+    
+    def render_view(
+        self, local_file_path: str, original_file_path: str
+    ) -> Dict[str, Any]:
+        """Render pickle file content by displaying its structure."""
+        import pickle
+        import json
+        
+        try:
+            # Load pickle data from local file
+            with open(local_file_path, "rb") as f:
+                data = pickle.load(f)
+            
+            # Create a display of the pickle structure
+            def describe_object(obj, max_depth=3, current_depth=0):
+                if current_depth > max_depth:
+                    return "..."
+                    
+                if obj is None:
+                    return "None"
+                elif isinstance(obj, (int, float, str, bool)):
+                    return f"{type(obj).__name__}: {repr(obj)}"
+                elif isinstance(obj, dict):
+                    if not obj:
+                        return "dict: {}"
+                    items = {}
+                    for k, v in list(obj.items())[:10]:  # Show first 10 items
+                        items[str(k)] = describe_object(v, max_depth, current_depth + 1)
+                    if len(obj) > 10:
+                        items["..."] = f"({len(obj) - 10} more items)"
+                    return items
+                elif isinstance(obj, (list, tuple)):
+                    if not obj:
+                        return f"{type(obj).__name__}: []"
+                    items = [describe_object(item, max_depth, current_depth + 1) 
+                            for item in obj[:5]]  # Show first 5 items
+                    if len(obj) > 5:
+                        items.append(f"... ({len(obj) - 5} more items)")
+                    return {f"{type(obj).__name__}[{len(obj)}]": items}
+                elif hasattr(obj, 'shape'):  # NumPy arrays, tensors
+                    return f"{type(obj).__name__}: shape {getattr(obj, 'shape', '?')}, dtype {getattr(obj, 'dtype', '?')}"
+                else:
+                    return f"{type(obj).__name__}: {str(obj)[:100]}..."
+            
+            structure = describe_object(data)
+            
+            # Convert to JSON for display
+            json_str = json.dumps(structure, indent=2, default=str)
+            
+            file_size = Path(local_file_path).stat().st_size
+            
+            # Create display content
+            display_content = f"""# Pickle File Structure
+
+**File type:** Python pickle (.pkl)  
+**Root type:** {type(data).__name__}  
+**File size:** {file_size:,} bytes  
+
+## Content Structure:
+```json
+{json_str}
+```
+
+## Raw Type Information:
+- **Type**: `{type(data)}`
+- **Size**: {file_size:,} bytes
+"""
+            
+            # If it looks like camera parameters, add specific info
+            if isinstance(data, dict) and any(key in data for key in ['K', 'c2w', 'fx', 'fy']):
+                display_content += "\n## Camera Parameters Detected\n"
+                display_content += "This appears to be a camera parameter file with intrinsic/extrinsic data.\n"
+                
+                if 'K' in data:
+                    display_content += f"- **Intrinsic Matrix (K)**: {getattr(data['K'], 'shape', 'unknown shape')}\n"
+                if 'c2w' in data:
+                    display_content += f"- **Camera-to-World (c2w)**: {getattr(data['c2w'], 'shape', 'unknown shape')}\n"
+                if 'width' in data and 'height' in data:
+                    display_content += f"- **Image Size**: {data.get('width', '?')} x {data.get('height', '?')}\n"
+            
+            return {
+                "type": "text",
+                "content": display_content,
+                "language": "markdown",
+                "parsed_data": data,
+                "size": file_size,
+                "lines": display_content.count("\n") + 1,
+                "root_type": type(data).__name__,
+            }
+            
+        except Exception as e:
+            file_size = Path(local_file_path).stat().st_size
+            error_content = f"""# Pickle File Load Error
+
+**Error**: {str(e)}  
+**File size**: {file_size:,} bytes  
+
+This pickle file could not be loaded. It may be corrupted or created with a different Python version.
+
+```
+{str(e)}
+```
+"""
+            return {
+                "type": "error",
+                "content": error_content,
+                "language": "markdown",
+                "error": str(e),
+                "size": file_size,
+                "lines": error_content.count("\n") + 1,
+            }
+
+
 class PLYViewer(BaseViewer):
     """Viewer for PLY 3D mesh files using PyVista."""
 
     # Track if VTK has been used - only allow one VTK viewer per session
     _vtk_used = False
+
+    def _find_3d_csv_files_with_bucket(self, bucket: str, ply_path: str) -> list:
+        """Find matching 3D centroids CSV files by searching the entire session folder."""
+        try:
+            from .rclone_client import RcloneClient
+            from pathlib import Path
+            
+            # Extract session folder from PLY path 
+            # Example: "2024_02_06-session_0001/environment/C0043/rade-features/mesh/mesh.ply"
+            # We want to search in: "2024_02_06-session_0001/"
+            ply_path_obj = Path(ply_path)
+            path_parts = ply_path_obj.parts
+            
+            if len(path_parts) == 0:
+                logger.warning(f"Invalid PLY path: {ply_path}")
+                return []
+            
+            # Session folder is typically the first part of the path
+            session_folder = path_parts[0]
+            
+            # Use rclone to recursively search the session folder for 3D CSV files
+            rclone_client = RcloneClient()
+            
+            csv_3d_files = []
+            
+            def search_directory_recursive(search_path: str):
+                """Recursively search for 3D CSV files in a directory."""
+                try:
+                    files = rclone_client.list_directory(bucket, search_path)
+                    
+                    for file_info in files:
+                        file_name = file_info.get("Name", "")
+                        is_dir = file_info.get("IsDir", False)
+                        
+                        if is_dir:
+                            # Recursively search subdirectories
+                            subdir_path = f"{search_path}/{file_name}" if search_path else file_name
+                            search_directory_recursive(subdir_path)
+                        elif file_name.endswith("_centroids_3d.csv"):
+                            # Found a 3D CSV file, store with full relative path
+                            full_path = f"{search_path}/{file_name}" if search_path else file_name
+                            
+                            # Extract camera info for better identification
+                            camera_info = "unknown"
+                            if "rgb_1" in full_path:
+                                camera_info = "rgb_1"
+                            elif "rgb_2" in full_path:
+                                camera_info = "rgb_2"
+                            elif "thermal_1" in full_path:
+                                camera_info = "thermal_1"
+                            elif "thermal_2" in full_path:
+                                camera_info = "thermal_2"
+                            
+                            csv_3d_files.append({
+                                "path": full_path,
+                                "name": file_name,
+                                "camera": camera_info,
+                                "display_name": f"{file_name} ({camera_info})"
+                            })
+                            
+                except Exception as e:
+                    logger.debug(f"Could not search directory {search_path}: {e}")
+            
+            # Start recursive search from session folder
+            logger.info(f"Searching for 3D CSV files in session folder: {session_folder}")
+            search_directory_recursive(session_folder)
+            
+            logger.info(f"Found {len(csv_3d_files)} 3D CSV files: {[f['display_name'] for f in csv_3d_files]}")
+            return csv_3d_files
+            
+        except Exception as e:
+            logger.error(f"Error finding 3D CSV files: {e}")
+            return []
+    
+    def _find_camera_params_with_bucket(self, bucket: str, ply_path: str) -> Optional[str]:
+        """Find matching camera parameters pickle file in aligned_splat/[CAMERA_ID]/ subfolders."""
+        try:
+            from .rclone_client import RcloneClient
+            from pathlib import Path
+            
+            # Extract session folder from PLY path 
+            # Example: "2024_02_06-session_0001/environment/C0043/rade-features/mesh/mesh.ply"
+            # We want to search in: "2024_02_06-session_0001/aligned_splat/[CAMERA_ID]/"
+            ply_path_obj = Path(ply_path)
+            path_parts = ply_path_obj.parts
+            
+            if len(path_parts) == 0:
+                logger.warning(f"Invalid PLY path for camera params search: {ply_path}")
+                return None
+            
+            # Session folder is typically the first part of the path
+            session_folder = path_parts[0]
+            aligned_splat_folder = f"{session_folder}/aligned_splat"
+            
+            # Use rclone to list camera subfolders in aligned_splat
+            rclone_client = RcloneClient()
+            
+            logger.info(f"Searching for camera params in subfolders of: {aligned_splat_folder}")
+            
+            try:
+                # First, list the aligned_splat directory to find camera subfolders
+                aligned_splat_contents = rclone_client.list_directory(bucket, aligned_splat_folder)
+                
+                camera_folders = []
+                for item in aligned_splat_contents:
+                    if item.get("IsDir", False):  # Only directories
+                        camera_id = item.get("Name", "")
+                        if camera_id:  # Valid camera folder name
+                            camera_folders.append(camera_id)
+                
+                logger.info(f"Found camera folders in {aligned_splat_folder}: {camera_folders}")
+                
+                # Search each camera subfolder for _mesh-aligned.pkl files
+                for camera_id in camera_folders:
+                    camera_folder = f"{aligned_splat_folder}/{camera_id}"
+                    
+                    try:
+                        camera_files = rclone_client.list_directory(bucket, camera_folder)
+                        
+                        # Log files in this camera folder
+                        camera_file_names = [f.get("Name", "") for f in camera_files]
+                        logger.info(f"Files in {camera_folder}: {camera_file_names}")
+                        
+                        for file_info in camera_files:
+                            file_name = file_info.get("Name", "")
+                            if file_name.endswith("_mesh-aligned.pkl") or file_name.endswith("_mesh_aligned.pkl"):
+                                full_path = f"{camera_folder}/{file_name}"
+                                logger.info(f"Found camera params file: {full_path}")
+                                return full_path
+                                
+                    except Exception as e:
+                        logger.debug(f"Could not access camera folder {camera_folder}: {e}")
+                        continue
+                
+                logger.info(f"No camera params files found in any camera subfolder of {aligned_splat_folder}")
+                return None
+                
+            except Exception as e:
+                logger.info(f"Could not access {aligned_splat_folder}: {e}")
+                return None
+            
+        except Exception as e:
+            logger.error(f"Error finding camera params: {e}")
+            return None
 
     def render_view(
         self, local_file_path: str, original_file_path: str
@@ -661,10 +953,22 @@ class FileContentManager:
     def _get_cache_path(self, bucket: str, file_path: str) -> Path:
         """Get cache file path for a bucket/file combination."""
         # Create a safe filename from bucket and file path
-        safe_name = hashlib.md5(f"{bucket}/{file_path}".encode()).hexdigest()
+        hash_input = f"{bucket}/{file_path}"
+        safe_name = hashlib.md5(hash_input.encode()).hexdigest()
         file_ext = Path(file_path).suffix
         cache_filename = f"{safe_name}{file_ext}"
-        return self.cache_dir / cache_filename
+        cache_path = self.cache_dir / cache_filename
+        
+        # Debug logging for PKL files
+        if file_ext.lower() == '.pkl':
+            logger.info(f"🔍 PKL cache path generation:")
+            logger.info(f"  📂 Bucket: {bucket}")
+            logger.info(f"  📄 File path: {file_path}")
+            logger.info(f"  🔐 Hash input: {hash_input}")
+            logger.info(f"  🏷️ Hash: {safe_name}")
+            logger.info(f"  💾 Cache path: {cache_path}")
+        
+        return cache_path
 
     def is_file_cached(self, bucket: str, file_path: str) -> bool:
         """Check if a file is cached locally.
@@ -984,6 +1288,25 @@ class FileContentManager:
                     except Exception as e:
                         logger.warning(f"Error detecting bbox CSV files: {e}")
                         render_info["bbox_csvs"] = []
+                
+                # For PLY files, check for 3D CSV files now that we have bucket info
+                if render_info.get("type") == "ply_3d" and hasattr(
+                    viewer, "_find_3d_csv_files_with_bucket"
+                ):
+                    try:
+                        logger.info(f"Checking for 3D CSV files in {bucket}/{file_path}")
+                        csv_3d_files = viewer._find_3d_csv_files_with_bucket(bucket, file_path)
+                        render_info["csv_3d_files"] = csv_3d_files
+                        
+                        # Also check for camera params
+                        camera_params_file = viewer._find_camera_params_with_bucket(bucket, file_path)
+                        render_info["camera_params_file"] = camera_params_file
+                        
+                        logger.info(f"3D CSV detection complete: found {len(csv_3d_files)} files")
+                    except Exception as e:
+                        logger.warning(f"Error detecting 3D CSV files: {e}")
+                        render_info["csv_3d_files"] = []
+                        render_info["camera_params_file"] = None
             else:
                 # Unknown file type
                 file_size = cache_path.stat().st_size
