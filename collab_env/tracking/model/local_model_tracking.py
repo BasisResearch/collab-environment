@@ -211,7 +211,7 @@ def run_tracking(
     elif camera_type == "rgb":
         subfolder = f"rgb_{camera_number}"
         print("using detections from thermal camera")
-        frame_dir = session_path / f"thermal_{camera_number}" / "cropped" / "frames"
+        frame_dir = session_path / f"thermal_{camera_number}" / "annotated_frames"
         csv_pattern = "*.csv"
         subfolder_path = session_path / subfolder
     else:

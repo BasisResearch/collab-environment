@@ -173,8 +173,45 @@ infer_with_yolo(
 )
 ```
 
+
 ## Tracking
 Once the animals are detected via the inference step, we recommend checking the bounding boxes before feeding them to the tracker. 
 
-We use [Ultralytics for object tracking ](https://docs.ultralytics.com/modes/track/). 
+We use [Ultralytics for object tracking ](https://docs.ultralytics.com/modes/track/) with default parameters. 
 
+### Example Tracking with ByteTracker
+
+The pipeline notebook uses the ByteTracker option. To see the version with idtracker.ai, see below. 
+
+In the pipeline, videos are first parsed using `get_detections_from_video`, which creates a directory of annotated frames and a video showing the overlayed bounding boxes. 
+This is what is used as input to `run_tracking`, which uses the `track_objects` function implementing ByteTracker. 
+Finally, `output_tracked_bboxes_csv` combines the tracking and detection files into a single one, which can be used to build pixel masks or infer animal size. 
+
+
+Detection and Tracking is also compatible with [idtracker.ai](https://idtracker.ai/latest/user_guide/usage.html), with parameters selected in their GUI. 
+
+### Example Tracker Configuration for idtracker.ai
+
+To run idtracker.ai, use the `tracking_requirements.sh` file to set up the installation. Then run on the videos. 
+
+Below is an example configuration .toml for running tracking on a processed thermal video:
+
+```python
+video_paths = [LOCAL_PROCESSED_DIR_{some_video},
+LOCAL_PROCESSED_DIR_{some_video}
+]
+intensity_ths = [19, 255]                # Minimum and maximum pixel intensity thresholds
+area_ths = [50.0, float('inf')]          # Minimum and maximum area thresholds for detected objects
+tracking_intervals = ""                  # Specify intervals if needed, empty string for full video
+number_of_animals = 10                   # Expected number of animals to track
+use_bkg = True                           # Enable background subtraction
+check_segmentation = False               # Disable segmentation check
+track_wo_identities = False              # Track with identities
+background_subtraction_stat = 'median'   # Use median for background subtraction
+```
+
+You can also run 
+```python
+idtrackerai --load example.toml --track
+```
+Adjust these parameters as needed for your dataset and tracking requirements.

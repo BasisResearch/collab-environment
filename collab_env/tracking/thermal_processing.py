@@ -22,6 +22,7 @@ from io import BytesIO
 from math import exp, sqrt
 from pathlib import Path
 from typing import List, Optional, Tuple
+import argparse
 
 import cv2
 import exiftool
@@ -424,3 +425,62 @@ def validate_session_structure(session_path: Path) -> List[str]:
         for issue in issues:
             print(f"- {issue}")
     return issues
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--folder_path",
+        type=str,
+        required=True,
+        help="Path to the folder containing thermal data",
+    )
+    parser.add_argument(
+        "--out_path", type=str, required=True, help="Path to save the processed videos"
+    )
+    parser.add_argument(
+        "--color",
+        type=str,
+        default="hot",
+        help="Colormap to use for thermal video rendering (default: 'hot')",
+    )
+    parser.add_argument(
+        "--vmin",
+        type=float,
+        default=None,
+        help="Minimum temperature value for colormap scaling (optional)",
+    )
+    parser.add_argument(
+        "--vmax",
+        type=float,
+        default=None,
+        help="Maximum temperature value for colormap scaling (optional)",
+    )
+    parser.add_argument(
+        "--preview",
+        type=lambda x: (str(x).lower() == "true"),
+        default=False,
+        help="Preview the first frame and allow user to set vmin/vmax (True/False)",
+    )
+    parser.add_argument(
+        "--max_frames",
+        type=int,
+        default=None,
+        help="Maximum number of frames to process (default: None, process all frames)",
+    )
+    parser.add_argument(
+        "--fps",
+        type=int,
+        default=30,
+        help="Frames per second for the output video (default: 30)",
+    )
+    args = parser.parse_args()
+
+    process_directory(
+        args.folder_path,
+        args.out_path,
+        color=args.color,
+        preview=args.preview,
+        max_frames=args.max_frames,
+        fps=args.fps,
+    )
