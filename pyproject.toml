@@ -50,6 +50,7 @@ dependencies = [
   "scikit-image",
   "panel",
   "param",
+  "rich",
 ]
 
 [tool.setuptools]                         # NEW
