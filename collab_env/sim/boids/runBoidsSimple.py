@@ -12,7 +12,6 @@ from tqdm import tqdm  # Progress bar
 
 import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
 from collab_env.sim.boids.boidsAgents import BoidsWorldAgent
-
 # from logger.debug import logger.debug
 
 

@@ -4,7 +4,6 @@
 # the main function is update_boids()
 
 import random
-
 import numpy as np
 
 
