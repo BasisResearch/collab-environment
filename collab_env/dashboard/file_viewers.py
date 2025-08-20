@@ -1337,10 +1337,11 @@ class FileContentManager:
                         render_info["csv_3d_files"] = csv_3d_files
 
                         # Also check for camera params
-                        camera_params_file = viewer._find_camera_params_with_bucket(
-                            bucket, file_path
-                        )
-                        render_info["camera_params_file"] = camera_params_file
+                        if hasattr(viewer, "_find_camera_params_with_bucket"):
+                            camera_params_file = viewer._find_camera_params_with_bucket(
+                                bucket, file_path
+                            )
+                            render_info["camera_params_file"] = camera_params_file
 
                         logger.info(
                             f"3D CSV detection complete: found {len(csv_3d_files)} files"

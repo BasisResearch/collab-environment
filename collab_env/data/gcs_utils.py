@@ -170,7 +170,7 @@ class GCSClient:
 
         return self._gcs.glob(pattern)
 
-    def upload_file(self, local_path: str, gcs_path: str):
+    def upload_file(self, local_path: str | Path, gcs_path: str):
         """
         Upload a file to GCS.
         """

@@ -18,8 +18,8 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
 # Thread-safe storage for videos and meshes
-videos_data = {}
-meshes_data = {}
+videos_data: dict[str, dict] = {}
+meshes_data: dict[str, dict] = {}
 data_lock = Lock()
 
 
