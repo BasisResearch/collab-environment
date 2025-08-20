@@ -1,6 +1,8 @@
 .env
 .envrc
 *.ipynb_checkpoints
+trained_models/*.pkl
+trained_models/*.pt
 *.py[cod]
 .DS_Store
 # C extensions

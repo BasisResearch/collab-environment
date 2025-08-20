@@ -184,14 +184,14 @@ def adjacency2edge(A):
     return edge_index, edge_weight
 
 
-def return_adjacency_matrix(N, edge_index, edge_weight):
+def return_adjacency_matrix(N, edge_index, edge_weight, batch_num = 1):
     # move data to cpu if they are on GPU
     if isinstance(edge_index, torch.Tensor):
         edge_index = edge_index.detach().cpu().numpy()
     if isinstance(edge_weight, torch.Tensor):
         edge_weight = edge_weight.detach().cpu().numpy()
 
-    A_output = np.zeros((N, N)).astype("float32")
+    A_output = np.zeros((N * batch_num, N * batch_num)).astype("float32")
 
     for edge_ind in range(edge_index.shape[1]):
         (source, target) = edge_index[:, edge_ind]
@@ -202,9 +202,9 @@ def return_adjacency_matrix(N, edge_index, edge_weight):
     return A_output
 
 
-def normalize_by_col(N, edge_index, return_matrix=False):
+def normalize_by_col(N, batch_num, edge_index, return_matrix=False):
     # takes uniform adjacency matrix and makes it row sum to 1
-    A = return_adjacency_matrix(N, edge_index, np.ones(edge_index.shape[1]))
+    A = return_adjacency_matrix(N, edge_index, np.ones(edge_index.shape[1]), batch_num)
 
     col_sum = np.sum(A, axis=0)
     A_output = A / col_sum[np.newaxis, :]
@@ -227,12 +227,13 @@ def identify_frames(pos, vel):
     loss = [functional.mse_loss(actual[:,f],predicted[:,f]) for f in range(actual.shape[1])]
 
     # polarity
-    polarity = torch.norm(torch.mean(vel[0],axis = 1), dim = 1)
-    polarity = polarity[:-4] #skip last 4 frames
-    polarity_diff = torch.abs(torch.diff(polarity)).cpu().numpy()
-    threshold = np.mean(polarity_diff) + np.std(polarity_diff)
-    diff_ind = np.argwhere(polarity_diff >= threshold).ravel()
-    candidate_frames = np.unique(np.concatenate([(d-2, d-1, d, d+1, d+2) for d in diff_ind]))
+    polarity = torch.norm(torch.mean(vel,axis = 2), dim = 2) #across birds
+    polarity = polarity[:,:-4] #skip last 4 frames
+    polarity_diff = torch.abs(torch.diff(polarity, axis = 1))
+    threshold = torch.mean(polarity_diff, axis = 1) + torch.std(polarity_diff, axis = 1)
+    threshold = threshold.reshape((-1,1))
+    diff_ind = torch.argwhere(torch.sum(polarity_diff >= threshold, axis = 0)).ravel().cpu().numpy()
+    candidate_frames = np.unique(np.concatenate([(d-2, d-1, d, d+1, d+2, d+3) for d in diff_ind]))
     candidate_frames = candidate_frames[candidate_frames >= 0]
     
     return candidate_frames
@@ -240,6 +241,13 @@ def identify_frames(pos, vel):
 def add_noise(x_input, sigma = 0.001):
     noise = torch.normal(0, torch.ones_like(x_input) * sigma)
     return x_input + noise
+
+def remove_boid_interaction(edge_index, species_idx):
+    boid_index = torch.argwhere(species_idx.ravel() == 0).ravel() #assume boids are of class 0
+    nonboid_edge_index = torch.isin(edge_index, boid_index).sum(axis = 0) < 2
+
+    edge_index_out = edge_index[:,nonboid_edge_index]
+    return edge_index_out
 
 def run_gnn_frame(
     model,
@@ -339,7 +347,8 @@ def run_gnn(model,
             debug_result = None,
             full_frames = False,
             rollout = -1,
-            rollout_everyother = -1):
+            rollout_everyother = -1,
+            ablate_boid_interaction = False):
     """
     This functions calls run_gnn_frame()
     training: set to True if training, set to false to test on heldout dataset.
@@ -438,7 +447,10 @@ def run_gnn(model,
 
         # build graph
         edge_index = build_edge_index(past_p[:, -1, :, :], visual_range = visual_range)
-        edge_weight = normalize_by_col(N,edge_index)
+        if ablate_boid_interaction:
+            edge_index = remove_boid_interaction(edge_index, species_idx)
+        
+        edge_weight = normalize_by_col(N, S, edge_index)
 
         edge_index = torch.tensor(edge_index).to(device)
         edge_weight = torch.tensor(edge_weight).to(device)     
@@ -488,8 +500,8 @@ def run_gnn(model,
             vminushalf = add_noise(vminushalf, sigma)
             
         # # Debug: show sample boid before/after
-        debug_result["actual"].append(target_pos.detach().cpu().numpy())
         debug_result["predicted"].append(pred_pos_.detach().cpu().numpy())
+        debug_result["actual"].append(target_pos.detach().cpu().numpy())
         # if training:
         debug_result["loss"].append(loss.detach().cpu().numpy())
         debug_result["W"].append(W)
@@ -522,7 +534,8 @@ def train_rules_gnn(
     device = None,
     aux_data = None,
     rollout = -1,
-    rollout_everyother = -1):
+    rollout_everyother = -1,
+    ablate_boid_interaction = False):
     
     device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
@@ -532,6 +545,11 @@ def train_rules_gnn(
     train_losses = []  # train loss by epoch
     if not training: #testing mode
         epochs = 1
+        model.training = False
+        model.eval()
+    else:
+        model.training = True
+        model.train()
     
     if rollout > 0:
         print("rolling out...")
@@ -543,9 +561,7 @@ def train_rules_gnn(
         print("\n")
 
         debug_result_all[ep] = {}
-
-        model.train()
-
+        
         train_losses_by_batch = []  # train loss this epoch
 
         for batch_idx, (position, species_idx) in enumerate(dataloader):
@@ -566,7 +582,8 @@ def train_rules_gnn(
                 lr = lr,
                 full_frames = full_frames,
                 rollout = rollout,
-                rollout_everyother = rollout_everyother)
+                rollout_everyother = rollout_everyother,
+                ablate_boid_interaction = ablate_boid_interaction)
 
             train_losses_by_batch.append(loss)
 
@@ -601,7 +618,7 @@ def get_adjcency_from_debug(
         for batch_ind in W_across_batch.keys():
             # the input for each video
             position, species_idx = list(iter(input_data_loader))[batch_ind]
-            N = position.shape[2]
+            B, _, N = position.shape[2]
 
             # the output varies over frames
             F = len(W_across_batch[batch_ind]["W"])
@@ -613,14 +630,14 @@ def get_adjcency_from_debug(
                     position[:, f, :, :], visual_range=visual_range
                 )
                 W_input_frame = normalize_by_col(
-                    N, edge_index_input, return_matrix=True
+                    N, batch, edge_index_input, return_matrix=True
                 )
 
                 (edge_index_output, edge_weight_output) = W_across_batch[batch_ind][
                     "W"
                 ][f]
                 W_output = return_adjacency_matrix(
-                    N, edge_index_output, edge_weight_output
+                    N, edge_index_output, edge_weight_output, B
                 )
 
                 W_output_frame.append(W_output)

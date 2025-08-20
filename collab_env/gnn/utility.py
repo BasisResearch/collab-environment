@@ -1,6 +1,8 @@
 import torch
 import numpy as np
 from scipy.interpolate import UnivariateSpline
+from torch.utils.data import random_split
+from torch_geometric.data import Batch, Data, DataLoader
 
 
 def handle_discrete_data(position, input_differentiation):
@@ -117,3 +119,26 @@ def fit_spline_to_data(time, position, query=None):
     acceleration_fit = spline_acceleration(query)
 
     return position_fit, velocity_fit, acceleration_fit, spline_velocity
+
+def dataset2testloader(dataset, batch_size = 1, return_train = 0):
+    # have to use seed = 2025
+    # split data into training set and test set
+    test_size = int(len(dataset) / 2)
+    train_size = len(dataset) - test_size
+    
+    train_dataset, test_dataset = random_split(
+        dataset, [train_size, test_size], generator=torch.Generator().manual_seed(2025)
+    )
+
+    # right now we assume the batch_size = 1, because our real dataset are of different lengths.
+    # But we can expand to minibatches - except fpr a few specific functions, every function is written with minibatches in mind.
+    test_loader = DataLoader(test_dataset,
+                             batch_size = batch_size, shuffle=False)
+
+    if return_train:
+        train_loader = DataLoader(train_dataset,
+                             batch_size = batch_size, shuffle=False)
+        return test_loader, train_loader
+    
+    return test_loader
+
