@@ -45,9 +45,9 @@ def train_single_config(params):
     
     def format_with_worker(record):
         if "worker" in record["extra"]:
-            return "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{extra[worker]}</cyan> | <level>{message}</level>"
+            return "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{extra[worker]}</cyan> | <level>{message}</level>\n"
         else:
-            return "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>"
+            return "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>\n"
     
     # Only show INFO and above for worker processes to reduce noise
     # Use enqueue=True for thread safety without JSON serialization
@@ -190,7 +190,7 @@ def main():
     # Configure main logger with thread-safe output
     logger.remove()
     logger.add(sys.stderr, 
-              format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
+              format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>\n",
               level="INFO",  # Only show INFO and above for main process
               enqueue=True)  # Thread-safe logging without JSON
     
