@@ -82,7 +82,12 @@ def get_depths_on_mesh(camera, mesh, radius=0.01, smooth=True):
     # Get indices of image
     # image_indices = np.argwhere(camera.depth)
     # image_indices = image_indices[:, [1, 0]]
-    image_indices = np.array([np.array(pair[::-1]) for pair in itertools.product(range(height), range(width))])
+    image_indices = np.array(
+        [
+            np.array(pair[::-1])
+            for pair in itertools.product(range(height), range(width))
+        ]
+    )
     # Project image indices to world --> then project back to 2d
     world_points = camera.project_to_world(image_indices)
     _, depths = camera.project_to_camera(world_points)
@@ -391,7 +396,7 @@ class MeshEnvironment:
         # Capture depth buffer (returns depth in view space by default)
         depth = vis.capture_depth_float_buffer(do_render=False)
         depth = np.asarray(depth)
-        
+
         # The onscreen visualizer returns 0 for background pixels (no geometry)
         # while offscreen returns inf. Map 0 -> inf for consistency.
         # Note: valid geometry will have positive depth values in view space

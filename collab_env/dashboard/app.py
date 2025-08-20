@@ -139,7 +139,7 @@ class DataDashboard(param.Parameterized):
         self.bbox_viewer_button = pn.widgets.Button(
             name="View with Overlays", button_type="success", width=140, visible=False
         )
-        
+
         # 3D mesh track viewer button
         self.mesh_3d_viewer_button = pn.widgets.Button(
             name="View 3D Tracks", button_type="success", width=140, visible=False
@@ -184,7 +184,7 @@ class DataDashboard(param.Parameterized):
 
         # Track available bbox CSV files for current video
         self._current_bbox_csvs: list[dict] = []
-        
+
         # Track available 3D CSV files and camera params for current PLY
         self._current_csv_3d_files: list[str] = []
         self._current_camera_params_file: Optional[str] = None
@@ -673,7 +673,7 @@ class DataDashboard(param.Parameterized):
             )
             self.convert_video_button.visible = needs_conversion
             self.convert_video_button.disabled = False
-            
+
             # Hide 3D viewer button for video files
             self.mesh_3d_viewer_button.visible = False
             self._current_csv_3d_files = []
@@ -771,11 +771,11 @@ class DataDashboard(param.Parameterized):
             self.convert_video_button.visible = False
             self.bbox_viewer_button.visible = False
             self._current_bbox_csvs = []
-            
+
             # Check for 3D CSV files and show 3D viewer button if available
             csv_3d_files = render_info.get("csv_3d_files", [])
             camera_params_file = render_info.get("camera_params_file")
-            
+
             if csv_3d_files:
                 self.mesh_3d_viewer_button.visible = True
                 self.mesh_3d_viewer_button.disabled = False
@@ -1474,26 +1474,26 @@ class DataDashboard(param.Parameterized):
         """Open the 3D mesh track viewer using persistent Flask server."""
         if not self.selected_file or not self.selected_session:
             return
-        
+
         if not hasattr(self, "_current_csv_3d_files") or not self._current_csv_3d_files:
             self.status_pane.object = (
                 "<p style='color:orange'>⚠️ No 3D CSV files available</p>"
             )
             return
-        
+
         try:
             import webbrowser
             import requests
-            
+
             # Ensure persistent server is running
             if not self._ensure_persistent_server_running():
                 return
-            
+
             # Get PLY file info
             bucket, ply_path = self.session_manager.get_file_path(
                 self.selected_session, self.current_bucket_type, self.selected_file
             )
-            
+
             # Get cached PLY path
             mesh_cache_path = self.file_manager.get_cache_path(bucket, ply_path)
             if not Path(mesh_cache_path).exists():
@@ -1501,7 +1501,7 @@ class DataDashboard(param.Parameterized):
                     "<p style='color:red'>❌ PLY file not cached locally</p>"
                 )
                 return
-            
+
             # Select best 3D CSV file (prefer rgb_1, then others)
             csv_3d_info = self._select_best_3d_csv(self._current_csv_3d_files)
             if not csv_3d_info:
@@ -1509,14 +1509,14 @@ class DataDashboard(param.Parameterized):
                     "<p style='color:red'>❌ No valid 3D CSV files found</p>"
                 )
                 return
-            
+
             csv_3d_path = csv_3d_info["path"]
             camera_info = csv_3d_info["camera"]
-            
+
             # Show which CSV was selected if multiple options
             if len(self._current_csv_3d_files) > 1:
                 self.status_pane.object = f"<p style='color:blue'>📊 Using {csv_3d_info['display_name']} ({len(self._current_csv_3d_files)} available)</p>"
-            
+
             # Get cached 3D CSV path
             csv_3d_cache_path = self.file_manager.get_cache_path(bucket, csv_3d_path)
             if not Path(csv_3d_cache_path).exists():
@@ -1533,90 +1533,108 @@ class DataDashboard(param.Parameterized):
                     return
                 finally:
                     self._hide_loading()
-            
+
             # Get camera params if available
             camera_params_cache_path = None
             if self._current_camera_params_file:
                 # self._current_camera_params_file already contains the full path from _find_camera_params_with_bucket
                 camera_params_path = self._current_camera_params_file
-                camera_params_cache_path = self.file_manager.get_cache_path(bucket, camera_params_path)
-                logger.info(f"🔍 Camera params path construction:")
+                camera_params_cache_path = self.file_manager.get_cache_path(
+                    bucket, camera_params_path
+                )
+                logger.info("🔍 Camera params path construction:")
                 logger.info(f"  📁 PLY path: {ply_path}")
                 logger.info(f"  📄 Camera file: {self._current_camera_params_file}")
                 logger.info(f"  🔗 Full camera path: {camera_params_path}")
                 logger.info(f"  💾 Cache path: {camera_params_cache_path}")
-                
+
                 if not Path(camera_params_cache_path).exists():
                     # Download camera params file if not cached
                     self._show_loading("Downloading camera parameters...")
                     try:
-                        logger.info(f"📷 Downloading camera params: {bucket}/{camera_params_path}")
-                        params_content = self.rclone_client.read_file(bucket, camera_params_path)
-                        logger.info(f"📏 Downloaded {len(params_content)} bytes of camera params")
+                        logger.info(
+                            f"📷 Downloading camera params: {bucket}/{camera_params_path}"
+                        )
+                        params_content = self.rclone_client.read_file(
+                            bucket, camera_params_path
+                        )
+                        logger.info(
+                            f"📏 Downloaded {len(params_content)} bytes of camera params"
+                        )
                         Path(camera_params_cache_path).write_bytes(params_content)
-                        logger.info(f"✅ Camera params cached to: {camera_params_cache_path}")
+                        logger.info(
+                            f"✅ Camera params cached to: {camera_params_cache_path}"
+                        )
                     except Exception as e:
-                        logger.error(f"❌ Failed to download camera params {bucket}/{camera_params_path}: {e}")
+                        logger.error(
+                            f"❌ Failed to download camera params {bucket}/{camera_params_path}: {e}"
+                        )
                         camera_params_cache_path = None
                     finally:
                         self._hide_loading()
                 else:
-                    logger.info(f"📋 Camera params already cached: {camera_params_cache_path}")
-            
+                    logger.info(
+                        f"📋 Camera params already cached: {camera_params_cache_path}"
+                    )
+
             # Create unique mesh ID including camera info
             mesh_id = f"{Path(mesh_cache_path).stem}_{camera_info}_{Path(csv_3d_cache_path).stem}"
-            
+
             self._show_loading("Adding mesh to 3D viewer...")
             try:
                 # Add mesh to persistent server via HTTP API
                 server_url = f"http://localhost:{self._persistent_flask_port}"
-                
+
                 # Call the server's API to add mesh
                 add_mesh_data = {
                     "mesh_id": mesh_id,
                     "mesh_path": str(mesh_cache_path),
                     "csv_3d_path": str(csv_3d_cache_path),
-                    "camera_params_path": str(camera_params_cache_path) if camera_params_cache_path else None,
+                    "camera_params_path": str(camera_params_cache_path)
+                    if camera_params_cache_path
+                    else None,
                     "remote_path": f"{bucket}/{ply_path}",  # Full remote path for display
                 }
-                
+
                 logger.info(f"Sending mesh to persistent server: {add_mesh_data}")
                 response = requests.post(
                     f"{server_url}/api/add_mesh", json=add_mesh_data, timeout=10
                 )
-                logger.info(f"Server response: {response.status_code} - {response.text}")
-                
+                logger.info(
+                    f"Server response: {response.status_code} - {response.text}"
+                )
+
                 if response.status_code != 200:
                     try:
                         error_data = response.json()
                         error_msg = error_data.get("error", "Unknown error")
                     except Exception:
                         error_msg = response.text
-                    
+
                     self.status_pane.object = (
                         f"<p style='color:red'>❌ Failed to add mesh: {error_msg}</p>"
                     )
                     return
-                
+
                 # Open browser to the 3D viewer
                 url = f"http://localhost:{self._persistent_flask_port}/3d"
                 webbrowser.open(url)
-                
+
                 # Update status
                 self.status_pane.object = f"""<p style='color:green'>✅ Mesh added to 3D viewer: <a href="{url}" target="_blank">{url}</a></p>
                 <p><small>💡 Select "{Path(mesh_cache_path).name}" from the dropdown in the 3D viewer. Interactive controls available!</small></p>"""
-                
+
                 # Show stop button
                 if hasattr(self, "stop_all_viewers_button"):
                     self.stop_all_viewers_button.visible = True
-                    
+
             except Exception as e:
                 self.status_pane.object = (
                     f"<p style='color:red'>❌ Failed to add mesh to server: {e}</p>"
                 )
             finally:
                 self._hide_loading()
-                
+
         except Exception as e:
             logger.error(f"Error in 3D mesh viewer: {e}")
             self.status_pane.object = (
@@ -1628,22 +1646,26 @@ class DataDashboard(param.Parameterized):
         """Select the best 3D CSV file when multiple are available."""
         if not csv_3d_files:
             return None
-        
+
         # If only one file, use it
         if len(csv_3d_files) == 1:
             return csv_3d_files[0]
-        
+
         # Priority order: rgb_1, rgb_2, thermal_1, thermal_2, unknown
         priority_order = ["rgb_1", "rgb_2", "thermal_1", "thermal_2", "unknown"]
-        
+
         for preferred_camera in priority_order:
             for csv_file in csv_3d_files:
                 if csv_file["camera"] == preferred_camera:
-                    logger.info(f"Selected 3D CSV: {csv_file['display_name']} (priority: {preferred_camera})")
+                    logger.info(
+                        f"Selected 3D CSV: {csv_file['display_name']} (priority: {preferred_camera})"
+                    )
                     return csv_file
-        
+
         # Fallback to first file if no matches
-        logger.info(f"No priority match, using first file: {csv_3d_files[0]['display_name']}")
+        logger.info(
+            f"No priority match, using first file: {csv_3d_files[0]['display_name']}"
+        )
         return csv_3d_files[0]
 
     def _ensure_persistent_server_running(self) -> bool:
@@ -1744,41 +1766,53 @@ class DataDashboard(param.Parameterized):
             health_response = requests.get(
                 f"http://localhost:{self._persistent_flask_port}/api/health", timeout=2
             )
-            
+
             current_videos = 0
             current_meshes = 0
             if health_response.status_code == 200:
                 health_data = health_response.json()
-                current_videos = health_data.get('videos_count', 0)
-                current_meshes = health_data.get('meshes_count', 0)
-                logger.info(f"Server currently has {current_videos} videos and {current_meshes} meshes")
-            
+                current_videos = health_data.get("videos_count", 0)
+                current_meshes = health_data.get("meshes_count", 0)
+                logger.info(
+                    f"Server currently has {current_videos} videos and {current_meshes} meshes"
+                )
+
             # Now clear the data
             clear_response = requests.post(
                 f"http://localhost:{self._persistent_flask_port}/api/clear", timeout=2
             )
             if clear_response.status_code == 200:
                 data = clear_response.json()
-                cleared_videos = data.get('cleared_videos', 0)
-                cleared_meshes = data.get('cleared_meshes', 0)
-                total_cleared = data.get('total_cleared', cleared_videos + cleared_meshes)
-                
-                logger.info(f"Cleared {cleared_videos} videos and {cleared_meshes} meshes from server (total: {total_cleared})")
-                
+                cleared_videos = data.get("cleared_videos", 0)
+                cleared_meshes = data.get("cleared_meshes", 0)
+                total_cleared = data.get(
+                    "total_cleared", cleared_videos + cleared_meshes
+                )
+
+                logger.info(
+                    f"Cleared {cleared_videos} videos and {cleared_meshes} meshes from server (total: {total_cleared})"
+                )
+
                 if total_cleared > 0:
                     self.status_pane.object = f"<p style='color:green'>✅ Cleared {cleared_videos} videos and {cleared_meshes} meshes from server</p>"
                 else:
-                    self.status_pane.object = "<p style='color:blue'>ℹ️ Server was already empty</p>"
+                    self.status_pane.object = (
+                        "<p style='color:blue'>ℹ️ Server was already empty</p>"
+                    )
                 api_success = True
             else:
-                logger.warning(f"Clear API failed with status {clear_response.status_code}")
-                
+                logger.warning(
+                    f"Clear API failed with status {clear_response.status_code}"
+                )
+
         except Exception as e:
-            logger.info(f"Could not clear server data (server may already be down): {e}")
+            logger.info(
+                f"Could not clear server data (server may already be down): {e}"
+            )
             # Show fallback status based on what we detected before clearing
-            if 'current_videos' in locals() or 'current_meshes' in locals():
-                fallback_videos = locals().get('current_videos', 0)
-                fallback_meshes = locals().get('current_meshes', 0) 
+            if "current_videos" in locals() or "current_meshes" in locals():
+                fallback_videos = locals().get("current_videos", 0)
+                fallback_meshes = locals().get("current_meshes", 0)
                 if fallback_videos > 0 or fallback_meshes > 0:
                     self.status_pane.object = f"<p style='color:orange'>⚠️ Server had {fallback_videos} videos and {fallback_meshes} meshes but couldn't clear them (server may be down)</p>"
 
