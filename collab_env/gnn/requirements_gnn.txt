@@ -3,17 +3,9 @@ torch>=2.0.0
 torch-geometric>=2.3.0
 numpy>=1.21.0
 matplotlib>=3.5.0
-tqdm>=4.65.0
-optuna>=3.0.0
-joblib>=1.2.0
-scikit-learn>=1.0.0
 
-# For distributed training
+# For PyTorch Geometric
 torch-scatter
 torch-sparse
 torch-cluster
 torch-spline-conv
-
-# Optional: For visualization and monitoring
-tensorboard>=2.11.0
-wandb>=0.13.0

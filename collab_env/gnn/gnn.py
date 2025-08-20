@@ -5,7 +5,7 @@ import pickle
 import matplotlib.pyplot as plt
 from collab_env.gnn.utility import handle_discrete_data, v_function_2_vminushalf
 import gc
-from gnn_definition import GNN, Lazy
+from collab_env.gnn.gnn_definition import GNN, Lazy
 from collab_env.data.file_utils import expand_path, get_project_root
 
 
