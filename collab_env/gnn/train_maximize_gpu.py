@@ -5,6 +5,7 @@ Simple approach: launch N jobs per GPU concurrently
 """
 
 import sys
+import os
 from pathlib import Path
 import torch
 import numpy as np
@@ -49,11 +50,13 @@ def train_single_config(params):
     # Determine device and worker label
     if gpu_count > 0:
         gpu_id = worker_id % gpu_count
-        device = torch.device('cuda:0')  # Always 0 since CUDA_VISIBLE_DEVICES limits us to one GPU
+        device = torch.device(f'cuda:{gpu_id}')
         worker_label = f"GPU{gpu_id}/W{worker_id:02d}"
     else:
         device = torch.device('cpu')
         worker_label = f"CPU/W{worker_id:02d}"
+    
+    print(f"DEBUG: Worker {worker_label}: device {device}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
     
     # Configure logger for this worker with thread-safe serialization
     logger.remove()  # Remove default handler
@@ -66,17 +69,18 @@ def train_single_config(params):
     
     # Only show INFO and above for worker processes to reduce noise
     # Use enqueue=True for thread safety without JSON serialization
-    logger.add(sys.stderr, format=format_with_worker, level="INFO", enqueue=True)
+    logger.add(sys.stderr, format=format_with_worker, level="DEBUG", enqueue=True)
     
     # Bind worker label to logger
     worker_logger = logger.bind(worker=worker_label)
     
     # Debug: Print actual GPU being used
     if torch.cuda.is_available():
+        torch.set_default_device(device)
         current_device = torch.cuda.current_device()
-        device_name = torch.cuda.get_device_name(current_device)
-        print(f"DEBUG: Worker {worker_id} using torch device {current_device}: {device_name}")
-    
+        print(f"DEBUG: Worker {worker_label}: gpu count {gpu_count},  current_device={current_device}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
+    else:
+        print(f"DEBUG: Worker {worker_label}: CUDA NOT AVAILABLE! gpu count {gpu_count}, using CPU, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
     try:
         # Load dataset
         file_name = f'{data_name}.pt'
@@ -212,7 +216,7 @@ def main():
     logger.remove()
     logger.add(sys.stderr, 
               format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>\n",
-              level="INFO",  # Only show INFO and above for main process
+              level="DEBUG",
               enqueue=True)  # Thread-safe logging without JSON
     
     # Check GPUs

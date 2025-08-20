@@ -83,3 +83,8 @@ If each training uses ~30% of GPU:
 - `--workers-per-gpu 4` → may cause slight slowdown but more throughput
 
 Monitor with `nvidia-smi` to find optimal workers-per-gpu for your setup.
+
+kill running processes spawned
+```
+ps -Af | grep multiproc |  grep '[p]ython -c from multiprocessing.spawn' | awk '{print $2}' | xargs -r kill
+```
