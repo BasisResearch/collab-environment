@@ -4,17 +4,15 @@ Maximize GPU utilization by running multiple training jobs per GPU
 Simple approach: launch N jobs per GPU concurrently
 """
 
-import os
 import sys
 from pathlib import Path
 import torch
 import numpy as np
-from itertools import product
 import concurrent.futures
-from functools import partial
 import json
 from datetime import datetime
 import argparse
+from loguru import logger
 
 # Add project paths
 current_dir = Path(__file__).parent
@@ -31,15 +29,22 @@ def train_single_config(params):
     """Train a single configuration - runs on any available GPU"""
     data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id = params
     
+    # Configure logger for this worker
+    logger.remove()  # Remove default handler
+    logger.add(sys.stderr, format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{extra[worker]}</cyan> | <level>{message}</level>")
+    
     # Distribute workers across GPUs
     if gpu_count > 0:
         # Assign worker to GPU in round-robin fashion
         gpu_id = worker_id % gpu_count
         device = torch.device(f'cuda:{gpu_id}')
-        prefix = f"[GPU{gpu_id}/W{worker_id:02d}]"
+        worker_label = f"GPU{gpu_id}/W{worker_id:02d}"
     else:
         device = torch.device('cpu')
-        prefix = f"[CPU/W{worker_id:02d}]"
+        worker_label = f"CPU/W{worker_id:02d}"
+    
+    # Bind worker label to logger
+    worker_logger = logger.bind(worker=worker_label)
     
     try:
         # Load dataset
@@ -93,6 +98,9 @@ def train_single_config(params):
         torch.manual_seed(seed)
         np.random.seed(seed)
         
+        # Move model to correct device
+        model = model.to(device)
+        
         # Train
         train_losses, trained_model, debug_result = train_rules_gnn(
             model,
@@ -115,7 +123,7 @@ def train_single_config(params):
         # Return result
         final_loss = np.mean(train_losses[-1]) if len(train_losses) > 0 else float('inf')
         
-        print(f"{prefix} ✓ Completed: {save_name} | Loss: {final_loss:.6f}")
+        worker_logger.success(f"Completed: {save_name} | Loss: {final_loss:.6f}")
         
         return {
             "data_name": data_name,
@@ -131,7 +139,7 @@ def train_single_config(params):
         }
         
     except Exception as e:
-        print(f"{prefix} ✗ Failed: {data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed} | Error: {e}")
+        worker_logger.error(f"Failed: {data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed} | Error: {e}")
         return {
             "data_name": data_name,
             "model_name": model_name,
@@ -167,24 +175,28 @@ def main():
     
     args = parser.parse_args()
     
+    # Configure main logger
+    logger.remove()
+    logger.add(sys.stderr, format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>")
+    
     # Check GPUs
     gpu_count = torch.cuda.device_count() if torch.cuda.is_available() else 0
     
-    print("="*60)
-    print("GPU UTILIZATION MAXIMIZER")
-    print("="*60)
-    print(f"Dataset: {args.dataset}")
-    print(f"GPUs available: {gpu_count}")
+    logger.info("="*60)
+    logger.info("GPU UTILIZATION MAXIMIZER")
+    logger.info("="*60)
+    logger.info(f"Dataset: {args.dataset}")
+    logger.info(f"GPUs available: {gpu_count}")
     
     if gpu_count > 0:
         for i in range(gpu_count):
-            print(f"  GPU {i}: {torch.cuda.get_device_name(i)}")
+            logger.info(f"  GPU {i}: {torch.cuda.get_device_name(i)}")
         max_workers = gpu_count * args.workers_per_gpu
-        print(f"Workers per GPU: {args.workers_per_gpu}")
-        print(f"Total concurrent jobs: {max_workers}")
+        logger.info(f"Workers per GPU: {args.workers_per_gpu}")
+        logger.info(f"Total concurrent jobs: {max_workers}")
     else:
         max_workers = 1
-        print("Running on CPU (single worker)")
+        logger.warning("Running on CPU (single worker)")
     
     # Define hyperparameter grid
     if args.test:
@@ -213,18 +225,18 @@ def main():
                         )
                         worker_id += 1
     
-    print(f"\nTotal configurations: {len(all_params)}")
-    print("="*60)
+    logger.info(f"Total configurations: {len(all_params)}")
+    logger.info("="*60)
     
     # Show GPU assignment plan
-    print("\nGPU Assignment Plan:")
+    logger.info("GPU Assignment Plan:")
     for i in range(min(8, len(all_params))):  # Show first 8 assignments
         _, model, noise, head, vr, seed, _, wid = all_params[i]
         assigned_gpu = wid % gpu_count if gpu_count > 0 else -1
-        print(f"  Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed}")
+        logger.debug(f"  Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed}")
     if len(all_params) > 8:
-        print(f"  ... and {len(all_params) - 8} more configurations")
-    print("="*60)
+        logger.debug(f"  ... and {len(all_params) - 8} more configurations")
+    logger.info("="*60)
     
     # Run with concurrent futures - distributes across all GPUs
     results = []
@@ -252,7 +264,7 @@ def main():
                     if 'gpu_id' in r and r['gpu_id'] >= 0:
                         gpu_dist[r['gpu_id']] = gpu_dist.get(r['gpu_id'], 0) + 1
                 gpu_info = " | ".join([f"GPU{k}:{v}" for k, v in sorted(gpu_dist.items())])
-                print(f"Progress: {completed}/{len(all_params)} | Elapsed: {elapsed:.1f} min | Distribution: {gpu_info}")
+                logger.info(f"Progress: {completed}/{len(all_params)} | Elapsed: {elapsed:.1f} min | Distribution: {gpu_info}")
     
     # Save results
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -265,23 +277,23 @@ def main():
     elapsed = (datetime.now() - start_time).total_seconds() / 60
     successful = len([r for r in results if r["status"] == "success"])
     
-    print("\n" + "="*60)
-    print("TRAINING COMPLETE")
-    print("="*60)
-    print(f"Time: {elapsed:.2f} minutes")
-    print(f"Successful: {successful}/{len(results)}")
-    print(f"Results: {results_file}")
+    logger.info("="*60)
+    logger.info("TRAINING COMPLETE")
+    logger.info("="*60)
+    logger.info(f"Time: {elapsed:.2f} minutes")
+    logger.info(f"Successful: {successful}/{len(results)}")
+    logger.info(f"Results: {results_file}")
     
     # Find best configuration
     valid_results = [r for r in results if r["status"] == "success"]
     if valid_results:
         best = min(valid_results, key=lambda x: x["final_loss"])
-        print(f"\nBest configuration:")
-        print(f"  Model: {best['model_name']}")
-        print(f"  Noise: {best['noise']}")
-        print(f"  Heads: {best['heads']}")
-        print(f"  Visual Range: {best['visual_range']}")
-        print(f"  Loss: {best['final_loss']:.6f}")
+        logger.success(f"Best configuration:")
+        logger.success(f"  Model: {best['model_name']}")
+        logger.success(f"  Noise: {best['noise']}")
+        logger.success(f"  Heads: {best['heads']}")
+        logger.success(f"  Visual Range: {best['visual_range']}")
+        logger.success(f"  Loss: {best['final_loss']:.6f}")
 
 
 if __name__ == "__main__":
