@@ -25,16 +25,28 @@ from collab_env.gnn.utility import dataset2testloader
 from collab_env.data.file_utils import expand_path, get_project_root
 
 
-def train_single_config(params):
-    """Train a single configuration - runs on any available GPU"""
+def worker_wrapper(params):
+    """Wrapper to set environment before calling actual training function"""
     import os
     data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id = params
     
-    # Distribute workers across GPUs by setting CUDA_VISIBLE_DEVICES
+    # Set CUDA_VISIBLE_DEVICES in this process before CUDA is initialized
     if gpu_count > 0:
         gpu_id = worker_id % gpu_count
         os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
-        device = torch.device('cuda:0')  # Always 0 since we only see one GPU
+        
+    # Now call the actual training function
+    return train_single_config(params)
+
+
+def train_single_config(params):
+    """Train a single configuration - runs on any available GPU"""
+    data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id = params
+    
+    # Determine device and worker label
+    if gpu_count > 0:
+        gpu_id = worker_id % gpu_count
+        device = torch.device('cuda:0')  # Always 0 since CUDA_VISIBLE_DEVICES limits us to one GPU
         worker_label = f"GPU{gpu_id}/W{worker_id:02d}"
     else:
         device = torch.device('cpu')
@@ -258,9 +270,9 @@ def main():
     start_time = datetime.now()
     
     with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
-        # Submit all jobs
+        # Submit all jobs using the wrapper that sets environment variables
         future_to_params = {
-            executor.submit(train_single_config, params): params 
+            executor.submit(worker_wrapper, params): params 
             for params in all_params
         }
         
