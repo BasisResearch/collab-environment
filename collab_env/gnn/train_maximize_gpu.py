@@ -29,14 +29,17 @@ from collab_env.data.file_utils import expand_path, get_project_root
 
 def train_single_config(params):
     """Train a single configuration - runs on any available GPU"""
-    data_name, model_name, noise, heads, visual_range, seed, gpu_count = params
+    data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id = params
     
-    # Let CUDA pick the least loaded GPU automatically
+    # Distribute workers across GPUs
     if gpu_count > 0:
-        # Don't set CUDA_VISIBLE_DEVICES - let all processes see all GPUs
-        device = torch.device('cuda')
+        # Assign worker to GPU in round-robin fashion
+        gpu_id = worker_id % gpu_count
+        device = torch.device(f'cuda:{gpu_id}')
+        prefix = f"[GPU{gpu_id}/W{worker_id:02d}]"
     else:
         device = torch.device('cpu')
+        prefix = f"[CPU/W{worker_id:02d}]"
     
     try:
         # Load dataset
@@ -112,7 +115,7 @@ def train_single_config(params):
         # Return result
         final_loss = np.mean(train_losses[-1]) if len(train_losses) > 0 else float('inf')
         
-        print(f"✓ Completed: {save_name} | Loss: {final_loss:.6f}")
+        print(f"{prefix} ✓ Completed: {save_name} | Loss: {final_loss:.6f}")
         
         return {
             "data_name": data_name,
@@ -122,11 +125,13 @@ def train_single_config(params):
             "visual_range": visual_range,
             "seed": seed,
             "final_loss": float(final_loss),
-            "status": "success"
+            "status": "success",
+            "gpu_id": gpu_id if gpu_count > 0 else -1,
+            "worker_id": worker_id
         }
         
     except Exception as e:
-        print(f"✗ Failed: {data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed} | Error: {e}")
+        print(f"{prefix} ✗ Failed: {data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed} | Error: {e}")
         return {
             "data_name": data_name,
             "model_name": model_name,
@@ -136,11 +141,20 @@ def train_single_config(params):
             "seed": seed,
             "final_loss": float('inf'),
             "status": "failed",
-            "error": str(e)
+            "error": str(e),
+            "gpu_id": gpu_id if gpu_count > 0 else -1,
+            "worker_id": worker_id
         }
 
 
 def main():
+    # Set multiprocessing start method to 'spawn' for CUDA
+    import multiprocessing
+    try:
+        multiprocessing.set_start_method('spawn', force=True)
+    except RuntimeError:
+        pass  # Already set
+    
     parser = argparse.ArgumentParser(description="Maximize GPU utilization with concurrent training")
     parser.add_argument("--dataset", type=str, default="boid_single_species_basic",
                        help="Dataset to use (default: boid_single_species_basic)")
@@ -186,20 +200,33 @@ def main():
         visual_ranges = [0.1, 0.5]
         seeds = range(args.seeds)
     
-    # Generate all combinations
-    all_params = [
-        (args.dataset, model, noise, head, vr, seed, gpu_count)
-        for model in model_names
-        for noise in noise_levels
-        for head in heads
-        for vr in visual_ranges
-        for seed in seeds
-    ]
+    # Generate all combinations with worker IDs
+    all_params = []
+    worker_id = 0
+    for model in model_names:
+        for noise in noise_levels:
+            for head in heads:
+                for vr in visual_ranges:
+                    for seed in seeds:
+                        all_params.append(
+                            (args.dataset, model, noise, head, vr, seed, gpu_count, worker_id)
+                        )
+                        worker_id += 1
     
     print(f"\nTotal configurations: {len(all_params)}")
     print("="*60)
     
-    # Run with concurrent futures - automatically distributes across all GPUs
+    # Show GPU assignment plan
+    print("\nGPU Assignment Plan:")
+    for i in range(min(8, len(all_params))):  # Show first 8 assignments
+        _, model, noise, head, vr, seed, _, wid = all_params[i]
+        assigned_gpu = wid % gpu_count if gpu_count > 0 else -1
+        print(f"  Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed}")
+    if len(all_params) > 8:
+        print(f"  ... and {len(all_params) - 8} more configurations")
+    print("="*60)
+    
+    # Run with concurrent futures - distributes across all GPUs
     results = []
     start_time = datetime.now()
     
@@ -217,10 +244,15 @@ def main():
             results.append(result)
             completed += 1
             
-            # Progress update
+            # Progress update with GPU distribution
             if completed % 10 == 0 or completed == len(all_params):
                 elapsed = (datetime.now() - start_time).total_seconds() / 60
-                print(f"Progress: {completed}/{len(all_params)} | Elapsed: {elapsed:.1f} min")
+                gpu_dist = {}
+                for r in results:
+                    if 'gpu_id' in r and r['gpu_id'] >= 0:
+                        gpu_dist[r['gpu_id']] = gpu_dist.get(r['gpu_id'], 0) + 1
+                gpu_info = " | ".join([f"GPU{k}:{v}" for k, v in sorted(gpu_dist.items())])
+                print(f"Progress: {completed}/{len(all_params)} | Elapsed: {elapsed:.1f} min | Distribution: {gpu_info}")
     
     # Save results
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
