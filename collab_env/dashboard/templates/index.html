@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Track Viewer - Home{% endblock %}
+
+{% block content %}
+<div class="home-container">
+    <h1>Track Viewer System</h1>
+    <p>Choose a viewer to get started:</p>
+    
+    <div class="viewer-cards">
+        <div class="viewer-card">
+            <h2>📹 2D Video Viewer</h2>
+            <p>View videos with bounding box overlays for tracked objects.</p>
+            <ul>
+                <li>Frame-by-frame playback</li>
+                <li>Bounding box visualization</li>
+                <li>Track trails and IDs</li>
+            </ul>
+            <a href="/video" class="btn btn-primary">Open 2D Viewer</a>
+        </div>
+        
+        <div class="viewer-card">
+            <h2>🎮 3D Mesh Viewer</h2>
+            <p>Visualize 3D meshes with animated tracking data.</p>
+            <ul>
+                <li>PLY mesh rendering</li>
+                <li>3D track animations</li>
+                <li>Camera frustum visualization</li>
+            </ul>
+            <a href="/3d" class="btn btn-primary">Open 3D Viewer</a>
+        </div>
+        
+        <div class="viewer-card">
+            <h2>🔄 Synchronized Viewer</h2>
+            <p>View 2D video and 3D mesh side-by-side with synchronized playback.</p>
+            <ul>
+                <li>Frame-perfect synchronization</li>
+                <li>Dual view layout</li>
+                <li>Unified controls</li>
+            </ul>
+            <a href="/sync" class="btn btn-primary">Open Sync Viewer</a>
+        </div>
+    </div>
+    
+    <div class="status-section">
+        <h3>Server Status</h3>
+        <div id="server-status" class="status">Checking server status...</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block styles %}
+<style>
+.home-container {
+    max-width: 1000px;
+    margin: 0 auto;
+}
+
+.viewer-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+    margin: 2rem 0;
+}
+
+.viewer-card {
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.viewer-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.viewer-card h2 {
+    margin-bottom: 0.5rem;
+    color: var(--primary-color);
+}
+
+.viewer-card ul {
+    margin: 1rem 0;
+    padding-left: 1.5rem;
+    color: var(--secondary-color);
+}
+
+.viewer-card .btn {
+    width: 100%;
+    margin-top: 1rem;
+}
+
+.status-section {
+    margin-top: 3rem;
+    padding: 1.5rem;
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+}
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+// Check server status
+async function checkServerStatus() {
+    const statusEl = document.getElementById('server-status');
+    
+    try {
+        const [videosRes, meshesRes] = await Promise.all([
+            fetch('/api/videos'),
+            fetch('/api/meshes')
+        ]);
+        
+        if (videosRes.ok && meshesRes.ok) {
+            const videos = await videosRes.json();
+            const meshes = await meshesRes.json();
+            
+            statusEl.className = 'status success';
+            statusEl.textContent = `Server running. ${videos.length} videos, ${meshes.length} meshes loaded.`;
+        } else {
+            throw new Error('API check failed');
+        }
+    } catch (error) {
+        statusEl.className = 'status error';
+        statusEl.textContent = 'Server connection error: ' + error.message;
+    }
+}
+
+// Check status on load
+checkServerStatus();
+
+// Refresh status every 5 seconds
+setInterval(checkServerStatus, 5000);
+</script>
+{% endblock %}

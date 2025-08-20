@@ -1419,8 +1419,8 @@ class DataDashboard(param.Parameterized):
                     "video_id": video_id,
                     "video_path": str(video_cache_path),
                     "csv_path": str(csv_cache_path),
+                    "remote_path": f"{bucket}/{video_path}",  # Full remote path for display
                     "fps": 30.0,
-                    "video_label": f"{bucket}/{video_path}",  # Full remote path as meaningful label
                 }
 
                 logger.info(f"Sending video to persistent server: {add_video_data}")
@@ -1577,7 +1577,7 @@ class DataDashboard(param.Parameterized):
                     "mesh_path": str(mesh_cache_path),
                     "csv_3d_path": str(csv_3d_cache_path),
                     "camera_params_path": str(camera_params_cache_path) if camera_params_cache_path else None,
-                    "mesh_label": f"{bucket}/{ply_path}",  # Full remote path as meaningful label
+                    "remote_path": f"{bucket}/{ply_path}",  # Full remote path for display
                 }
                 
                 logger.info(f"Sending mesh to persistent server: {add_mesh_data}")
