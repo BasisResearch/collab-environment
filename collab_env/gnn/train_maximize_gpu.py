@@ -34,6 +34,9 @@ def worker_wrapper(params):
     if gpu_count > 0:
         gpu_id = worker_id % gpu_count
         os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
+        print(f"DEBUG: Worker {worker_id} assigned to GPU {gpu_id}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
+    else:
+        print(f"DEBUG: Worker {worker_id} assigned to CPU")
         
     # Now call the actual training function
     return train_single_config(params)
@@ -67,6 +70,12 @@ def train_single_config(params):
     
     # Bind worker label to logger
     worker_logger = logger.bind(worker=worker_label)
+    
+    # Debug: Print actual GPU being used
+    if torch.cuda.is_available():
+        current_device = torch.cuda.current_device()
+        device_name = torch.cuda.get_device_name(current_device)
+        print(f"DEBUG: Worker {worker_id} using torch device {current_device}: {device_name}")
     
     try:
         # Load dataset
