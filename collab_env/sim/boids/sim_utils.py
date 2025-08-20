@@ -33,14 +33,24 @@ def add_obs_to_df(df: pd.DataFrame, obs, time_step=0):
         row_dict["v_z"] = velocity[2]
 
         for t, distance in zip(
-            range(1, num_targets + 1), obs["distances_to_targets"][i - 1]
+            range(1, num_targets + 1), obs["distances_to_target_centers"][i - 1]
         ):
-            row_dict[f"distance_target_{t}"] = distance
+            row_dict[f"distance_target_center_{t}"] = distance
+
+        for t, distance in zip(
+            range(1, num_targets + 1),
+            obs["distances_to_target_mesh_closest_points"][i - 1],
+        ):
+            row_dict[f"distance_to_target_mesh_closest_point_{t}"] = distance
 
         for t, closest_point in zip(
-            range(1, num_targets + 1), obs["target_closest_points"][i - 1]
+            range(1, num_targets + 1), obs["target_mesh_closest_points"][i - 1]
         ):
-            row_dict[f"target_closest_points{t}"] = closest_point
+            row_dict[f"target_mesh_closest_point_{t}"] = closest_point
+
+        row_dict["mesh_scene_distance"] = obs["mesh_scene_distance"][i - 1]
+
+        row_dict["mesh_scene_closest_point"] = obs["mesh_scene_closest_points"][i - 1]
 
         agent_rows.append(row_dict)
 
@@ -64,7 +74,7 @@ def add_obs_to_df(df: pd.DataFrame, obs, time_step=0):
     #
     env_rows = [
         {
-            "id": 1,
+            "id": t,  # should be the number of the target (fixed 081825 10:52PM)
             "type": "env",
             "time": time_step,
             "x": location[0],
@@ -74,33 +84,32 @@ def add_obs_to_df(df: pd.DataFrame, obs, time_step=0):
         for t, location in zip(range(1, num_targets + 1), obs["target_loc"])
     ]
 
-    df = pd.concat([df, pd.DataFrame(agent_rows + env_rows)]).reset_index(drop=True)
+    """
+    TOC -- 081825 10:50PM
+    Fix that annoying deprecated warning about concatenating an empty DataFrame
+    """
+    if df is None:
+        df = pd.DataFrame(agent_rows + env_rows)
+    else:
+        df = pd.concat([df, pd.DataFrame(agent_rows + env_rows)]).reset_index(drop=True)
     return df
 
 
 def test_add_obs():
-    num_targets = 1
-    distance_columns = [f"distance_target_{t}" for t in range(1, num_targets + 1)]
-    pandas_columns = [
-        "id",
-        "type",
-        "time",
-        "x",
-        "y",
-        "z",
-        "v_x",
-        "v_y",
-        "v_z",
-    ] + distance_columns
     obs = dict()
     obs["agent_loc"] = [[1, 2, 3]]
     obs["agent_vel"] = [[10, 20, 30]]
     obs["target_loc"] = [[1000, 2000, 3000]]
-    obs["distances_to_targets"] = [[100.0]]
-    obs["target_closest_points"] = [[100.0, 200.0, 300.0]]
-    df = pd.DataFrame(columns=pandas_columns)
-    df = add_obs_to_df(df, obs, 1)
-    print(df)
+    obs["distances_to_target_centers"] = [[100.0]]
+    obs["distances_to_target_mesh_closest_points"] = [[50.0]]
+    obs["target_mesh_closest_points"] = [[100.0, 200.0, 300.0]]
+    obs["mesh_scene_distance"] = [[25.0]]
+    obs["mesh_scene_closest_points"] = [[1000.0, 2000.0, 3000.0]]
+    df = add_obs_to_df(None, obs, 1)
+    print("df\n", df[["id", "type", "mesh_scene_closest_point"]])
+
+    agent1 = df.loc[(df["type"] == "agent") & (df["id"] == 1)]
+    print("agent1 = \n", agent1)
 
 
 def find_angle(first, second):
@@ -227,7 +236,12 @@ def plot_trajectories(df, env, frame_limit=None):
         # truncated indicates the user hit quit in the open3d visualizer
         _, _, _, done, _ = env.step(np.zeros((num_agents, 3)))
 
-    env.close()
+    """
+    TOC -- 081825 9:01PM
+    Not sure this should be closed because we may need it 
+    for additional episodes. 
+    """
+    # env.close()
 
 
 # def interpolate_color(start_color, end_color, steps):

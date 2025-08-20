@@ -52,15 +52,40 @@ There are many configurable parameters. See the example configuration file for d
 If the configuration file indicates that the visualizer should be shown, the following
 key commands are available while the visualizer is running:
 
-* Q - quits the current episode
+* Q - quits the current episode. The visualizer will be terminated, and the data for the episode and the video (if specified) will be stored.
 
-* P - saves an image of the current frame to a file. The images saved will be numbered consecutively (image-1.png, image-2.png, etc.) in the run folder, which is also specified in the config file
+* P - saves an image of the current frame to a file. The images saved will be numbered consecutively (image-1.png, image-2.png, etc.) in the run folder, which is also specified in the config file.
 
-* R - resets the viewer orientation to the initial orientation
+* R - resets the viewer orientation to the initial orientation.
 
-To stop the simulation prematurely when there is no visualizer window,
-press ``Ctrl-C`` in the terminal.
+To stop the simulation prematurely when there is no visualizer window, press ``Ctrl-C`` in the terminal.
 
+
+Output of the Simulation
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The output of the simulation consists of the following files, which will appear in the run folder specified in the configuration file:
+
+* the configuration file used for the run
+* a parquet file for each episode containing a pandas dataframe
+* an optional video file for each episode
+* optional images saved by the user hitting P while the visualizer was running
+
+The parquet file contains a dataframe with the following columns:
+
+* id : the id of the object
+* type : currently either 'agent' for an agent or 'env' for an environment object
+* timestep : the timestep for which this data applies
+* x : the x position of the object (x is horizontal)
+* y : the y position of the object (y is vertical)
+* z : the z position of the object (z is front and back)
+* v_x : the velocity the object in the x direction
+* v_y : the velocity the object in the y direction
+* v_z : the velocity the object in the z direction
+* distance_target_center_t : the distance of the object to the center of the t-th target.
+* distance_to_target_mesh_closest_point_t : the distance of the object to the closest point on the t-th target mesh.
+* target_mesh_closest_point_t : the point on the t-th target mesh that is closest to the object
+* mesh_scene_distance : the distance of the object to the closest point on the mesh scene
+* mesh_scene_closest_point : the point on the mesh scene that is closest to the object
 
 Contributing
 ------------

@@ -1,0 +1,207 @@
+"""
+TOC
+- 7/21/25 12:29 -- they seem to move together with all weights at 1. Need to bound them inside a cube and play with neighborhood sizes as some of
+them seem to stop -- not sure why that is happening.
+- 7/21/25 -- runs with 5 agents and a moving target but the agents scatter.
+- works as a 2D grid
+- 7/3/25 23:42 the open3D visualizer opens and runs while the environment is running.
+"""
+
+import argparse
+import os
+
+from datetime import datetime
+
+import numpy as np
+
+import gymnasium as gym
+import yaml
+from loguru import logger
+
+import pandas as pd
+import pyarrow.parquet as pq
+import shutil
+from glob import glob
+
+
+import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
+from collab_env.data.file_utils import get_project_root, expand_path
+from collab_env.sim.boids.sim_utils import function_filter, plot_trajectories
+
+# NUM_AGENTS = 40
+# WALKING = False
+
+
+"""
+TOC -- 080825 10:10AM
+This needs to be done much more efficiently.  
+"""
+
+
+if __name__ == "__main__":
+    #
+    # Get the config file name if specified on the command line
+    #
+    parser = argparse.ArgumentParser(
+        prog="run_boids_simulator",
+        description="Simulates boids in a 3D environment",
+        epilog="---",
+    )
+    parser.add_argument("-cf", "--config_file")
+    args = parser.parse_args()
+    if args.config_file:
+        config_filename = expand_path(args.config_file, get_project_root())
+    else:
+        config_filename = expand_path(
+            "collab_env/sim/boids/config.yaml", get_project_root()
+        )
+
+    config = yaml.safe_load(open(config_filename))
+
+    if config["visuals"]["show_visualizer"]:
+        render_mode = "human"
+    else:
+        render_mode = ""
+
+    # TOC -- 080225 9:15AM
+    # Create the output folder
+    """
+    # TOC -- 080425 1:49PM
+    # Using the time in the folder name seems to be causing a problem for the pytest runs. Furthermore, we could have
+    # multiple runs happening at the same time, so maybe try using the process and thread ids to distinguish.  
+    """
+    new_folder_name = f"{config['simulator']['run_main_folder']}/{config['simulator']['run_sub_folder_prefix']}-started-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+
+    new_run_folder = expand_path(new_folder_name, get_project_root())
+    os.mkdir(new_run_folder)
+
+    if not config["logging"]["logging"]:
+        logger.disable("")
+    else:
+        # TOC -- 080325 11:19AM
+        # Remove the existing handlers and add a new one attached to the
+        # log file in the run folder and with the prefix specified in the config
+        # file.
+        logger.remove()
+        if len(config["logging"]["log_functions"]) > 0:
+            logger.add(
+                expand_path(
+                    f"{config['logging']['logfile_prefix']}.log", new_run_folder
+                ),
+                level=config["logging"]["log_level"],
+                filter=function_filter(
+                    function_list=config["logging"]["log_functions"]
+                ),
+            )
+        else:
+            logger.add(
+                expand_path(
+                    f"{config['logging']['logfile_prefix']}.log", new_run_folder
+                ),
+                level=config["logging"]["log_level"],
+            )
+
+    # TOC -- 080225 9:54AM
+    # Copy the config file into the run folder to record configuration for the run.
+    # There may be a better way to do this to make sure we get all parameters stored
+    # in case there are still hardcoded values in the code -- which should be removed
+    # at some point.
+    copied_config_file_path = expand_path("config.yaml", new_run_folder)
+    shutil.copy(config_filename, copied_config_file_path)
+
+    target_creation_time = config["simulator"]["target_creation_time"]
+    """ 
+    TOC -- 080825 7:15PM
+    If no fixed target positions were specified, we should pass None to the environment
+    """
+    fixed_target_position = config["environment"]["target_position"]
+    if len(fixed_target_position) == 0:
+        fixed_target_position = None
+    #
+    # Create environment and agent
+    #
+    env = gym.make(
+        "gymnasium_env/BoidsWorldSimple-v0",
+        render_mode=render_mode,
+        num_agents=config["simulator"]["num_agents"],
+        num_targets=config["simulator"]["num_targets"],
+        num_ground_targets=config["simulator"]["num_ground_targets"],
+        walking=config["simulator"]["walking"],
+        show_box=config["simulator"]["show_box"],
+        # store_video=config["visuals"]["store_video"],
+        show_visualizer=config["visuals"]["show_visualizer"],
+        vis_width=config["visuals"]["width"],
+        vis_height=config["visuals"]["height"],
+        # video_file_path=video_file_path,
+        # video_codec=config["visuals"]["video_codec"],
+        # video_fps=config["visuals"]["video_fps"],
+        save_image=True,  # save the image generated (fix this with key commands later)
+        saved_image_path=new_run_folder,
+        agent_shape=config["visuals"]["agent_shape"],
+        agent_color=config["visuals"]["agent_color"],
+        agent_scale=config["visuals"]["agent_scale"],
+        target_scale=config["visuals"]["target_scale"],
+        agent_mean_init_velocity=config["agent"]["mean_init_velocity"],
+        agent_variance_init_velocity=config["agent"]["variance_init_velocity"],
+        agent_init_range_low=config["agent"]["init_range_low"],
+        agent_init_range_high=config["agent"]["init_range_high"],
+        agent_height_range_low=config["agent"]["height_range_low"],
+        agent_height_range_high=config["agent"]["height_range_high"],
+        agent_height_init_min=config["agent"]["height_init_min"],
+        agent_height_init_max=config["agent"]["height_init_max"],
+        target_init_range_low=config["environment"]["init_range_low"],
+        target_init_range_high=config["environment"]["init_range_high"],
+        target_height_init_max=config["environment"]["height_init_max"],
+        target_mesh_file=config["meshes"]["sub_mesh_target"]
+        if config["simulator"]["submesh_target"]
+        else None,
+        box_size=config["environment"]["box_size"],
+        scene_scale=config["environment"]["scene_scale"],
+        scene_filename=config["meshes"]["mesh_scene"],
+        scene_position=config["environment"]["scene_position"],
+        scene_angle=np.pi * np.array(config["meshes"]["scene_angle"]) / 180.0,
+        target_creation_time=target_creation_time,
+        target_positions=fixed_target_position,
+        color_tracks_by_time=config["tracks"]["color_by_time"],
+        number_track_color_groups=config["tracks"]["number_of_color_groups"],
+        track_color_rate=config["tracks"]["track_color_rate"],
+    )
+
+    """
+    TOC -- 080825
+    plot the trajectories for the paper figures. Needs to be able to display the 
+    agents in the visualizer without storing video and with the ability to snap 
+    pictures based on keyboard presses so that users can adjust the camera view 
+    and zoom on the visualizer to get the figures they want.  
+    """
+    if config["simulator"]["show_trajectories"]:
+        trajectory_folder_path = expand_path(
+            f"{config['files']['trajectory_folder']}", get_project_root()
+        )
+        if config["files"]["trajectory_file"] == "all":
+            episode_file_list = glob(f"{trajectory_folder_path}/episode*.parquet")
+            logger.debug(f"episode list = {episode_file_list}")
+            for trajectory_file in episode_file_list:
+                df = pd.read_parquet(trajectory_file)
+                frame_limit = config["simulator"]["trajectory_frame_limit"]
+                plot_trajectories(
+                    df, env, frame_limit=(None if frame_limit == 0 else frame_limit)
+                )
+        else:
+            trajectory_path = expand_path(
+                #    f"{config['files']['trajectory_folder']}/{config['files']['trajectory_file']}",
+                #    get_project_root(),
+                config["files"]["trajectory_file"],
+                trajectory_folder_path,
+            )
+            """
+            TOC -- 081325 10:26AM
+            TODO: Change this to read only the columns we need. 
+            """
+            df = pq.read_pandas(trajectory_path).to_pandas()
+            frame_limit = config["simulator"]["trajectory_frame_limit"]
+            plot_trajectories(
+                df, env, frame_limit=(None if frame_limit == 0 else frame_limit)
+            )
+
+    logger.info("trajectories complete")

@@ -1,7 +1,7 @@
 
 simulator:
   seed: [1250, 399, 551, 399, 330, 483, 907, 157, 500, 723] # one seed required for each episode
-  walking: True
+  walking: False
   num_agents: 20
   num_targets: 1
   num_ground_targets: 1
@@ -9,13 +9,13 @@ simulator:
   submesh_show_points: True # put spheres on at least some of the submesh vertices
   moving_targets: False
   num_episodes: 1
-  num_frames: 3000
-  target_creation_time: 500 # min is 1, which creates the target at the beginning of the episode.
+  num_frames: 20
+  target_creation_time: 5  # min is 1, which creates the target at the beginning of the episode.
   show_box: False # should move this to visuals
   # run_main_folder: "collab_env/sim/runs"
-  run_main_folder: "sim-output"
-  run_sub_folder_prefix: "boids_sim_run"
-  show_trajectories: True
+  run_main_folder: "sim-output/tests-sim-runs"
+  run_sub_folder_prefix: "boids_sim_run-consistent"
+  show_trajectories: False
   trajectory_frame_limit: 3000
 
 
@@ -62,9 +62,9 @@ agent:
   alignment_weight: 1.0
   cohesion_weight: 0.5
   ground_weight: 0.0
-  target_weight: [0.02]
-  max_speed: 1.5
-  min_speed: 0.5
+  target_weight: [0.002]
+  max_speed: 1.0
+  min_speed: 0.1
   max_force: 0.1
   mean_init_velocity: 0.0
   variance_init_velocity: 0.5

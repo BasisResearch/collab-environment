@@ -155,7 +155,7 @@ class BoidsWorldAgent:
                 #
                 # steer = obs["target_loc"][t] - obs["agent_loc"][i]
                 steer = (
-                    obs["target_closest_points"][agent_index][t]
+                    obs["target_mesh_closest_points"][agent_index][t]
                     - obs["agent_loc"][agent_index]
                 )
                 logger.debug("target_loc = " + str(obs["target_loc"][t]))
@@ -217,7 +217,7 @@ class BoidsWorldAgent:
         TOC -- 081725 6:50PM
         Let's try going in the opposite direction of the closest point instead of up, front, right. 
         """
-        closest_point = obs["mesh_closest_points"][agent_index]
+        closest_point = obs["mesh_scene_closest_points"][agent_index]
         acceleration = self.min_ground_separation**2 / (
             location[agent_index] - closest_point
         )
@@ -253,7 +253,7 @@ class BoidsWorldAgent:
             if (
                 (not self.walking)
                 and self.env_has_mesh_scene
-                and (obs["mesh_distance"][i] < self.min_ground_separation)
+                and (obs["mesh_scene_distance"][i] < self.min_ground_separation)
             ):
                 self.mesh_avoidance(velocity, location, i, obs)
                 # """

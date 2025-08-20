@@ -19,7 +19,6 @@ import gymnasium as gym
 import yaml
 from loguru import logger
 
-import pandas as pd
 import pyarrow.parquet as pq
 import pyarrow as pa
 import shutil
@@ -166,6 +165,8 @@ if __name__ == "__main__":
         target_mesh_file=config["meshes"]["sub_mesh_target"]
         if config["simulator"]["submesh_target"]
         else None,
+        target_mesh_init_color=config["visuals"]["target_mesh_init_color"],
+        target_mesh_color=config["visuals"]["target_mesh_color"],
         box_size=config["environment"]["box_size"],
         scene_scale=config["environment"]["scene_scale"],
         scene_filename=config["meshes"]["mesh_scene"],
@@ -203,25 +204,26 @@ if __name__ == "__main__":
     )
 
     num_targets = config["simulator"]["num_targets"]
-    distance_columns = [f"distance_target_{t}" for t in range(1, num_targets + 1)]
-    closest_point_columns = [
-        f"closest_point_target_{t}" for t in range(1, num_targets + 1)
-    ]
-    pandas_columns = (
-        [
-            "id",
-            "type",
-            "time",
-            "x",
-            "y",
-            "z",
-            "v_x",
-            "v_y",
-            "v_z",
-        ]
-        + distance_columns
-        + closest_point_columns
-    )
+    # distance_columns = [f"distance_target_center_{t}" for t in range(1, num_targets + 1)]
+    # distance_target_mesh = [f"distances_to_target_mesh_closest_point_{t}" for t in range(1, num_targets + 1)]
+    # closest_point_columns = [
+    #     f"closest_point_target_{t}" for t in range(1, num_targets + 1)
+    # ]
+    # pandas_columns = (
+    #     [
+    #         "id",
+    #         "type",
+    #         "time",
+    #         "x",
+    #         "y",
+    #         "z",
+    #         "v_x",
+    #         "v_y",
+    #         "v_z",
+    #     ]
+    #     + distance_columns
+    #     + closest_point_columns
+    # )
 
     #
     # There should be one seed for each episode
@@ -240,11 +242,11 @@ if __name__ == "__main__":
 
         # TOC -- 080225 8:58AM
         # create the dataframe for the simulation output
-        df = pd.DataFrame(columns=pandas_columns)
+        # df = pd.DataFrame(columns=pandas_columns)
 
         # TOC -- 080725 10:45PM
         # Add the initial positions to the dataframe
-        df = add_obs_to_df(df, obs, time_step=0)
+        df = add_obs_to_df(None, obs, time_step=0)
         done = False
 
         #
@@ -285,7 +287,7 @@ if __name__ == "__main__":
         logger.info(f"episode {episode}: df columns = {df.columns}")
         logger.info(f"positions:\n{df[['x', 'y', 'z']]}")
         logger.info(f"velocities:\n{df[['v_x', 'v_y', 'v_z']]}")
-        logger.info(f"distances:\n{df[['distance_target_1']]}")
+        # logger.info(f"distances:\n{df[['distance_target_1']]}")
 
         #
         # Dump data to output file

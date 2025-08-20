@@ -44,6 +44,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         target_height_init_max=40,
         target_positions=None,
         target_mesh_file=None,
+        target_mesh_color=[0, 1, 0],
+        target_mesh_init_color=[1, 0, 1],
         box_size=40,
         show_box=False,
         scene_scale=100.0,
@@ -68,6 +70,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         number_track_color_groups=1,
         track_color_rate=4,
     ):
+        if target_mesh_color is None:
+            target_mesh_color = [1, 0, 1]
         self.box_line_set = None
         self.size = size  # The size of the square grid
         self.window_size = 512  # The size of the render window
@@ -85,6 +89,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         self._ground_target_location = None
         self._ground_target_velocity = None
         self.target_mesh_file = target_mesh_file
+        self.submesh_init_color = target_mesh_init_color
+        self.submesh_color = target_mesh_color
         self.mesh_scene = None  # initialized by reset()
         self.max_dist_from_center = 3
         self.agent_shape = agent_shape.upper()
@@ -191,7 +197,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                 # TOC -- 080525 2:06PM
                 # updated to deal with multiple targets.
                 #
-                "distances_to_targets": spaces.Tuple(
+                "distances_to_target_centers": spaces.Tuple(
                     [
                         spaces.Tuple(
                             [
@@ -207,7 +213,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                         for _ in range(self.num_agents)
                     ]
                 ),
-                "distances_to_closest_points": spaces.Tuple(
+                "distances_to_target_mesh_closest_points": spaces.Tuple(
                     [
                         spaces.Tuple(
                             [
@@ -223,7 +229,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                         for _ in range(self.num_agents)
                     ]
                 ),
-                "target_closest_points": spaces.Tuple(
+                "target_mesh_closest_points": spaces.Tuple(
                     [
                         spaces.Tuple(
                             [
@@ -239,7 +245,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                         for _ in range(self.num_agents)
                     ]
                 ),
-                "mesh_distance": spaces.Tuple(
+                "mesh_scene_distance": spaces.Tuple(
                     [
                         spaces.Box(
                             low=-torch.inf, high=torch.inf, shape=(1,), dtype=np.float64
@@ -247,7 +253,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                         for _ in range(self.num_agents)
                     ]
                 ),
-                "mesh_closest_points": spaces.Tuple(
+                "mesh_scene_closest_points": spaces.Tuple(
                     [
                         spaces.Box(
                             low=-torch.inf, high=torch.inf, shape=(3,), dtype=np.float64
@@ -325,11 +331,11 @@ class BoidsWorldSimpleEnv(gym.Env):
             "agent_vel": tuple(self._agent_velocity),
             "target_loc": (tuple(self._target_location)),
             # "target_loc":
-            "distances_to_targets": self.compute_target_center_distances(),
-            "distances_to_closest_points": distances_to_target_mesh,  # modified 080625 9:08PM
-            "target_closest_points": target_mesh_closest_points,  # modified 080625 9:08PM
-            "mesh_distance": scene_distances,
-            "mesh_closest_points": scene_closest_points,
+            "distances_to_target_centers": self.compute_target_center_distances(),
+            "distances_to_target_mesh_closest_points": distances_to_target_mesh,  # modified 080625 9:08PM
+            "target_mesh_closest_points": target_mesh_closest_points,  # modified 080625 9:08PM
+            "mesh_scene_distance": scene_distances,
+            "mesh_scene_closest_points": scene_closest_points,
         }
 
     def _get_obs_to_target_centers(self):
@@ -1515,7 +1521,6 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
 
         if self.submesh_target:
-            color = [0.0, 1.0, 0.0]
             colors = np.asarray(self.mesh_scene.vertex_colors)
 
             # # If no existing colors, create a default white array
@@ -1523,7 +1528,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             #     colors = np.ones_like(vertices)
 
             # Modify colors for specific indices
-            colors[self.submesh_vertex_indices] = color
+            colors[self.submesh_vertex_indices] = self.submesh_color
 
             # Update mesh vertex colors
             self.mesh_scene.vertex_colors = open3d.utility.Vector3dVector(colors)
@@ -1679,7 +1684,6 @@ class BoidsWorldSimpleEnv(gym.Env):
                 TOC -- 081425 11:32AM
                 Change the color of the target submesh so it is discernible in the visualizer. 
                 """
-                color = [0.0, 0.0, 1.0]
                 colors = np.asarray(self.mesh_scene.vertex_colors)
 
                 # # If no existing colors, create a default white array
@@ -1687,7 +1691,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                 #     colors = np.ones_like(vertices)
 
                 # Modify colors for specific indices
-                colors[self.submesh_vertex_indices] = color
+                colors[self.submesh_vertex_indices] = self.submesh_init_color
 
                 # Update mesh vertex colors
                 self.mesh_scene.vertex_colors = open3d.utility.Vector3dVector(colors)

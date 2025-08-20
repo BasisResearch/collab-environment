@@ -32,6 +32,8 @@ visuals:
   agent_color: [0, 1, 0]
   agent_scale: 2.0
   target_scale: 2.0
+  target_mesh_init_color: [ 1,0,1 ]
+  target_mesh_color: [ 0,1,0 ]
 
 environment:
   max_dist_from_center: 3
