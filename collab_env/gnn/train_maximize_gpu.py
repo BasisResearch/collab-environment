@@ -129,11 +129,17 @@ def train_single_config(params):
             lr = 1e-4
             training = True
         
-        # Set seed
+        # Set seed for reproducibility
         torch.manual_seed(seed)
-        if gpu_count > 0:
-            torch.cuda.manual_seed(seed)
         np.random.seed(seed)
+        
+        # Set the device context BEFORE any CUDA operations
+        if device.type == 'cuda':
+            torch.cuda.set_device(device)
+            torch.cuda.manual_seed(seed)
+            # Ensure deterministic behavior for reproducibility
+            torch.backends.cudnn.deterministic = True
+            torch.backends.cudnn.benchmark = False
         
         # Move model to correct device
         model = model.to(device)
