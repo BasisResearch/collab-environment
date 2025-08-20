@@ -35,9 +35,9 @@ def worker_wrapper(params):
     if gpu_count > 0:
         gpu_id = worker_id % gpu_count
         os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
-        print(f"DEBUG: Worker {worker_id} assigned to GPU {gpu_id}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
+        logger.debug(f"Worker {worker_id} assigned to GPU {gpu_id}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
     else:
-        print(f"DEBUG: Worker {worker_id} assigned to CPU")
+        logger.debug(f"Worker {worker_id} assigned to CPU")
         
     # Now call the actual training function
     return train_single_config(params)
@@ -56,7 +56,6 @@ def train_single_config(params):
         device = torch.device('cpu')
         worker_label = f"CPU/W{worker_id:02d}"
     
-    print(f"DEBUG: Worker {worker_label}: device {device}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
     
     # Configure logger for this worker with thread-safe serialization
     logger.remove()  # Remove default handler
@@ -74,33 +73,40 @@ def train_single_config(params):
     # Bind worker label to logger
     worker_logger = logger.bind(worker=worker_label)
     
+    worker_logger.debug(f"Device {device}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
+
     # Debug: Print actual GPU being used
     if torch.cuda.is_available():
         torch.set_default_device(device)
         current_device = torch.cuda.current_device()
-        print(f"DEBUG: Worker {worker_label}: gpu count {gpu_count},  current_device={current_device}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
+        worker_logger.debug(f"GPU count {gpu_count},  current_device={current_device}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
     else:
-        print(f"DEBUG: Worker {worker_label}: CUDA NOT AVAILABLE! gpu count {gpu_count}, using CPU, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
+        worker_logger.debug(f"CUDA NOT AVAILABLE! gpu count {gpu_count}, using CPU, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
     try:
         # Load dataset
         file_name = f'{data_name}.pt'
         config_name = f'{data_name}_config.pt'
         
+        worker_logger.debug(f"Loading dataset {file_name}")
         dataset = torch.load(
             expand_path(f"simulated_data/{file_name}", get_project_root()),
             weights_only=False
         )
+        worker_logger.debug(f"Loading species configs {config_name}")
         species_configs = torch.load(
             expand_path(f"simulated_data/{config_name}", get_project_root()),
             weights_only=False
         )
         
+        worker_logger.debug(f"Creating test and train loaders")
         test_loader, train_loader = dataset2testloader(
             dataset, batch_size=5, return_train=True
         )
         
         # Create model
         in_node_dim = 20 if "food" in data_name else 19
+        
+        worker_logger.debug(f"Creating model {model_name}")
         
         if "lazy" in model_name:
             model = Lazy(
@@ -129,21 +135,25 @@ def train_single_config(params):
             lr = 1e-4
             training = True
         
+        worker_logger.debug(f"Setting seed {seed}")
         # Set seed for reproducibility
         torch.manual_seed(seed)
         np.random.seed(seed)
         
         # Set the device context BEFORE any CUDA operations
         if device.type == 'cuda':
+            worker_logger.debug(f"Setting CUDA device {device} seed {seed}")
             torch.cuda.set_device(device)
             torch.cuda.manual_seed(seed)
             # Ensure deterministic behavior for reproducibility
             torch.backends.cudnn.deterministic = True
             torch.backends.cudnn.benchmark = False
         
+        worker_logger.debug(f"Moving model to device {device}")
         # Move model to correct device
         model = model.to(device)
         
+        worker_logger.debug(f"Training model")
         # Train
         train_losses, trained_model, debug_result = train_rules_gnn(
             model,
@@ -157,6 +167,7 @@ def train_single_config(params):
             device=device
         )
         
+        worker_logger.debug(f"Saving model")
         # Save model
         model_spec = {"model_name": model_name, "heads": heads}
         train_spec = {"visual_range": visual_range, "sigma": noise, "epochs": epochs}
