@@ -27,21 +27,31 @@ from collab_env.data.file_utils import expand_path, get_project_root
 
 def train_single_config(params):
     """Train a single configuration - runs on any available GPU"""
+    import os
     data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id = params
     
-    # Configure logger for this worker
-    logger.remove()  # Remove default handler
-    logger.add(sys.stderr, format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{extra[worker]}</cyan> | <level>{message}</level>")
-    
-    # Distribute workers across GPUs
+    # Distribute workers across GPUs by setting CUDA_VISIBLE_DEVICES
     if gpu_count > 0:
-        # Assign worker to GPU in round-robin fashion
         gpu_id = worker_id % gpu_count
-        device = torch.device(f'cuda:{gpu_id}')
+        os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
+        device = torch.device('cuda:0')  # Always 0 since we only see one GPU
         worker_label = f"GPU{gpu_id}/W{worker_id:02d}"
     else:
         device = torch.device('cpu')
         worker_label = f"CPU/W{worker_id:02d}"
+    
+    # Configure logger for this worker with thread-safe serialization
+    logger.remove()  # Remove default handler
+    
+    def format_with_worker(record):
+        if "worker" in record["extra"]:
+            return "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{extra[worker]}</cyan> | <level>{message}</level>"
+        else:
+            return "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>"
+    
+    # Only show INFO and above for worker processes to reduce noise
+    # Use enqueue=True for thread safety without JSON serialization
+    logger.add(sys.stderr, format=format_with_worker, level="INFO", enqueue=True)
     
     # Bind worker label to logger
     worker_logger = logger.bind(worker=worker_label)
@@ -96,6 +106,8 @@ def train_single_config(params):
         
         # Set seed
         torch.manual_seed(seed)
+        if gpu_count > 0:
+            torch.cuda.manual_seed(seed)
         np.random.seed(seed)
         
         # Move model to correct device
@@ -175,9 +187,12 @@ def main():
     
     args = parser.parse_args()
     
-    # Configure main logger
+    # Configure main logger with thread-safe output
     logger.remove()
-    logger.add(sys.stderr, format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>")
+    logger.add(sys.stderr, 
+              format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
+              level="INFO",  # Only show INFO and above for main process
+              enqueue=True)  # Thread-safe logging without JSON
     
     # Check GPUs
     gpu_count = torch.cuda.device_count() if torch.cuda.is_available() else 0

@@ -7,6 +7,7 @@ from collab_env.gnn.utility import handle_discrete_data, v_function_2_vminushalf
 import gc
 from collab_env.gnn.gnn_definition import GNN, Lazy
 from collab_env.data.file_utils import expand_path, get_project_root
+from loguru import logger
 
 
 
@@ -294,7 +295,7 @@ def run_gnn_frame(
     x_input = node_feature(past_p, past_v, past_a, species_idx, species_dim)
     
     x_input = x_input.to(device)
-    v_minushalf = torch.tensor(v_minushalf).to(device)
+    v_minushalf = torch.as_tensor(v_minushalf, device=device)
 
     # Forward
     pred, W = model(x_input, edge_index, edge_weight)
@@ -386,9 +387,9 @@ def run_gnn(model,
         position, model.input_differentiation
     )
 
-    pos = torch.tensor(pos)
-    vel = torch.tensor(vel)
-    acc = torch.tensor(acc)
+    pos = torch.as_tensor(pos)
+    vel = torch.as_tensor(vel)
+    acc = torch.as_tensor(acc)
 
     pos = pos.to(device)
     vel = vel.to(device)
@@ -435,7 +436,7 @@ def run_gnn(model,
             p = pos[:, frame_next]  # 1 step ahead
             a = acc[:, frame_next]  # 1 step ahead
             vminushalf = v_function_2_vminushalf(v_function, frame) #v_t-1/2
-            vminushalf = torch.tensor(vminushalf).to(device)
+            vminushalf = torch.as_tensor(vminushalf, device=device)
             if training:
                 p,v,a = add_noise(p, sigma), add_noise(v, sigma), add_noise(a, sigma)
                 vminushalf = add_noise(vminushalf, sigma)
@@ -452,8 +453,8 @@ def run_gnn(model,
         
         edge_weight = normalize_by_col(N, S, edge_index)
 
-        edge_index = torch.tensor(edge_index).to(device)
-        edge_weight = torch.tensor(edge_weight).to(device)     
+        edge_index = torch.as_tensor(edge_index, device=device)
+        edge_weight = torch.as_tensor(edge_weight, device=device)     
 
         (pred_pos, pred_vel, pred_acc, pred_vplushalf, W) = run_gnn_frame(
                         model, edge_index, edge_weight,
@@ -493,7 +494,7 @@ def run_gnn(model,
             p = pos[:, frame_next]  # 1 step ahead
             a = acc[:, frame_next]  # 1 step ahead
             vminushalf = v_function_2_vminushalf(v_function, frame)
-            vminushalf = torch.tensor(vminushalf).to(device) #v_t-1/2
+            vminushalf = torch.as_tensor(vminushalf, device=device) #v_t-1/2
         
         if training:
             p,v,a = add_noise(p, sigma), add_noise(v, sigma), add_noise(a, sigma)
@@ -552,21 +553,23 @@ def train_rules_gnn(
         model.train()
     
     if rollout > 0:
-        print("rolling out...")
+        logger.debug("rolling out...")
         
     for ep in range(epochs):
         torch.cuda.empty_cache()
 
-        print("epoch", ep)
-        print("\n")
+        # Only log epoch start for longer training
+        if epochs > 5:
+            logger.debug(f"Starting epoch {ep+1}/{epochs}")
 
         debug_result_all[ep] = {}
         
         train_losses_by_batch = []  # train loss this epoch
 
         for batch_idx, (position, species_idx) in enumerate(dataloader):
-            print("batch", batch_idx)
-            print("\n")
+            # Only log every 10th batch to reduce noise
+            if batch_idx % 10 == 0:
+                logger.debug(f"Processing batch {batch_idx}/{len(dataloader)}")
 
             S, Frame, N, _ = position.shape
 
@@ -588,8 +591,8 @@ def train_rules_gnn(
             train_losses_by_batch.append(loss)
 
         train_losses.append(train_losses_by_batch)
-        if ep % 50 == 0 or ep == epochs:
-            print(f"Epoch {ep:03d} | Train: {np.mean(train_losses[-1]):.4f}")
+        if ep % 50 == 0 or ep == epochs - 1:
+            logger.debug(f"Epoch {ep:03d} | Train: {np.mean(train_losses[-1]):.4f}")
 
     return np.array(train_losses), model, debug_result_all
 
@@ -646,7 +649,7 @@ def get_adjcency_from_debug(
             W_output_batch.append(W_output_frame)
             frame_batch.append(frame)
 
-        print("finished one epoch")
+        logger.debug("finished one epoch")
         W_input_epoch[epoch] = W_input_batch
         W_output_epoch[epoch] = W_output_batch
         frame_number[epoch] = frame_batch
@@ -727,18 +730,18 @@ def load_model(name, file_name):
     # save model spec
     with open(model_spec_path, "rb") as f: # 'wb' for write binary
         model_spec = pickle.load(f)
-    print("Loaded model spec.")
+    logger.debug("Loaded model spec.")
     
     # save training spec
     with open(train_spec_path, "rb") as f: # 'wb' for write binary
         train_spec = pickle.load(f)
-    print("Loaded training spec.")
+    logger.debug("Loaded training spec.")
 
     # Create an instance of the model (with the same architecture)
     model_spec["model_name"] = name
     if "lazy" in name:
         gnn_model = Lazy(**model_spec)
-        print("Loaded lazy model.")
+        logger.debug("Loaded lazy model.")
         return gnn_model, model_spec, train_spec
     
     gnn_model = GNN(**model_spec)
@@ -746,7 +749,7 @@ def load_model(name, file_name):
     # load model
     # Load the state dictionary
     gnn_model.load_state_dict(torch.load(model_path))
-    print("Loaded model.")
+    logger.debug("Loaded model.")
     
     # Set the model to evaluation mode (important for inference)
     gnn_model.eval()
@@ -762,7 +765,7 @@ def save_model(model, model_spec, train_spec, file_name):
     )
     torch.save(model.state_dict(), model_output)
 
-    print(f"Saved model to {model_output}.")
+    logger.debug(f"Saved model to {model_output}.")
 
     # model specs
     model_spec_path = expand_path(
