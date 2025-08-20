@@ -100,7 +100,7 @@ def train_single_config(params):
         
         worker_logger.debug(f"Creating test and train loaders")
         test_loader, train_loader = dataset2testloader(
-            dataset, batch_size=5, return_train=True
+            dataset, batch_size=5, return_train=True, device=device
         )
         
         # Create model
