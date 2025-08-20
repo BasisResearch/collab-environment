@@ -4,6 +4,7 @@ import numpy as np
 
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
+import matplotlib as mpl 
 
 class AnimalTrajectoryDataset(Dataset):
     def __init__(self, init_fn, update_fn, # initialization of the animals, # updating of the animals
@@ -257,4 +258,76 @@ def visualize_graph_2sets(p, v, p2, v2,
 
     plt.show()
     return ani, ax
+
+
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+
+def static_visualize_2sets(p, v, p2, v2,
+                    starting_frame = 0,
+                    rollout_starting_frame = 5,
+                    ending_frame = None):
+    """
+    overlay multiple frames of boids on top of each other.
+    """
+    cmap1 = plt.cm.Blues # Choose a colormap
+    cmap2 = plt.cm.Oranges # Choose a colormap
+
+    p = p.squeeze()
+    v = v.squeeze()
+    p2 = p2.squeeze()
+    v2 = v2.squeeze()
+
+    N = p.shape[1]
+    
+
+    # Create the figure and axes
+    fig, ax = plt.subplots(figsize=(6,5))
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes('right', size='5%', pad=0.1)
+    cax2 = divider.append_axes('right', size='5%', pad=0.5)
+
+    # Set plot limits
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    ax.set_xticks([])
+    ax.set_xticklabels([])
+    ax.set_yticks([])
+    ax.set_yticklabels([])
+
+
+    norm = mpl.colors.Normalize(vmin=rollout_starting_frame, vmax=ending_frame, clip=True)
+    for i in range(rollout_starting_frame, ending_frame + 1):
+
+        ax.scatter(p[i,:,0],p[i,:,1], color = cmap1(norm(i)))
+        ax.scatter(p2[i,:,0],p2[i,:,1], color = cmap2(norm(i)))
+        if v is not None:
+            ax.quiver(p[i,:,0], p[i,:,1], v[i+1,:,0] * 10, v[i+1,:,1] * 10,
+                        color = cmap1(norm(i)), alpha = 0.5,
+                        scale_units='xy', scale=1)
+            ax.quiver(p2[i,:,0], p2[i,:,1], v2[i+1,:,0] * 10, v2[i+1,:,1] * 10,
+                        color = cmap2(norm(i)), alpha = 0.5,
+                        scale_units='xy', scale=1)
+
+    
+
+    for i in range(starting_frame, rollout_starting_frame):
+
+        ax.scatter(p[i,:,0],p[i,:,1], color = "0.5", alpha = 0.5)
+        ax.scatter(p2[i,:,0],p2[i,:,1], color = "0.5", alpha = 0.5)
+        if v is not None:
+            ax.quiver(p[i,:,0], p[i,:,1], v[i+1,:,0] * 10, v[i+1,:,1] * 10,
+                        color = "0.5", alpha = 0.5,
+                        scale_units='xy', scale=1)
+            ax.quiver(p2[i,:,0], p2[i,:,1], v2[i+1,:,0] * 10, v2[i+1,:,1] * 10,
+                        color = "0.5", alpha = 0.5,
+                        scale_units='xy', scale=1)
+
+    sm = plt.cm.ScalarMappable(cmap=cmap1, norm=norm)
+    sm2 = plt.cm.ScalarMappable(cmap=cmap2, norm=norm)
+    fig.colorbar(sm, cax=cax, orientation='vertical',label='frames (true)')
+    fig.colorbar(sm2, cax=cax2, orientation='vertical',label='frames (rollout)')
+
+    plt.show()
+    return ax
+
 

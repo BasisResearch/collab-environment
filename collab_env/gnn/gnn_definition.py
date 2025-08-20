@@ -66,7 +66,7 @@ class GNN(torch.nn.Module):
 
         # the 2nd layer is simple convolutional later.
         # Note that we use the updated graph from the attention network
-        h = functional.relu(self.gcn2(h, edge_index, edge_weight))
+        h = functional.relu(self.gcn2(h, edge_index, torch.mean(edge_weight, 1)))
         return self.out(h), W
 
 

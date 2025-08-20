@@ -19,9 +19,9 @@ def rollout_to_pos_vel_acc(rollout_debug_result, starting_frame = 0, ending_fram
                             rollout_debug_result,
                             file_id = file_id, epoch_num = 0)
         
-        pos_all_files.append(pos[0,starting_frame:ending_frame:subsample,:bird_num])
-        vel_all_files.append(vel[0,starting_frame:ending_frame:subsample,:bird_num])
-        acc_all_files.append(acc[0,starting_frame:ending_frame:subsample,:bird_num])
+        pos_all_files.append(pos_gnn[0,starting_frame:ending_frame:subsample,:bird_num])
+        vel_all_files.append(vel_gnn[0,starting_frame:ending_frame:subsample,:bird_num])
+        acc_all_files.append(acc_gnn[0,starting_frame:ending_frame:subsample,:bird_num])
         
     pos_concatenated = torch.concatenate(pos_all_files)
     vel_concatenated = torch.concatenate(vel_all_files)
@@ -50,7 +50,7 @@ def data_to_pos_vel_acc(loader, starting_frame = 0, ending_frame = 50, subsample
 
     return pos_concatenated, vel_concatenated, acc_concatenated
 
-def return_deltapos_vnext(pos, vel, acc, threshold = 0.2):
+def return_deltapos_vnext(pos, vel, acc, threshold = 0.1):
     """Panel C helper"""
     pos = pos.squeeze()
     vel = vel.squeeze()
@@ -196,7 +196,8 @@ def figure_data_B(test_loader, rollout_debug_result, model = False, starting_fra
     return del_v, acc_
 
 def mean_trace_B(del_v, acc_):
-    bins = np.linspace(0,0.05,10) # Bin edge
+    #bins = np.linspace(0,0.05,10) # Bin edge
+    bins = np.linspace(0,0.02,10) # Bin edge
     indices = np.digitize(del_v, bins)
     indices_set = np.unique(indices)
     bins = bins[indices_set-1]

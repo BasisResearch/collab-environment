@@ -5,6 +5,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
+class Open3DDataset(Dataset):
+    def __init__(self, x_y_z, dist_to_landmark, configs):
+        """
+        x_y_z: list of Pandas dataframe, each of agent location x, y, and z.
+        dist_to_landmark: list of Pandas dataframe, each of agent distance to landmarks.
+        """
+        for agent_ind in range(len(x_y_z)):
+            assert len(x_y_z[agent_ind]) == len(dist_to_landmark[agent_ind])
+            self.width = configs["width"]
+            self.height = configs["height"]
+
 class AnimalTrajectoryDataset(Dataset):
     def __init__(self, init_fn, update_fn, # initialization of the animals, # updating of the animals
                  species_configs,
