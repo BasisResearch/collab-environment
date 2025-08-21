@@ -8,41 +8,73 @@ from collab_env.gnn.utility import handle_discrete_data, v_function_2_vminushalf
 from collab_env.gnn.gnn_definition import GNN, Lazy
 from collab_env.data.file_utils import expand_path, get_project_root
 from loguru import logger
+from torch_geometric.data import Data, Batch
 
 
 
-def build_edge_index(positions, visual_range):
+def build_single_graph_edges(positions, visual_range):
     """
-    Given positions of agents,
-        produce a set of edges where agents within visual_range of each other are connected.
-    positions: [B, N, 2] torch tensor (normalized position)
+    Build edge index for a single graph (not batched).
+    positions: [N, 2] torch tensor (normalized position)
     visual_range: scalar (in normalized units, e.g. 0.1-- higher is more connected)
-    Returns: edge_index [2, E] for full batch
+    Returns: edge_index [2, E] for single graph
     """
-    B, N, _ = positions.shape
+    N, _ = positions.shape
     device = positions.device
 
-    # Flatten across batch: [B*N, 2]
-    flat_pos = positions.reshape((B * N, 2))
-
     # Compute pairwise distances
-    dist = torch.cdist(flat_pos, flat_pos, p=2)  # [B*N, B*N]
+    dist = torch.cdist(positions, positions, p=2)  # [N, N]
 
-    # Only allow intra-batch connections
-    mask = torch.ones_like(dist, dtype=torch.bool, device=device)
-    for b in range(B):
-        start = b * N
-        end = (b + 1) * N
-        mask[start:end, start:end] = False  # mask self-group
-    dist[mask] = float("inf")
-
-    # Apply visual range filter
+    # Apply visual range filter and remove self-loops
     threshold = visual_range
     adj = (dist < threshold).to(torch.bool)
     adj.fill_diagonal_(False)  # remove self-loops
     edge_index = adj.nonzero(as_tuple=False).T  # [2, E]
 
-    return edge_index  # optional: return mask or edge_attr
+    return edge_index
+
+
+def build_pyg_batch(past_p, past_v, past_a, species_idx, species_dim, visual_range, node_feature_function):
+    """
+    Build PyTorch Geometric batch from individual graphs.
+    past_p, past_v, past_a: [B, F, N, D] tensors
+    species_idx: [B, N] tensor
+    Returns: PyG Batch object
+    """
+    B, F, N, D = past_p.shape
+    device = past_p.device
+    
+    data_list = []
+    
+    for b in range(B):
+        # Build edge index for this single graph
+        positions = past_p[b, -1]  # [N, D] - use latest frame
+        edge_index = build_single_graph_edges(positions, visual_range)
+        
+        # Get node features for this graph
+        node_features = node_feature_function(
+            past_p[b:b+1], past_v[b:b+1], past_a[b:b+1], 
+            species_idx[b:b+1], species_dim
+        )  # [1*N, feature_dim]
+        
+        # Create edge attributes (weights) - uniform weights for all edges
+        num_edges = edge_index.shape[1]
+        edge_attr = torch.ones(num_edges, 1, device=edge_index.device)
+        
+        # Create Data object
+        data = Data(
+            x=node_features.squeeze(0) if node_features.dim() > 2 else node_features,
+            edge_index=edge_index,
+            edge_attr=edge_attr,  # Add edge attributes
+            batch_idx=b,  # Store original batch index
+            init_pos=past_p[b, -1],  # Store initial positions [N, D]
+            init_vel=past_v[b, -1],  # Store initial velocities [N, D]
+        )
+        data_list.append(data)
+    
+    # Create PyG batch - this handles edge index offsetting automatically
+    batch = Batch.from_data_list(data_list)
+    return batch
 
 
 def node_feature_vel(past_p, past_v, past_a, species_idx, species_dim):
@@ -214,12 +246,10 @@ def normalize_by_col(N, batch_num, edge_index, return_matrix=False):
     if return_matrix:
         return A_output
 
-    # pick entries out
-    weight = [
-        A_output[edge_index[0, i], edge_index[1, i]] for i in range(edge_index.shape[1])
-    ]
+    # pick entries out - vectorized version
+    weight = A_output[edge_index[0], edge_index[1]]
 
-    return np.array(weight)
+    return weight
 
 def identify_frames(pos, vel):
     # construct lazy model prediction error
@@ -250,92 +280,66 @@ def remove_boid_interaction(edge_index, species_idx):
     edge_index_out = edge_index[:,nonboid_edge_index]
     return edge_index_out
 
-def run_gnn_frame(
-    model,
-    edge_index,
-    edge_weight,
-    past_p,
-    past_v,
-    past_a,
-    v_minushalf,
-    delta_t,
-    species_idx,
-    species_dim,
-    device=None,
-):
+def run_gnn_frame_pyg(model, pyg_batch, v_minushalf, delta_t, device=None):
     """
-    At time t * delta_t, given model, some features of position/velocity/acc of all animals from t = 0 up to t * delta_t,
-    predict (t + 1) * delta_t position/velocity/acc of all animals.
-
-    model: GNN model, see gnn_definition.py
-    edge_index and edge_weight: used to construct input graph to GNN
-    past_p, past_v, past_a: batch_num x frame_num x agent_num x dim of space: position/velocity/acc of all animals
-    v_minushalf: v_{t-1/2}, used only for Leapfrog integration.
+    Run GNN forward pass using PyTorch Geometric batch.
+    
+    model: GNN model
+    pyg_batch: PyG Batch object with x, edge_index, batch
+    v_minushalf: v_{t-1/2}, used only for Leapfrog integration
     delta_t: discrete time
-    species_idx: np array, of size (num of agents).
-    species_dim: number of kinds of agenets.
-
-    assumes edge_index, and edge_weight have all been sent to device.
+    device: compute device
+    
+    Returns: pred_pos, pred_vel, pred_acc, pred_vplushalf, W
     """
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    B, F, N, _ = past_p.shape
-    node_feature_function = model.node_feature_function
+    
+    pyg_batch = pyg_batch.to(device)
+    
     node_prediction = model.node_prediction
     prediction_integration = model.prediction_integration
-
-    if node_feature_function == "vel":
-        node_feature = node_feature_vel
-    elif node_feature_function == "vel_pos":
-        node_feature = node_feature_vel_pos
-    elif node_feature_function == "vel_pos_plus":
-        node_feature = node_feature_vel_pos_plus
-    elif node_feature_function == "vel_plus_pos_plus":
-        node_feature = node_feature_vel_plus_pos_plus
     
-    x_input = node_feature(past_p, past_v, past_a, species_idx, species_dim)
+    # Forward pass - PyG handles batching automatically!
+    pred, W = model(pyg_batch.x, pyg_batch.edge_index, pyg_batch.edge_attr.squeeze(-1))
     
-    x_input = x_input.to(device)
-    v_minushalf = torch.as_tensor(v_minushalf, device=device)
-
-    # Forward
-    pred, W = model(x_input, edge_index, edge_weight)
-
     pred = pred.to(device)
-    init_p = past_p[:, -1, :, :]
-    init_v = past_v[:, -1, :, :]
-
+    
+    # Reconstruct batch dimensions from PyG batch
+    B = pyg_batch.batch.max().item() + 1  # Number of graphs in batch
+    N = pyg_batch.batch.bincount()[0].item()  # Nodes per graph (assuming same size)
+    
     pred_pos, pred_vel, pred_vplushalf, pred_acc = None, None, None, None
-
+    
     if node_prediction == "position":
-        pred_pos = pred.contiguous().view(B, N, 2)
-
-    elif node_prediction == "acc":
-        pred_acc = pred.contiguous().view(B, N, 2)
-        pred_acc = clip_acc(pred_acc, clip=1)
-
-        if "leap" in prediction_integration:
-            """
-            # leap frog integration
+        pred_pos = pred.view(B, N, 2)
         
-            # v_{i+1/2} = v_{i-1/2} + a_i * delta_t
-            # x_{i+1} = x_{i} + v_{i+1/2} * delta_t
-            """
+    elif node_prediction == "acc":
+        pred_acc = pred.view(B, N, 2)
+        pred_acc = clip_acc(pred_acc, clip=1)
+        
+        # Extract initial positions and velocities from PyG batch
+        init_p = pyg_batch.init_pos.view(B, N, 2)
+        init_v = pyg_batch.init_vel.view(B, N, 2)
+        
+        if v_minushalf is not None:
+            v_minushalf = torch.as_tensor(v_minushalf, device=device)
+        else:
+            v_minushalf = init_v
+        
+        if "leap" in prediction_integration:
             pred_vplushalf = v_minushalf + pred_acc * delta_t
             pred_pos = init_p + pred_vplushalf * delta_t
-            pred_vel = pred_vplushalf  # init_v + pred_acc * delta_t
+            pred_vel = pred_vplushalf
         else:
-            """
-            Euler as default
-            """
             pred_vel = init_v + pred_acc * delta_t
             pred_pos = init_p + pred_vel * delta_t
-
+            
     elif node_prediction == "velocity":
-        pred_vel = pred.contiguous().view(B, N, 2)
-        pred_pos = init_p + pred_vel  # TO DO: use other integration
-
+        pred_vel = pred.view(B, N, 2)
+        init_p = pyg_batch.init_pos.view(B, N, 2)
+        pred_pos = init_p + pred_vel
+    
     return pred_pos, pred_vel, pred_acc, pred_vplushalf, W
 
 def run_gnn(model,
@@ -408,6 +412,19 @@ def run_gnn(model,
     
     device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+    # Determine node feature function
+    node_feature_function_name = model.node_feature_function
+    if node_feature_function_name == "vel":
+        node_feature = node_feature_vel
+    elif node_feature_function_name == "vel_pos":
+        node_feature = node_feature_vel_pos
+    elif node_feature_function_name == "vel_pos_plus":
+        node_feature = node_feature_vel_pos_plus
+    elif node_feature_function_name == "vel_plus_pos_plus":
+        node_feature = node_feature_vel_plus_pos_plus
+    else:
+        raise ValueError(f"Unknown node feature function: {node_feature_function_name}")
+
     frames = identify_frames(pos, vel)     
     if full_frames:
         frames = np.arange(Frame-1)
@@ -452,20 +469,18 @@ def run_gnn(model,
         target_acc = acc[:, frame_next]
         species_idx = species_idx.to(device)    # [S, N]
 
-        # build graph
-        edge_index = build_edge_index(past_p[:, -1, :, :], visual_range = visual_range)
-        if ablate_boid_interaction:
-            edge_index = remove_boid_interaction(edge_index, species_idx)
+        # build PyG batch - much simpler!
+        pyg_batch = build_pyg_batch(
+            past_p, past_v, past_a, species_idx, species_dim, 
+            visual_range, node_feature
+        )
         
-        edge_weight = normalize_by_col(N, S, edge_index)
+        if ablate_boid_interaction:
+            # TODO: Implement for PyG batch if needed
+            pass
 
-        edge_index = torch.as_tensor(edge_index, device=device)
-        edge_weight = torch.as_tensor(edge_weight, device=device)     
-
-        (pred_pos, pred_vel, pred_acc, pred_vplushalf, W) = run_gnn_frame(
-                        model, edge_index, edge_weight,
-                        past_p, past_v, past_a, vminushalf, delta_t,
-                        species_idx, species_dim, device)
+        (pred_pos, pred_vel, pred_acc, pred_vplushalf, W) = run_gnn_frame_pyg(
+                        model, pyg_batch, vminushalf, delta_t, device)
         #print("pred_pos.shape", pred_pos.shape)
         #print("target_pos.shape", target_pos.shape)
         #print("pred_pos.shape", pred_pos.shape)

@@ -75,13 +75,14 @@ def train_single_config(params):
     
     worker_logger.debug(f"Device {device}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
 
-    # Debug: Print actual GPU being used
-    if torch.cuda.is_available():
+    # Debug: Print actual device being used
+    if torch.cuda.is_available() and device.type == 'cuda':
+        # Only set default device for CUDA devices
         torch.set_default_device(device)
         current_device = torch.cuda.current_device()
-        worker_logger.debug(f"GPU count {gpu_count},  current_device={current_device}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
+        worker_logger.debug(f"GPU count {gpu_count}, current_device={current_device}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
     else:
-        worker_logger.debug(f"CUDA NOT AVAILABLE! gpu count {gpu_count}, using CPU, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
+        worker_logger.debug(f"Using CPU device, gpu_count={gpu_count}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
     try:
         # Load dataset
         file_name = f'{data_name}.pt'
@@ -212,12 +213,15 @@ def train_single_config(params):
 
 
 def main():
-    # Set multiprocessing start method to 'spawn' for CUDA
+    # Set multiprocessing start method - 'spawn' is safer for CUDA, but 'fork' can be faster for CPU
     import multiprocessing
     try:
-        multiprocessing.set_start_method('spawn', force=True)
+        # Use 'spawn' for better CUDA compatibility, fallback to default for CPU-only
+        preferred_method = 'spawn' if torch.cuda.is_available() else None
+        if preferred_method:
+            multiprocessing.set_start_method(preferred_method, force=True)
     except RuntimeError:
-        pass  # Already set
+        pass  # Already set or not supported on this platform
     
     parser = argparse.ArgumentParser(description="Maximize GPU utilization with concurrent training")
     parser.add_argument("--dataset", type=str, default="boid_single_species_basic",
@@ -361,22 +365,44 @@ def main():
             for params in all_params
         }
         
-        # Collect results as they complete
+        # Collect results as they complete with timeout to prevent hanging
         completed = 0
-        for future in concurrent.futures.as_completed(future_to_params):
-            result = future.result()
-            results.append(result)
-            completed += 1
-            
-            # Progress update with GPU distribution
-            if completed % 10 == 0 or completed == len(all_params):
-                elapsed = (datetime.now() - start_time).total_seconds() / 60
-                gpu_dist = {}
-                for r in results:
-                    if 'gpu_id' in r and r['gpu_id'] >= 0:
-                        gpu_dist[r['gpu_id']] = gpu_dist.get(r['gpu_id'], 0) + 1
-                gpu_info = " | ".join([f"GPU{k}:{v}" for k, v in sorted(gpu_dist.items())])
-                logger.info(f"Progress: {completed}/{len(all_params)} | Elapsed: {elapsed:.1f} min | Distribution: {gpu_info}")
+        try:
+            for future in concurrent.futures.as_completed(future_to_params, timeout=3600):  # 1 hour timeout
+                result = future.result()
+                results.append(result)
+                completed += 1
+                
+                # Progress update with worker distribution
+                if completed % 10 == 0 or completed == len(all_params):
+                    elapsed = (datetime.now() - start_time).total_seconds() / 60
+                    
+                    # Count GPU vs CPU workers
+                    gpu_workers = {}
+                    cpu_workers = 0
+                    for r in results:
+                        if 'gpu_id' in r:
+                            if r['gpu_id'] >= 0:
+                                gpu_workers[r['gpu_id']] = gpu_workers.get(r['gpu_id'], 0) + 1
+                            else:
+                                cpu_workers += 1
+                    
+                    # Build distribution info
+                    dist_parts = []
+                    if gpu_workers:
+                        gpu_info = " | ".join([f"GPU{k}:{v}" for k, v in sorted(gpu_workers.items())])
+                        dist_parts.append(gpu_info)
+                    if cpu_workers > 0:
+                        dist_parts.append(f"CPU:{cpu_workers}")
+                    
+                    distribution = " | ".join(dist_parts) if dist_parts else "None"
+                    logger.info(f"Progress: {completed}/{len(all_params)} | Elapsed: {elapsed:.1f} min | Distribution: {distribution}")
+                    
+        except concurrent.futures.TimeoutError:
+            logger.error("Training timed out after 1 hour. Some workers may be stuck.")
+            # Cancel remaining futures
+            for future in future_to_params:
+                future.cancel()
     
     # Save results
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
