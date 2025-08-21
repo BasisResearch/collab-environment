@@ -4,7 +4,7 @@ import numpy as np
 import pickle
 import matplotlib.pyplot as plt
 from collab_env.gnn.utility import handle_discrete_data, v_function_2_vminushalf
-import gc  # Keep import but commented out usage for performance
+# import gc  # Commented out - not used when gc.collect() is disabled
 from collab_env.gnn.gnn_definition import GNN, Lazy
 from collab_env.data.file_utils import expand_path, get_project_root
 from loguru import logger
@@ -114,7 +114,6 @@ def node_feature_vel_pos_plus(
         [x_vel, x_pos, x_pos_boundary, species_onehot], dim=-1
     )  # [S*N, in_node_dim]
 
-    # Commented out for performance - variables will be garbage collected automatically
     # del x_vel
     # del x_pos
     # del x_pos_boundary
@@ -152,7 +151,6 @@ def node_feature_vel_plus_pos_plus(
         [x_vel, x_pos, x_pos_boundary, species_onehot], dim=-1
     )  # [S*N, in_node_dim]
 
-    # Commented out for performance - variables will be garbage collected automatically
     # del x_vel
     # del x_pos
     # del x_pos_boundary
@@ -513,18 +511,16 @@ def run_gnn(model,
             debug_result["predicted_acc"].append(pred_acc_.detach().cpu().numpy())
             debug_result["actual_acc"].append(target_acc.detach().cpu().numpy())
 
-        # Commented out for performance - may re-enable if memory issues occur
         # del pred_pos_
         # del pred_vel_
         # del pred_acc_
 
-    # Commented out for performance - PyTorch handles memory efficiently
     # del pos
     # del vel
     # del acc
     # del vminushalf
     # del v_function
-    # gc.collect()  # Causes CPU-GPU sync and unnecessary overhead
+    # gc.collect()
 
     return batch_loss, debug_result, model
 
