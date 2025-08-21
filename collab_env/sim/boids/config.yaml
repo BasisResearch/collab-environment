@@ -1,7 +1,7 @@
 
 simulator:
-  seed: [1250, 399, 551, 399, 330, 483, 907, 157, 500, 723] # one seed required for each episode
-  walking: True
+  seed: [1250] # one seed required for each episode
+  walking: False
   num_agents: 20
   num_targets: 1
   num_ground_targets: 1
@@ -11,7 +11,7 @@ simulator:
   num_episodes: 1
   num_frames: 3000
   target_creation_time: 500 # min is 1, which creates the target at the beginning of the episode.
-  show_box: False # should move this to visuals
+  show_box: False
   # run_main_folder: "collab_env/sim/runs"
   run_main_folder: "sim-output"
   run_sub_folder_prefix: "boids_sim_run"
@@ -28,7 +28,7 @@ visuals:
   video_fps: 30
   video_file_extension: 'mp4'
   agent_shape: 'sphere'
-  agent_color: [0, 0, 1]
+  agent_color: [0.18995, 0.07176, 0.23217]
   agent_scale: 5.0
   target_scale: 0.5
   target_mesh_init_color: [1,0,1]
@@ -36,7 +36,7 @@ visuals:
 
 tracks:
   color_by_time: True
-  number_of_color_groups: 200
+  number_of_color_groups: 1500
   track_color_rate: 1
 
 
@@ -62,9 +62,9 @@ agent:
   alignment_weight: 1.0
   cohesion_weight: 0.5
   ground_weight: 0.0
-  target_weight: [0.02]
-  max_speed: 1.5
-  min_speed: 0.5
+  target_weight: [0.002]
+  max_speed: 1.0
+  min_speed: 0.1
   max_force: 0.1
   mean_init_velocity: 0.0
   variance_init_velocity: 0.5
@@ -94,8 +94,8 @@ meshes:
 
 files:
     output_folder_prefix: 'boids_sim_runs' # which of these am I using?
-    trajectory_file:  'all' # 'episode-0-completed-20250818-132529.parquet'
-    trajectory_folder: 'sim-output/boids_sim_run-started-20250818-192228'
+    trajectory_file: 'episode-0-completed-20250818-132529.parquet'
+    trajectory_folder: 'sim-output/boids_sim_run-started-20250818-131217'
 
 logging:
   logfile_prefix: 'logfile'
