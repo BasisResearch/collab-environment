@@ -29,7 +29,7 @@ from collab_env.data.file_utils import expand_path, get_project_root
 def worker_wrapper(params):
     """Wrapper to set environment before calling actual training function"""
     import os
-    data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs = params
+    data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction = params
     
     # Set CUDA_VISIBLE_DEVICES in this process before CUDA is initialized
     if gpu_count > 0:
@@ -45,7 +45,7 @@ def worker_wrapper(params):
 
 def train_single_config(params):
     """Train a single configuration - runs on any available GPU"""
-    data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs = params
+    data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction = params
     
     # Determine device and worker label
     if gpu_count > 0:
@@ -80,6 +80,14 @@ def train_single_config(params):
         # Only set default device for CUDA devices
         torch.set_default_device(device)
         current_device = torch.cuda.current_device()
+        
+        # Set GPU memory fraction for better multi-worker performance
+        torch.cuda.set_per_process_memory_fraction(memory_fraction, device=device)
+        worker_logger.debug(f"Set GPU memory fraction to {memory_fraction}")
+        
+        # Enable cudnn autotuner for better performance
+        torch.backends.cudnn.benchmark = True
+        
         worker_logger.debug(f"GPU count {gpu_count}, current_device={current_device}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
     else:
         worker_logger.debug(f"Using CPU device, gpu_count={gpu_count}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
@@ -152,6 +160,14 @@ def train_single_config(params):
         worker_logger.debug(f"Moving model to device {device}")
         # Move model to correct device
         model = model.to(device)
+        
+        # Compile model for faster execution if requested
+        if compile_model and device.type == 'cuda':
+            try:
+                worker_logger.debug("Compiling model with torch.compile()")
+                model = torch.compile(model, mode='reduce-overhead')
+            except Exception as e:
+                worker_logger.warning(f"Model compilation failed: {e}, continuing without compilation")
         
         worker_logger.debug(f"Training model")
         # Train
@@ -226,14 +242,14 @@ def main():
     parser = argparse.ArgumentParser(description="Maximize GPU utilization with concurrent training")
     parser.add_argument("--dataset", type=str, default="boid_single_species_basic",
                        help="Dataset to use (default: boid_single_species_basic)")
-    parser.add_argument("--workers-per-gpu", type=int, default=3,
-                       help="Number of concurrent jobs per GPU (default: 3)")
+    parser.add_argument("--workers-per-gpu", type=int, default=4,
+                       help="Number of concurrent jobs per GPU (default: 4 - optimized for RTX 4090)")
     parser.add_argument("--max-workers", type=int, default=None,
                        help="Override total number of workers (ignores workers-per-gpu)")
     parser.add_argument("--seeds", type=int, default=5,
                        help="Number of seeds (default: 5)")
-    parser.add_argument("--batch-size", type=int, default=5,
-                       help="Batch size for training (default: 5)")
+    parser.add_argument("--batch-size", type=int, default=16,
+                       help="Batch size for training (default: 16 - optimized for RTX 4090)")
     parser.add_argument("--epochs", type=int, default=1,
                        help="Number of epochs for training (default: 1)")
     parser.add_argument("--test", action="store_true",
@@ -242,6 +258,10 @@ def main():
                        help="Force CPU-only training, ignore GPU even if available")
     parser.add_argument("--cpu-optimize", action="store_true",
                        help="Apply CPU optimizations for CUDA-enabled PyTorch builds")
+    parser.add_argument("--compile", action="store_true",
+                       help="Enable PyTorch 2.0 compilation for faster execution")
+    parser.add_argument("--memory-fraction", type=float, default=0.9,
+                       help="GPU memory fraction to allocate (default: 0.9)")
     
     args = parser.parse_args()
     
@@ -329,7 +349,8 @@ def main():
                 for vr in visual_ranges:
                     for seed in seeds:
                         all_params.append(
-                            (args.dataset, model, noise, head, vr, seed, gpu_count, worker_id, args.batch_size, args.epochs)
+                            (args.dataset, model, noise, head, vr, seed, gpu_count, worker_id, 
+                             args.batch_size, args.epochs, args.compile, args.memory_fraction)
                         )
                         worker_id += 1
     
@@ -340,7 +361,7 @@ def main():
     if gpu_count > 0:
         logger.info("GPU Assignment Plan:")
         for i in range(min(8, len(all_params))):  # Show first 8 assignments
-            _, model, noise, head, vr, seed, _, wid, batch_size, epochs = all_params[i]
+            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _ = all_params[i]
             assigned_gpu = wid % gpu_count
             logger.debug(f"  Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs})")
         if len(all_params) > 8:
@@ -348,7 +369,7 @@ def main():
     else:
         logger.info("CPU Training Plan:")
         for i in range(min(8, len(all_params))):  # Show first 8 assignments
-            _, model, noise, head, vr, seed, _, wid, batch_size, epochs = all_params[i]
+            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _ = all_params[i]
             logger.debug(f"  Config {wid:02d} -> CPU: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs})")
         if len(all_params) > 8:
             logger.debug(f"  ... and {len(all_params) - 8} more configurations")
