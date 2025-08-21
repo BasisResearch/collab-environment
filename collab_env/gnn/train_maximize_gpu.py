@@ -163,7 +163,8 @@ def train_single_config(params):
             training=training,
             sigma=noise,
             device=device,
-            train_logger=worker_logger
+            train_logger=worker_logger,
+            collect_debug=False  # Disable debug to avoid CPU transfers
         )
         
         worker_logger.debug(f"Saving model")

@@ -4,7 +4,7 @@ import numpy as np
 import pickle
 import matplotlib.pyplot as plt
 from collab_env.gnn.utility import handle_discrete_data, v_function_2_vminushalf
-import gc
+import gc  # Keep import but commented out usage for performance
 from collab_env.gnn.gnn_definition import GNN, Lazy
 from collab_env.data.file_utils import expand_path, get_project_root
 from loguru import logger
@@ -114,10 +114,11 @@ def node_feature_vel_pos_plus(
         [x_vel, x_pos, x_pos_boundary, species_onehot], dim=-1
     )  # [S*N, in_node_dim]
 
-    del x_vel
-    del x_pos
-    del x_pos_boundary
-    del species_onehot
+    # Commented out for performance - variables will be garbage collected automatically
+    # del x_vel
+    # del x_pos
+    # del x_pos_boundary
+    # del species_onehot
 
     return x_input
 
@@ -151,10 +152,11 @@ def node_feature_vel_plus_pos_plus(
         [x_vel, x_pos, x_pos_boundary, species_onehot], dim=-1
     )  # [S*N, in_node_dim]
 
-    del x_vel
-    del x_pos
-    del x_pos_boundary
-    del species_onehot
+    # Commented out for performance - variables will be garbage collected automatically
+    # del x_vel
+    # del x_pos
+    # del x_pos_boundary
+    # del species_onehot
 
     return x_input
 
@@ -349,7 +351,8 @@ def run_gnn(model,
             full_frames = False,
             rollout = -1,
             rollout_everyother = -1,
-            ablate_boid_interaction = False):
+            ablate_boid_interaction = False,
+            collect_debug = True):
     """
     This functions calls run_gnn_frame()
     training: set to True if training, set to false to test on heldout dataset.
@@ -501,24 +504,27 @@ def run_gnn(model,
             vminushalf = add_noise(vminushalf, sigma)
             
         # # Debug: show sample boid before/after
-        debug_result["predicted"].append(pred_pos_.detach().cpu().numpy())
-        debug_result["actual"].append(target_pos.detach().cpu().numpy())
-        # if training:
-        debug_result["loss"].append(loss.detach().cpu().numpy())
-        debug_result["W"].append(W)
-        debug_result["predicted_acc"].append(pred_acc_.detach().cpu().numpy())
-        debug_result["actual_acc"].append(target_acc.detach().cpu().numpy())
+        if collect_debug:
+            debug_result["predicted"].append(pred_pos_.detach().cpu().numpy())
+            debug_result["actual"].append(target_pos.detach().cpu().numpy())
+            # if training:
+            debug_result["loss"].append(loss.detach().cpu().numpy())
+            debug_result["W"].append(W)
+            debug_result["predicted_acc"].append(pred_acc_.detach().cpu().numpy())
+            debug_result["actual_acc"].append(target_acc.detach().cpu().numpy())
 
-        del pred_pos_
-        del pred_vel_
-        del pred_acc_
+        # Commented out for performance - may re-enable if memory issues occur
+        # del pred_pos_
+        # del pred_vel_
+        # del pred_acc_
 
-    del pos
-    del vel
-    del acc
-    del vminushalf
-    del v_function
-    gc.collect()
+    # Commented out for performance - PyTorch handles memory efficiently
+    # del pos
+    # del vel
+    # del acc
+    # del vminushalf
+    # del v_function
+    # gc.collect()  # Causes CPU-GPU sync and unnecessary overhead
 
     return batch_loss, debug_result, model
 
@@ -537,7 +543,8 @@ def train_rules_gnn(
     rollout = -1,
     rollout_everyother = -1,
     ablate_boid_interaction = False,
-    train_logger = None
+    train_logger = None,
+    collect_debug = False
 ):
     if train_logger is None:
         train_logger = logger
@@ -590,7 +597,8 @@ def train_rules_gnn(
                 full_frames = full_frames,
                 rollout = rollout,
                 rollout_everyother = rollout_everyother,
-                ablate_boid_interaction = ablate_boid_interaction)
+                ablate_boid_interaction = ablate_boid_interaction,
+                collect_debug = collect_debug)
 
             train_losses_by_batch.append(loss)
 

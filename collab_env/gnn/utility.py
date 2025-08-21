@@ -67,7 +67,7 @@ def finite_diff(time, position, query=None):
 
     velocity_fit = np.zeros(position.shape)
 
-    velocity_fit[1:] = torch.diff(position).detach().cpu().numpy()
+    velocity_fit[1:] = torch.diff(position).detach().numpy()
     spline_velocity = UnivariateSpline(time, velocity_fit, s=0)
 
     return spline_velocity
@@ -139,11 +139,13 @@ def dataset2testloader(dataset, batch_size = 1, return_train = 0, device = None)
     # right now we assume the batch_size = 1, because our real dataset are of different lengths.
     # But we can expand to minibatches - except fpr a few specific functions, every function is written with minibatches in mind.
     test_loader = DataLoader(test_dataset,
-                             batch_size = batch_size, shuffle=False)
+                             batch_size = batch_size, shuffle=False, 
+                             num_workers=4, pin_memory=True)
 
     if return_train:
         train_loader = DataLoader(train_dataset,
-                             batch_size = batch_size, shuffle=False)
+                             batch_size = batch_size, shuffle=False,
+                             num_workers=4, pin_memory=True)
         return test_loader, train_loader
     
     return test_loader
