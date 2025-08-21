@@ -34,7 +34,7 @@ def worker_wrapper(params):
     # Set CUDA_VISIBLE_DEVICES in this process before CUDA is initialized
     if gpu_count > 0:
         gpu_id = worker_id % gpu_count
-        os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
+        # os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
         logger.debug(f"Worker {worker_id} assigned to GPU {gpu_id}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
     else:
         logger.debug(f"Worker {worker_id} assigned to CPU")
@@ -92,6 +92,7 @@ def train_single_config(params):
             expand_path(f"simulated_data/{file_name}", get_project_root()),
             weights_only=False
         )
+        worker_logger.debug(f"Dataset loaded, length: {len(dataset)}, batch size: {batch_size}")
         worker_logger.debug(f"Loading species configs {config_name}")
         species_configs = torch.load(
             expand_path(f"simulated_data/{config_name}", get_project_root()),
@@ -167,11 +168,12 @@ def train_single_config(params):
             collect_debug=False  # Disable debug to avoid CPU transfers
         )
         
-        worker_logger.debug(f"Saving model")
         # Save model
         model_spec = {"model_name": model_name, "heads": heads}
         train_spec = {"visual_range": visual_range, "sigma": noise, "epochs": epochs}
         save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
+
+        worker_logger.debug(f"Saving model {save_name}")
         save_model(trained_model, model_spec, train_spec, save_name)
         
         # Return result
