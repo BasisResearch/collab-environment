@@ -42,6 +42,9 @@ def spline_data(position):
 
 
 def v_function_2_vminushalf(v_function, frame):
+    if v_function is None:
+        return None
+        
     B = len(v_function.keys())
     N = len(v_function[0].keys())
     D = len(v_function[0][0])
@@ -85,14 +88,7 @@ def finite_diff_data(position):
     v[:, 1:, :, :] = torch.diff(position, axis=1)
     a[:, :-1, :, :] = torch.diff(v, axis=1)
 
-    for b in range(B):
-        v_function[b] = {}
-        for n in range(N):
-            v_function[b][n] = {}
-            for d in range(dim):
-                v_function[b][n][d] = finite_diff(time, position[b, :, n, d])
-
-    return position, v, a, v_function
+    return position, v, a, None
 
 
 def fit_spline_to_data(time, position, query=None):
