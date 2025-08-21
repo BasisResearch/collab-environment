@@ -536,7 +536,11 @@ def train_rules_gnn(
     aux_data = None,
     rollout = -1,
     rollout_everyother = -1,
-    ablate_boid_interaction = False):
+    ablate_boid_interaction = False,
+    train_logger = None
+):
+    if train_logger is None:
+        train_logger = logger
     
     device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = model.to(device)
@@ -560,7 +564,7 @@ def train_rules_gnn(
 
         # Only log epoch start for longer training
         if epochs > 5:
-            logger.debug(f"Starting epoch {ep+1}/{epochs}")
+            train_logger.debug(f"Starting epoch {ep+1}/{epochs}")
 
         debug_result_all[ep] = {}
         
@@ -592,7 +596,7 @@ def train_rules_gnn(
 
         train_losses.append(train_losses_by_batch)
         if ep % 50 == 0 or ep == epochs - 1:
-            logger.debug(f"Epoch {ep:03d} | Train: {np.mean(train_losses[-1]):.4f}")
+            train_logger.debug(f"Epoch {ep:03d} | Train: {np.mean(train_losses[-1]):.4f}")
 
     return np.array(train_losses), model, debug_result_all
 

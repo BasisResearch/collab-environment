@@ -131,7 +131,7 @@ def train_single_config(params):
                 start_frame=3,
                 heads=heads
             )
-            epochs = 1  # Fixed for now, make it a parameter if needed
+            epochs = 20  # Fixed for now, make it a parameter if needed
             lr = 1e-4
             training = True
         
@@ -164,7 +164,8 @@ def train_single_config(params):
             lr=lr,
             training=training,
             sigma=noise,
-            device=device
+            device=device,
+            train_logger=worker_logger
         )
         
         worker_logger.debug(f"Saving model")
