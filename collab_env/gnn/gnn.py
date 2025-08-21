@@ -557,7 +557,7 @@ def train_rules_gnn(
         model.train()
     
     if rollout > 0:
-        logger.debug("rolling out...")
+        train_logger.debug("rolling out...")
         
     for ep in range(epochs):
         torch.cuda.empty_cache()
@@ -573,7 +573,7 @@ def train_rules_gnn(
         for batch_idx, (position, species_idx) in enumerate(dataloader):
             # Only log every 10th batch to reduce noise
             if (batch_idx % 10 == 0) or (batch_idx == len(dataloader) - 1):
-                logger.debug(f"Processing batch {batch_idx}/{len(dataloader)}")
+                train_logger.debug(f"Processing batch {batch_idx}/{len(dataloader)}")
 
             S, Frame, N, _ = position.shape
 
