@@ -29,7 +29,7 @@ from collab_env.data.file_utils import expand_path, get_project_root
 def worker_wrapper(params):
     """Wrapper to set environment before calling actual training function"""
     import os
-    data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id = params
+    data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs = params
     
     # Set CUDA_VISIBLE_DEVICES in this process before CUDA is initialized
     if gpu_count > 0:
@@ -45,7 +45,7 @@ def worker_wrapper(params):
 
 def train_single_config(params):
     """Train a single configuration - runs on any available GPU"""
-    data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id = params
+    data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs = params
     
     # Determine device and worker label
     if gpu_count > 0:
@@ -100,7 +100,7 @@ def train_single_config(params):
         
         worker_logger.debug(f"Creating test and train loaders")
         test_loader, train_loader = dataset2testloader(
-            dataset, batch_size=5, return_train=True, device=device
+            dataset, batch_size=batch_size, return_train=True, device=device
         )
         
         # Create model
@@ -117,7 +117,6 @@ def train_single_config(params):
                 start_frame=3,
                 heads=1
             )
-            epochs = 1
             lr = None
             training = False
         else:
@@ -131,7 +130,6 @@ def train_single_config(params):
                 start_frame=3,
                 heads=heads
             )
-            epochs = 20  # Fixed for now, make it a parameter if needed
             lr = 1e-4
             training = True
         
@@ -225,6 +223,10 @@ def main():
                        help="Number of concurrent jobs per GPU (default: 3)")
     parser.add_argument("--seeds", type=int, default=5,
                        help="Number of seeds (default: 5)")
+    parser.add_argument("--batch-size", type=int, default=5,
+                       help="Batch size for training (default: 5)")
+    parser.add_argument("--epochs", type=int, default=1,
+                       help="Number of epochs for training (default: 1)")
     parser.add_argument("--test", action="store_true",
                        help="Quick test with minimal parameters")
     
@@ -244,6 +246,8 @@ def main():
     logger.info("GPU UTILIZATION MAXIMIZER")
     logger.info("="*60)
     logger.info(f"Dataset: {args.dataset}")
+    logger.info(f"Batch size: {args.batch_size}")
+    logger.info(f"Epochs: {args.epochs}")
     logger.info(f"GPUs available: {gpu_count}")
     
     if gpu_count > 0:
@@ -279,7 +283,7 @@ def main():
                 for vr in visual_ranges:
                     for seed in seeds:
                         all_params.append(
-                            (args.dataset, model, noise, head, vr, seed, gpu_count, worker_id)
+                            (args.dataset, model, noise, head, vr, seed, gpu_count, worker_id, args.batch_size, args.epochs)
                         )
                         worker_id += 1
     
@@ -289,9 +293,9 @@ def main():
     # Show GPU assignment plan
     logger.info("GPU Assignment Plan:")
     for i in range(min(8, len(all_params))):  # Show first 8 assignments
-        _, model, noise, head, vr, seed, _, wid = all_params[i]
+        _, model, noise, head, vr, seed, _, wid, batch_size, epochs = all_params[i]
         assigned_gpu = wid % gpu_count if gpu_count > 0 else -1
-        logger.debug(f"  Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed}")
+        logger.debug(f"  Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs})")
     if len(all_params) > 8:
         logger.debug(f"  ... and {len(all_params) - 8} more configurations")
     logger.info("="*60)
