@@ -436,8 +436,11 @@ def run_gnn(model,
             v = vel[:, frame_next]  # 1 step ahead
             p = pos[:, frame_next]  # 1 step ahead
             a = acc[:, frame_next]  # 1 step ahead
-            vminushalf = v_function_2_vminushalf(v_function, frame) #v_t-1/2
-            vminushalf = torch.as_tensor(vminushalf, device=device)
+            if v_function is not None:
+                vminushalf = v_function_2_vminushalf(v_function, frame) #v_t-1/2
+                vminushalf = torch.as_tensor(vminushalf, device=device)
+            else:
+                vminushalf = v  # Use current velocity as fallback
             if training:
                 p,v,a = add_noise(p, sigma), add_noise(v, sigma), add_noise(a, sigma)
                 vminushalf = add_noise(vminushalf, sigma)
@@ -494,8 +497,11 @@ def run_gnn(model,
             v = vel[:, frame_next]  # 1 step ahead
             p = pos[:, frame_next]  # 1 step ahead
             a = acc[:, frame_next]  # 1 step ahead
-            vminushalf = v_function_2_vminushalf(v_function, frame)
-            vminushalf = torch.as_tensor(vminushalf, device=device) #v_t-1/2
+            if v_function is not None:
+                vminushalf = v_function_2_vminushalf(v_function, frame)
+                vminushalf = torch.as_tensor(vminushalf, device=device) #v_t-1/2
+            else:
+                vminushalf = v  # Use current velocity as fallback
         
         if training:
             p,v,a = add_noise(p, sigma), add_noise(v, sigma), add_noise(a, sigma)
