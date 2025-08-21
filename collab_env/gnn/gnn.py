@@ -54,12 +54,12 @@ def node_feature_vel(past_p, past_v, past_a, species_idx, species_dim):
     S, N, dim = init_p.shape
 
     # Flatten
-    x_vel = init_v.view(S * N, dim)
-    x_pos = init_p.view(S * N, dim)
+    x_vel = init_v.contiguous().view(S * N, dim)
+    x_pos = init_p.contiguous().view(S * N, dim)
     x_pos_boundary = torch.maximum(
         1 - x_pos, torch.ones_like(x_pos) * 0.5
     )  # as in Allen et al., CoRL 2022
-    x_species = species_idx.view(S * N)
+    x_species = species_idx.contiguous().view(S * N)
     species_onehot = functional.one_hot(x_species, num_classes=species_dim).float()
     x_input = torch.cat(
         [x_vel, x_pos_boundary, species_onehot], dim=-1
@@ -77,12 +77,12 @@ def node_feature_vel_pos(past_p, past_v, past_a, species_idx, species_dim):
     S, N, dim = init_p.shape
 
     # Flatten
-    x_vel = init_v.view(S * N, dim)
-    x_pos = init_p.view(S * N, dim)
+    x_vel = init_v.contiguous().view(S * N, dim)
+    x_pos = init_p.contiguous().view(S * N, dim)
     x_pos_boundary = torch.maximum(
         1 - x_pos, torch.ones_like(x_pos) * 0.5
     )  # as in Allen et al., CoRL 2022
-    x_species = species_idx.view(S * N)
+    x_species = species_idx.contiguous().view(S * N)
     species_onehot = functional.one_hot(x_species, num_classes=species_dim).float()
     x_input = torch.cat(
         [x_vel, x_pos, x_pos_boundary, species_onehot], dim=-1
@@ -103,12 +103,12 @@ def node_feature_vel_pos_plus(
     past_p = torch.permute(past_p, [0, 2, 1, 3])
 
     # Flatten
-    x_vel = init_v.view(S * N, dim)
-    x_pos = past_p.reshape((S * N, past_time * dim))
+    x_vel = init_v.contiguous().view(S * N, dim)
+    x_pos = past_p.contiguous().view((S * N, past_time * dim))
     x_pos_boundary = torch.maximum(
         1 - x_pos, torch.ones_like(x_pos) * 0.5
     )  # as in Allen et al., CoRL 2022
-    x_species = species_idx.view(S * N)
+    x_species = species_idx.contiguous().view(S * N)
     species_onehot = functional.one_hot(x_species, num_classes=species_dim).float()
     x_input = torch.cat(
         [x_vel, x_pos, x_pos_boundary, species_onehot], dim=-1
@@ -138,13 +138,13 @@ def node_feature_vel_plus_pos_plus(
     past_v = torch.permute(past_v, [0, 2, 1, 3])
 
     # Flatten
-    x_vel = past_v.reshape((S * N, past_time * dim))
-    x_pos = past_p.reshape((S * N, past_time * dim))
+    x_vel = past_v.contiguous().view((S * N, past_time * dim))
+    x_pos = past_p.contiguous().view((S * N, past_time * dim))
     x_pos_boundary = torch.maximum(
         1 - x_pos, torch.ones_like(x_pos) * 0.5
     )  # as in Allen et al., CoRL 2022
 
-    x_species = species_idx.view(S * N)
+    x_species = species_idx.contiguous().view(S * N)
     species_onehot = functional.one_hot(x_species, num_classes=species_dim).float()
 
     x_input = torch.cat(
@@ -307,10 +307,10 @@ def run_gnn_frame(
     pred_pos, pred_vel, pred_vplushalf, pred_acc = None, None, None, None
 
     if node_prediction == "position":
-        pred_pos = pred.view(B, N, 2)
+        pred_pos = pred.contiguous().view(B, N, 2)
 
     elif node_prediction == "acc":
-        pred_acc = pred.view(B, N, 2)
+        pred_acc = pred.contiguous().view(B, N, 2)
         pred_acc = clip_acc(pred_acc, clip=1)
 
         if "leap" in prediction_integration:
@@ -331,7 +331,7 @@ def run_gnn_frame(
             pred_pos = init_p + pred_vel * delta_t
 
     elif node_prediction == "velocity":
-        pred_vel = pred.view(B, N, 2)
+        pred_vel = pred.contiguous().view(B, N, 2)
         pred_pos = init_p + pred_vel  # TO DO: use other integration
 
     return pred_pos, pred_vel, pred_acc, pred_vplushalf, W
@@ -568,7 +568,7 @@ def train_rules_gnn(
 
         for batch_idx, (position, species_idx) in enumerate(dataloader):
             # Only log every 10th batch to reduce noise
-            if batch_idx % 10 == 0:
+            if (batch_idx % 10 == 0) or (batch_idx == len(dataloader) - 1):
                 logger.debug(f"Processing batch {batch_idx}/{len(dataloader)}")
 
             S, Frame, N, _ = position.shape
