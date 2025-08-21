@@ -164,6 +164,11 @@ def train_single_config(params):
         # Compile model for faster execution if requested
         if compile_model and device.type == 'cuda':
             try:
+                worker_logger.debug("Configuring torch for compilation optimizations")
+                # Set float32 matmul precision for better performance
+                torch.set_float32_matmul_precision('high')
+                # Skip dynamic CUDA graphs to avoid overhead from many distinct shapes
+                torch._inductor.config.triton.cudagraph_skip_dynamic_graphs = True
                 worker_logger.debug("Compiling model with torch.compile()")
                 model = torch.compile(model, mode='reduce-overhead')
             except Exception as e:
