@@ -224,6 +224,8 @@ def main():
                        help="Dataset to use (default: boid_single_species_basic)")
     parser.add_argument("--workers-per-gpu", type=int, default=3,
                        help="Number of concurrent jobs per GPU (default: 3)")
+    parser.add_argument("--max-workers", type=int, default=None,
+                       help="Override total number of workers (ignores workers-per-gpu)")
     parser.add_argument("--seeds", type=int, default=5,
                        help="Number of seeds (default: 5)")
     parser.add_argument("--batch-size", type=int, default=5,
@@ -234,6 +236,8 @@ def main():
                        help="Quick test with minimal parameters")
     parser.add_argument("--cpu-only", action="store_true",
                        help="Force CPU-only training, ignore GPU even if available")
+    parser.add_argument("--cpu-optimize", action="store_true",
+                       help="Apply CPU optimizations for CUDA-enabled PyTorch builds")
     
     args = parser.parse_args()
     
@@ -243,6 +247,17 @@ def main():
               format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>\n",
               level="DEBUG",
               enqueue=True)  # Thread-safe logging without JSON
+    
+    # Apply CPU optimizations if requested
+    if args.cpu_optimize or args.cpu_only:
+        logger.info("Applying CPU optimizations...")
+        # Disable CUDA memory allocator for CPU tensors
+        os.environ['PYTORCH_NO_CUDA_MEMORY_CACHING'] = '1'
+        # Use CPU-optimized allocator
+        os.environ['MALLOC_CONF'] = 'background_thread:true,metadata_thp:auto'
+        # Optimize threading
+        torch.set_num_threads(min(32, torch.get_num_threads()))
+        logger.info(f"Set PyTorch threads: {torch.get_num_threads()}")
     
     # Check GPUs
     if args.cpu_only:
@@ -262,18 +277,30 @@ def main():
     logger.info(f"Epochs: {args.epochs}")
     logger.info(f"GPUs available: {gpu_count}")
     
+    # Calculate max_workers
+    if args.max_workers is not None:
+        max_workers = args.max_workers
+        logger.info(f"Using manual worker override: {max_workers}")
+    elif gpu_count > 0:
+        max_workers = gpu_count * args.workers_per_gpu
+        logger.info(f"Workers per GPU: {args.workers_per_gpu}")
+    else:
+        import multiprocessing
+        cpu_count = multiprocessing.cpu_count()
+        if args.cpu_only:
+            # Default to 4 CPU workers for multiprocessing, each using all cores via PyTorch
+            max_workers = 4
+            logger.info(f"CPU cores available: {cpu_count}")
+            logger.info(f"CPU workers: {max_workers} (each using all cores via PyTorch)")
+        else:
+            max_workers = 1
+            logger.warning("Running on CPU (single worker)")
+    
     if gpu_count > 0:
         for i in range(gpu_count):
             logger.info(f"  GPU {i}: {torch.cuda.get_device_name(i)}")
-        max_workers = gpu_count * args.workers_per_gpu
-        logger.info(f"Workers per GPU: {args.workers_per_gpu}")
-        logger.info(f"Total concurrent jobs: {max_workers}")
-    else:
-        max_workers = 1
-        if args.cpu_only:
-            logger.info("Running on CPU (PyTorch will use all available cores)")
-        else:
-            logger.warning("Running on CPU (single worker)")
+    
+    logger.info(f"Total concurrent jobs: {max_workers}")
     
     # Define hyperparameter grid
     if args.test:

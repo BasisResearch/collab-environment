@@ -261,6 +261,7 @@ def run_gnn_frame(
     delta_t,
     species_idx,
     species_dim,
+    device=None,
 ):
     """
     At time t * delta_t, given model, some features of position/velocity/acc of all animals from t = 0 up to t * delta_t,
@@ -276,7 +277,8 @@ def run_gnn_frame(
 
     assumes edge_index, and edge_weight have all been sent to device.
     """
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     B, F, N, _ = past_p.shape
     node_feature_function = model.node_feature_function
@@ -463,7 +465,7 @@ def run_gnn(model,
         (pred_pos, pred_vel, pred_acc, pred_vplushalf, W) = run_gnn_frame(
                         model, edge_index, edge_weight,
                         past_p, past_v, past_a, vminushalf, delta_t,
-                        species_idx, species_dim)
+                        species_idx, species_dim, device)
         #print("pred_pos.shape", pred_pos.shape)
         #print("target_pos.shape", target_pos.shape)
         #print("pred_pos.shape", pred_pos.shape)
