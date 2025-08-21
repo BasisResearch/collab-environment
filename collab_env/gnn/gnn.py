@@ -566,8 +566,7 @@ def train_rules_gnn(
         torch.cuda.empty_cache()
 
         # Only log epoch start for longer training
-        if epochs > 5:
-            train_logger.debug(f"Starting epoch {ep+1}/{epochs}")
+        train_logger.debug(f"Starting epoch {ep+1}/{epochs}")
 
         debug_result_all[ep] = {}
         
@@ -575,8 +574,7 @@ def train_rules_gnn(
 
         for batch_idx, (position, species_idx) in enumerate(dataloader):
             # Only log every 10th batch to reduce noise
-            if (batch_idx % 10 == 0) or (batch_idx == len(dataloader) - 1):
-                train_logger.debug(f"Processing batch {batch_idx}/{len(dataloader)}")
+            train_logger.debug(f"Processing batch {batch_idx}/{len(dataloader)}")
 
             S, Frame, N, _ = position.shape
 
@@ -599,8 +597,7 @@ def train_rules_gnn(
             train_losses_by_batch.append(loss)
 
         train_losses.append(train_losses_by_batch)
-        if ep % 50 == 0 or ep == epochs - 1:
-            train_logger.debug(f"Epoch {ep:03d} | Train: {np.mean(train_losses[-1]):.4f}")
+        train_logger.debug(f"Epoch {ep:03d} | Train: {np.mean(train_losses[-1]):.4f}")
 
     return np.array(train_losses), model, debug_result_all
 
