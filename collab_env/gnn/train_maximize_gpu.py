@@ -232,6 +232,8 @@ def main():
                        help="Number of epochs for training (default: 1)")
     parser.add_argument("--test", action="store_true",
                        help="Quick test with minimal parameters")
+    parser.add_argument("--cpu-only", action="store_true",
+                       help="Force CPU-only training, ignore GPU even if available")
     
     args = parser.parse_args()
     
@@ -243,10 +245,17 @@ def main():
               enqueue=True)  # Thread-safe logging without JSON
     
     # Check GPUs
-    gpu_count = torch.cuda.device_count() if torch.cuda.is_available() else 0
+    if args.cpu_only:
+        gpu_count = 0
+        logger.info("GPU usage disabled by --cpu-only flag")
+    else:
+        gpu_count = torch.cuda.device_count() if torch.cuda.is_available() else 0
     
     logger.info("="*60)
-    logger.info("GPU UTILIZATION MAXIMIZER")
+    if args.cpu_only:
+        logger.info("CPU-ONLY TRAINING MODE")
+    else:
+        logger.info("GPU UTILIZATION MAXIMIZER")
     logger.info("="*60)
     logger.info(f"Dataset: {args.dataset}")
     logger.info(f"Batch size: {args.batch_size}")
@@ -261,7 +270,10 @@ def main():
         logger.info(f"Total concurrent jobs: {max_workers}")
     else:
         max_workers = 1
-        logger.warning("Running on CPU (single worker)")
+        if args.cpu_only:
+            logger.info("Running on CPU (PyTorch will use all available cores)")
+        else:
+            logger.warning("Running on CPU (single worker)")
     
     # Define hyperparameter grid
     if args.test:
@@ -293,14 +305,22 @@ def main():
     logger.info(f"Total configurations: {len(all_params)}")
     logger.info("="*60)
     
-    # Show GPU assignment plan
-    logger.info("GPU Assignment Plan:")
-    for i in range(min(8, len(all_params))):  # Show first 8 assignments
-        _, model, noise, head, vr, seed, _, wid, batch_size, epochs = all_params[i]
-        assigned_gpu = wid % gpu_count if gpu_count > 0 else -1
-        logger.debug(f"  Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs})")
-    if len(all_params) > 8:
-        logger.debug(f"  ... and {len(all_params) - 8} more configurations")
+    # Show worker assignment plan
+    if gpu_count > 0:
+        logger.info("GPU Assignment Plan:")
+        for i in range(min(8, len(all_params))):  # Show first 8 assignments
+            _, model, noise, head, vr, seed, _, wid, batch_size, epochs = all_params[i]
+            assigned_gpu = wid % gpu_count
+            logger.debug(f"  Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs})")
+        if len(all_params) > 8:
+            logger.debug(f"  ... and {len(all_params) - 8} more configurations")
+    else:
+        logger.info("CPU Training Plan:")
+        for i in range(min(8, len(all_params))):  # Show first 8 assignments
+            _, model, noise, head, vr, seed, _, wid, batch_size, epochs = all_params[i]
+            logger.debug(f"  Config {wid:02d} -> CPU: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs})")
+        if len(all_params) > 8:
+            logger.debug(f"  ... and {len(all_params) - 8} more configurations")
     logger.info("="*60)
     
     # Run with concurrent futures - distributes across all GPUs
