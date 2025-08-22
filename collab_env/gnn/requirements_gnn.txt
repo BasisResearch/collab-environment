@@ -1,0 +1,12 @@
+# GNN Training Requirements
+torch>=2.0.0
+torch-geometric>=2.3.0
+numpy>=1.21.0
+matplotlib>=3.5.0
+loguru>=0.6.0
+
+# For PyTorch Geometric
+torch-scatter
+torch-sparse
+torch-cluster
+torch-spline-conv

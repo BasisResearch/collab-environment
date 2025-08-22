@@ -57,7 +57,8 @@ class GNN(torch.nn.Module):
         """
         # the 1st layer is a graph attention network.
         x = x.float()
-        edge_weight = edge_weight.float()  # all input needs to be the same precision.
+        if edge_weight is not None:
+            edge_weight = edge_weight.float()  # all input needs to be the same precision.
         h_tmp, W = self.gatn(
             x, edge_index, edge_attr=edge_weight, return_attention_weights=True
         )
