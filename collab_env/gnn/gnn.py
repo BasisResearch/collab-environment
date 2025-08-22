@@ -605,7 +605,7 @@ def train_rules_gnn(
 
         for batch_idx, (position, species_idx) in enumerate(dataloader):
             # Only log every 10th batch to reduce noise
-            train_logger.debug(f"Processing batch {batch_idx}/{len(dataloader)}")
+            train_logger.debug(f"Epoch {ep+1}/{epochs} | Processing batch {batch_idx+1}/{len(dataloader)}")
 
             S, Frame, N, _ = position.shape
 

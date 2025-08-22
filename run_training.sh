@@ -21,7 +21,7 @@ echo "================================================"
 
 # Default parameters optimized for multi-GPU setup
 DATASET="${1:-boid_single_species_basic}"
-BATCH_SIZE="${2:-500}"
+BATCH_SIZE="${2:-50}"
 WORKERS_PER_GPU="${3:-4}"
 EPOCHS="${4:-20}"
 SEEDS="${5:-5}"
