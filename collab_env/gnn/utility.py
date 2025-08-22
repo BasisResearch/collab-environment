@@ -139,7 +139,7 @@ def dataset2testloader(dataset, batch_size = 1, return_train = 0, device = None)
 
     if return_train:
         train_loader = DataLoader(train_dataset,
-                             batch_size = batch_size, shuffle=False)
+                             batch_size = batch_size, shuffle=True)
         return test_loader, train_loader
     
     return test_loader
