@@ -303,7 +303,7 @@ def main():
                        help="Number of seeds (default: 5)")
     parser.add_argument("--batch-size", type=int, default=16,
                        help="Batch size for training (default: 16 - optimized for RTX 4090)")
-    parser.add_argument("--epochs", type=int, default=1,
+    parser.add_argument("--epochs", type=int, default=10,
                        help="Number of epochs for training (default: 1)")
     parser.add_argument("--early-stopping-patience", type=int, default=2,
                        help="Early stopping patience - stop if no improvement for N epochs (default: 2)")
