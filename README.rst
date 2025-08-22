@@ -38,7 +38,7 @@ To run a boids simulation:
 
 .. code:: sh
 
-   python -m collab_env.sim.boids.run_boids_simulation
+   python -m collab_env.sim.boids.run_boids_simulator
 
 This will start a 3D visualization of the boids simulation using the default
 configuration file collab_env/sim/boids/config.yaml. To specify a
@@ -46,7 +46,7 @@ different configuration file, add a command line argument:
 
 .. code:: sh
 
-    python -m collab_env.sim.boids.run_boids_simulation -cf <path_to_config_file>
+    python -m collab_env.sim.boids.run_boids_simulator -cf <path_to_config_file>
 
 There are many configurable parameters. See the example configuration file for details.
 If the configuration file indicates that the visualizer should be shown, the following
