@@ -39,6 +39,7 @@ This needs to be done much more efficiently.
 
 
 if __name__ == "__main__":
+    logger.debug("main started")
     #
     # Get the config file name if specified on the command line
     #
@@ -117,6 +118,7 @@ if __name__ == "__main__":
     fixed_target_position = config["environment"]["target_position"]
     if len(fixed_target_position) == 0:
         fixed_target_position = None
+    logger.debug("creating environment")
     #
     # Create environment and agent
     #
@@ -178,10 +180,16 @@ if __name__ == "__main__":
         trajectory_folder_path = expand_path(
             f"{config['files']['trajectory_folder']}", get_project_root()
         )
+        logger.debug(f"trajectory folder = {trajectory_folder_path}")
+
         if config["files"]["trajectory_file"] == "all":
+            logger.debug(
+                f"all trajectories in folder {trajectory_folder_path} will be displayed"
+            )
             episode_file_list = glob(f"{trajectory_folder_path}/episode*.parquet")
             logger.debug(f"episode list = {episode_file_list}")
             for trajectory_file in episode_file_list:
+                logger.debug(f"getting trajectories for {trajectory_file}")
                 df = pd.read_parquet(trajectory_file)
                 frame_limit = config["simulator"]["trajectory_frame_limit"]
                 plot_trajectories(

@@ -145,6 +145,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.image_count = 0
         self.terminated = False
         self.truncated = False
+        self.raycasting_scene = None
 
         """
         TOC -- 081225 3:58PM
@@ -296,9 +297,6 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.mesh_sphere_agent = None
         self.mesh_agent = None
 
-    def get_action_array(self):
-        return np.array(self._action_to_direction.values())
-
     def _get_obs(self):
         # TOC -- 080625 9:03PM
         # Modifying to move to the closest points on the target meshes rather than the
@@ -397,7 +395,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             "mesh_closest_points": closest_points,
         }
 
-    def get_distances(agent_locations, submesh_vertices):
+    def get_distances(self, agent_locations, submesh_vertices):
         distances = np.zeros(len(agent_locations))
         closest_points = np.zeros((len(agent_locations), 3))
         for i in range(len(agent_locations)):
@@ -598,6 +596,11 @@ class BoidsWorldSimpleEnv(gym.Env):
             # TOC -- 080525 3:54PM
             # I think this will work without the if, but better to be safe
             #
+            """
+            TOC -- 082125 9:48PM 
+            This doesn't seem right. This should be put on the mesh scene not 0 on the 
+            bottom of the cube. This needs to be fixed. 
+            """
             if self.num_ground_targets > 0:
                 self._target_location[self.ground_target_first_index :, 1] = 0.0
 
@@ -759,15 +762,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         # red = (1.0, 0, 0)
 
         turbo_colormap_data = ColorMaps.turbo_colormap_data
+        logger.debug(f"number of colors = {len(turbo_colormap_data)}")
 
-        # color_transition_pairs = [
-        #     [turbo_colormap_data[0], turbo_colormap_data[1]],
-        #     [turbo_colormap_data[1], blue],
-        #     [blue, cyan],
-        #     [cyan, green],
-        #     [green, yellow],
-        #     [yellow, red],
-        # ]
         color_transition_pairs = list(
             zip(
                 turbo_colormap_data[: len(turbo_colormap_data) - 1],
@@ -1243,6 +1239,18 @@ class BoidsWorldSimpleEnv(gym.Env):
         submesh_vertices,
         locations,
     ):
+        """
+        TOC -- 082225 10:41AM
+
+        Need to look into k-d trees for doing the distance computations.
+
+        Args:
+            submesh_vertices:
+            locations:
+
+        Returns:
+
+        """
         distances = np.zeros(len(locations))
         closest_points = np.zeros((len(locations), 3))
         for i in range(len(locations)):
@@ -1257,19 +1265,26 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
         TOC -- 072325
         This should be done more intelligently.
+
+
         """
         if mesh is None:
             return np.zeros(self.num_agents), np.zeros(self.num_agents)
 
         """
         TOC -- 073125 
-        This Raycasting setup shouldn't be redone everytime we need to calculate distances. 
+        This Raycasting setup shouldn't be redone every time we need to calculate distances. 
+        
+        TOC -- 082225 10:32AM
+        There is an issue with the order in which initialization happens. init_targets() calls this function 
+        before init_meshes has been called. Setting up the raycasting make sense in init_meshes but 
         """
-        mesh_scene = open3d.t.geometry.TriangleMesh.from_legacy(mesh)
-
-        # Create a scene and add the triangle mesh
-        scene = open3d.t.geometry.RaycastingScene()
-        _ = scene.add_triangles(mesh_scene)  # we do not need the geometry ID for mesh
+        # if self.raycasting_scene is None:
+        #     temp_mesh_scene = open3d.t.geometry.TriangleMesh.from_legacy(mesh)
+        #
+        #     # Create a scene and add the triangle mesh
+        #     self.raycasting_scene = open3d.t.geometry.RaycastingScene()
+        #     _ = self.raycasting_scene .add_triangles(temp_mesh_scene)  # we do not need the geometry ID for mesh
 
         query_points = open3d.core.Tensor(agents_loc, dtype=open3d.core.Dtype.Float32)
 
@@ -1279,15 +1294,21 @@ class BoidsWorldSimpleEnv(gym.Env):
         both compute_distance() and compute_closest_points()?  
         """
         # Compute distance of the query point from the surface
-        unsigned_distance = scene.compute_distance(query_points)
-        signed_distance = scene.compute_signed_distance(query_points)
-        occupancy = scene.compute_occupancy(query_points)
+        # unsigned_distance = scene.compute_distance(query_points)
+        # signed_distance = scene.compute_signed_distance(query_points)
+        # occupancy = scene.compute_occupancy(query_points)
+        #
+        # closest_points_dict = scene.compute_closest_points(query_points)
 
-        closest_points_dict = scene.compute_closest_points(query_points)
+        unsigned_distance = self.raycasting_scene.compute_distance(query_points)
+        # signed_distance = self.raycasting_scene.compute_signed_distance(query_points)
+        # occupancy = self.raycasting_scene.compute_occupancy(query_points)
+
+        closest_points_dict = self.raycasting_scene.compute_closest_points(query_points)
 
         logger.debug(f"unsigned distance {unsigned_distance.numpy()}")
-        logger.debug(f"signed_distance {signed_distance.numpy()}")
-        logger.debug(f"occupancy {occupancy.numpy()}")
+        # logger.debug(f"signed_distance {signed_distance.numpy()}")
+        # logger.debug(f"occupancy {occupancy.numpy()}")
         return unsigned_distance.numpy(), closest_points_dict["points"].numpy()
 
     def move_agent_meshes(self):
@@ -1672,10 +1693,6 @@ class BoidsWorldSimpleEnv(gym.Env):
         if self.show_box:
             self.add_box()
 
-        self.init_agent_meshes()
-
-        self.init_target_meshes()
-
         """
         TOC -- 080225 2:56PM
         Some of these meshes are not used and need to be removed.
@@ -1722,7 +1739,34 @@ class BoidsWorldSimpleEnv(gym.Env):
 
                 # Update mesh vertex colors
                 self.mesh_scene.vertex_colors = open3d.utility.Vector3dVector(colors)
+
             self.vis.add_geometry(self.mesh_scene)
+
+            """
+            TOC -- 082225 1008AM 
+            This Raycasting setup shouldn't be redone every time we need to calculate distances, 
+            so moved it here.  
+            
+            Do I need the legacy thing? 
+            """
+            temp_mesh_scene = open3d.t.geometry.TriangleMesh.from_legacy(
+                self.mesh_scene
+            )
+
+            # Create a scene and add the triangle mesh
+            self.raycasting_scene = open3d.t.geometry.RaycastingScene()
+            _ = self.raycasting_scene.add_triangles(
+                temp_mesh_scene
+            )  # we do not need the geometry ID for mesh
+
+            """
+            TOC -- 082525 10:35AM 
+            These must be called after the raycasting scene has been initialized. 
+            Seems like there must be a better design for this, especially if we 
+            separate the rendering out into a different class. 
+            """
+            self.init_agent_meshes()
+            self.init_target_meshes()
 
         # self.vis.add_geometry(self.mesh_top_corner)
 

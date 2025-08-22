@@ -122,7 +122,7 @@ class BoidsWorldAgent:
             if (
                 (not self.walking)
                 and self.env_has_mesh_scene
-                and (obs["mesh_distance"][i] < self.min_ground_separation)
+                and (obs["mesh_scene_distance"][i] < self.min_ground_separation)
             ):
                 self.mesh_avoidance(velocity, location, i, obs)
                 # """

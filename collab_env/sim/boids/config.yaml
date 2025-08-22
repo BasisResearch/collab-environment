@@ -1,27 +1,28 @@
 
 simulator:
-  seed: [1250] # one seed required for each episode
+  # one seed required for each episode
+  seed: [ 810, 738, 655, 367, 36, 653, 753, 977, 716, 311, 112, 417, 599, 666, 721, 128, 456, 564, 178, 97, 764, 242, 257, 253, 4, 217, 171, 536, 122, 716, 933, 850, 271, 410, 195, 172, 958, 274]
   walking: False
   num_agents: 20
   num_targets: 1
-  num_ground_targets: 1
+  num_ground_targets: 0
   submesh_target: True
-  submesh_show_points: True # put spheres on at least some of the submesh vertices
+  submesh_show_points: False # put spheres on at least some of the submesh vertices
   moving_targets: False
-  num_episodes: 1
-  num_frames: 3000
+  num_episodes: 50
+  num_frames: 2000
   target_creation_time: 500 # min is 1, which creates the target at the beginning of the episode.
   show_box: False
   # run_main_folder: "collab_env/sim/runs"
   run_main_folder: "sim-output"
   run_sub_folder_prefix: "boids_sim_run"
-  show_trajectories: True
-  trajectory_frame_limit: 3000
+  show_trajectories: False
+  trajectory_frame_limit: 2000
 
 
 visuals:
   store_video: False
-  show_visualizer: True
+  show_visualizer: False
   width: 1920
   height: 1280
   video_codec: '*mpv4'
@@ -74,7 +75,7 @@ agent:
   height_range_high: 1.0
   height_init_min: 100
   height_init_max: 300
-  random_walk: False
+  random_walk: True
 
 meshes:
     # mesh_scene: ''
@@ -94,11 +95,11 @@ meshes:
 
 files:
     output_folder_prefix: 'boids_sim_runs' # which of these am I using?
-    trajectory_file: 'episode-0-completed-20250818-132529.parquet'
-    trajectory_folder: 'sim-output/boids_sim_run-started-20250818-131217'
+    trajectory_file: 'all'
+    trajectory_folder: 'sim-output/boids_sim_run-FOR-GNN-started-20250821-143821'
 
 logging:
   logfile_prefix: 'logfile'
-  log_level: 'DEBUG'
+  log_level: 'INFO'
   logging: True
-  log_functions: ['init_trajectory_lines']
+  log_functions: []
