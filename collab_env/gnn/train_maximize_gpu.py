@@ -32,7 +32,7 @@ def worker_wrapper(params):
     import torch
     
     try:
-        data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction, no_validation, early_stopping_patience, min_delta = params
+        data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction, no_validation, early_stopping_patience, min_delta, train_size = params
         
         # Set CUDA_VISIBLE_DEVICES in this process before CUDA is initialized
         if gpu_count > 0:
@@ -69,7 +69,7 @@ def worker_wrapper(params):
 
 def train_single_config(params):
     """Train a single configuration - runs on any available GPU"""
-    data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction, no_validation, early_stopping_patience, min_delta = params
+    data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction, no_validation, early_stopping_patience, min_delta, train_size = params
     
     # Determine device and worker label
     if gpu_count > 0:
@@ -147,8 +147,9 @@ def train_single_config(params):
         
         worker_logger.debug(f"Creating test and train loaders")
         test_loader, train_loader = dataset2testloader(
-            dataset, batch_size=batch_size, return_train=True, device=device
+            dataset, batch_size=batch_size, return_train=True, device=device, train_size=train_size
         )
+        worker_logger.debug(f"Test loader length: {len(test_loader)}, train loader length: {len(train_loader)}")
         
         # Create model
         in_node_dim = 20 if "food" in data_name else 19
@@ -253,6 +254,10 @@ def train_single_config(params):
         
         return {
             "data_name": data_name,
+            "model_output": str(model_output),
+            "model_spec_path": str(model_spec_path),
+            "train_spec_path": str(train_spec_path),
+            "train_losses": str(train_losses),
             "model_name": model_name,
             "noise": noise,
             "heads": heads,
@@ -321,6 +326,8 @@ def main():
                        help="Enable PyTorch 2.0 compilation for faster execution")
     parser.add_argument("--memory-fraction", type=float, default=0.9,
                        help="GPU memory fraction to allocate (default: 0.9)")
+    parser.add_argument("--train-size", type=float, default=0.7,
+                       help="Train size (default: 0.7)")
     
     args = parser.parse_args()
     
@@ -423,7 +430,7 @@ def main():
                         all_params.append(
                             (args.dataset, model, noise, head, vr, seed, gpu_count, worker_id, 
                              args.batch_size, args.epochs, args.compile, args.memory_fraction,
-                             args.no_validation, args.early_stopping_patience, args.min_delta)
+                             args.no_validation, args.early_stopping_patience, args.min_delta, args.train_size)
                         )
                         worker_id += 1
     
@@ -434,18 +441,18 @@ def main():
     if gpu_count > 0:
         logger.info("GPU Assignment Plan:")
         for i in range(min(8, len(all_params))):  # Show first 8 assignments
-            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _ = all_params[i]
+            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _ = all_params[i]
             assigned_gpu = wid % gpu_count
-            logger.debug(f"  Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs})")
+            logger.info(f"  Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs})")
         if len(all_params) > 8:
-            logger.debug(f"  ... and {len(all_params) - 8} more configurations")
+            logger.info(f"  ... and {len(all_params) - 8} more configurations")
     else:
         logger.info("CPU Training Plan:")
         for i in range(min(8, len(all_params))):  # Show first 8 assignments
-            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _ = all_params[i]
-            logger.debug(f"  Config {wid:02d} -> CPU: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs})")
+            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _ = all_params[i]
+            logger.info(f"  Config {wid:02d} -> CPU: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs})")
         if len(all_params) > 8:
-            logger.debug(f"  ... and {len(all_params) - 8} more configurations")
+            logger.info(f"  ... and {len(all_params) - 8} more configurations")
     logger.info("="*60)
     
     # Run with concurrent futures - distributes across all GPUs
@@ -459,44 +466,37 @@ def main():
             for params in all_params
         }
         
-        # Collect results as they complete with timeout to prevent hanging
+        # Collect results as they complete (no global timeout to avoid killing good jobs)
         completed = 0
-        try:
-            for future in concurrent.futures.as_completed(future_to_params, timeout=3600):  # 1 hour timeout
-                result = future.result()
-                results.append(result)
-                completed += 1
+        for future in concurrent.futures.as_completed(future_to_params):
+            result = future.result()
+            results.append(result)
+            completed += 1
+            
+            # Progress update with worker distribution
+            if completed % 10 == 0 or completed == len(all_params):
+                elapsed = (datetime.now() - start_time).total_seconds() / 60
                 
-                # Progress update with worker distribution
-                if completed % 10 == 0 or completed == len(all_params):
-                    elapsed = (datetime.now() - start_time).total_seconds() / 60
-                    
-                    # Count GPU vs CPU workers
-                    gpu_workers = {}
-                    cpu_workers = 0
-                    for r in results:
-                        if 'gpu_id' in r:
-                            if r['gpu_id'] >= 0:
-                                gpu_workers[r['gpu_id']] = gpu_workers.get(r['gpu_id'], 0) + 1
-                            else:
-                                cpu_workers += 1
-                    
-                    # Build distribution info
-                    dist_parts = []
-                    if gpu_workers:
-                        gpu_info = " | ".join([f"GPU{k}:{v}" for k, v in sorted(gpu_workers.items())])
-                        dist_parts.append(gpu_info)
-                    if cpu_workers > 0:
-                        dist_parts.append(f"CPU:{cpu_workers}")
-                    
-                    distribution = " | ".join(dist_parts) if dist_parts else "None"
-                    logger.info(f"Progress: {completed}/{len(all_params)} | Elapsed: {elapsed:.1f} min | Distribution: {distribution}")
-                    
-        except concurrent.futures.TimeoutError:
-            logger.error("Training timed out after 1 hour. Some workers may be stuck.")
-            # Cancel remaining futures
-            for future in future_to_params:
-                future.cancel()
+                # Count GPU vs CPU workers
+                gpu_workers = {}
+                cpu_workers = 0
+                for r in results:
+                    if 'gpu_id' in r:
+                        if r['gpu_id'] >= 0:
+                            gpu_workers[r['gpu_id']] = gpu_workers.get(r['gpu_id'], 0) + 1
+                        else:
+                            cpu_workers += 1
+                
+                # Build distribution info
+                dist_parts = []
+                if gpu_workers:
+                    gpu_info = " | ".join([f"GPU{k}:{v}" for k, v in sorted(gpu_workers.items())])
+                    dist_parts.append(gpu_info)
+                if cpu_workers > 0:
+                    dist_parts.append(f"CPU:{cpu_workers}")
+                
+                distribution = " | ".join(dist_parts) if dist_parts else "None"
+                logger.info(f"Progress: {completed}/{len(all_params)} | Elapsed: {elapsed:.1f} min | Distribution: {distribution}")
     
     # Save results using project structure
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
