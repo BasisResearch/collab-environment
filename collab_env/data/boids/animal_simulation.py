@@ -33,7 +33,7 @@ class AnimalTrajectoryDataset(Dataset):
         self.N = sum(species_counts.values())
         
         for _ in range(num_samples): #loop through number of videos
-            boids = init_fn(species_configs, species_counts, width, height, velocity_scale, seed)
+            boids = init_fn(species_configs, species_counts, width, height, velocity_scale, seed + _)
             traj = []
 
             for _ in range(steps):

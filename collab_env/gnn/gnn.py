@@ -434,8 +434,12 @@ def run_gnn(model,
             v = vel[:, frame_next]  # 1 step ahead
             p = pos[:, frame_next]  # 1 step ahead
             a = acc[:, frame_next]  # 1 step ahead
-            vminushalf = v_function_2_vminushalf(v_function, frame) #v_t-1/2
-            vminushalf = torch.tensor(vminushalf).to(device)
+            if v_function is not None:
+                vminushalf = v_function_2_vminushalf(v_function, frame) #v_t-1/2
+                vminushalf = torch.as_tensor(vminushalf, device=device)
+            else:
+                vminushalf = v  # Use current velocity as fallback
+
             if training:
                 p,v,a = add_noise(p, sigma), add_noise(v, sigma), add_noise(a, sigma)
                 vminushalf = add_noise(vminushalf, sigma)
@@ -492,8 +496,11 @@ def run_gnn(model,
             v = vel[:, frame_next]  # 1 step ahead
             p = pos[:, frame_next]  # 1 step ahead
             a = acc[:, frame_next]  # 1 step ahead
-            vminushalf = v_function_2_vminushalf(v_function, frame)
-            vminushalf = torch.tensor(vminushalf).to(device) #v_t-1/2
+            if v_function is not None:
+                vminushalf = v_function_2_vminushalf(v_function, frame)
+                vminushalf = torch.as_tensor(vminushalf, device=device) #v_t-1/2
+            else:
+                vminushalf = v  # Use current velocity as fallback
         
         if training:
             p,v,a = add_noise(p, sigma), add_noise(v, sigma), add_noise(a, sigma)
@@ -593,6 +600,13 @@ def train_rules_gnn(
 
     return np.array(train_losses), model, debug_result_all
 
+def get_input_adj(input_data_loader):
+    """
+    Takes input data loader of any batch size, the function will return a list of length file number
+    """
+    return None
+
+
 
 def get_adjcency_from_debug(
     debug_result, input_data_loader, visual_range, epoch_list=None
@@ -618,7 +632,7 @@ def get_adjcency_from_debug(
         for batch_ind in W_across_batch.keys():
             # the input for each video
             position, species_idx = list(iter(input_data_loader))[batch_ind]
-            B, _, N = position.shape[2]
+            B, _, N, dim = position.shape
 
             # the output varies over frames
             F = len(W_across_batch[batch_ind]["W"])
@@ -785,15 +799,37 @@ def save_model(model, model_spec, train_spec, file_name):
 
 
 
-def debug_result2prediction(rollout_debug_result, file_id,epoch_num):
-    
-    actual = np.concatenate(rollout_debug_result[epoch_num][file_id]["actual"], axis=0)
+def debug_result2prediction(rollout_debug_result, file_id, epoch_num = 0):
 
-    predicted = np.concatenate(
-        rollout_debug_result[epoch_num][file_id]["predicted"], axis=0
-    )
+    # infer batch size
+    predicted = rollout_debug_result[epoch_num][0]['predicted'][0]
+    batch_size = predicted.shape[0]
+    
+    # infer batch number and the index within that batch
+    batch_ind = int(np.floor(file_id / batch_size))
+    file_ind = file_id % batch_size 
+    
+    # rollout result fro this batch
+    rollout_batch = rollout_debug_result[epoch_num][batch_ind]
+
+    # concatenate across frames
+    actual = np.array(
+        [rollout_batch["actual"][f][file_ind]
+            for f in range(len(rollout_batch["actual"]))
+            ]
+        )
+
+    predicted = np.array(
+        [rollout_batch["predicted"][f][file_ind]
+            for f in range(len(rollout_batch["predicted"]))
+            ]
+        )
         
-    loss_acc_gnn = np.array(rollout_debug_result[epoch_num][file_id]["loss"])
+    loss = np.array(
+        [rollout_batch["loss"][f]
+            for f in range(len(rollout_batch["loss"]))
+            ]
+        )
 
     pos_gnn, vel_gnn, acc_gnn, v_function = handle_discrete_data(
         torch.tensor(predicted[np.newaxis, :]), "Euler")

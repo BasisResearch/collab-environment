@@ -25,12 +25,19 @@ def load_various_data(data_names, batch_size):
 
         test_loader = dataset2testloader(dataset, batch_size = batch_size)
 
-        data[data_name] = {}
-        data[data_name]["file_name"] = file_name
-        data[data_name]["config_name"] = config_name
-        data[data_name]["dataset"] = dataset
-        data[data_name]["species_configs"] = species_configs
-        data[data_name]['test_loader'] = test_loader
+        if len(data_names) == 1:
+            data["file_name"] = file_name
+            data["config_name"] = config_name
+            data["dataset"] = dataset
+            data["species_configs"] = species_configs
+            data['test_loader'] = test_loader
+        else:
+            data[data_name] = {}
+            data[data_name]["file_name"] = file_name
+            data[data_name]["config_name"] = config_name
+            data[data_name]["dataset"] = dataset
+            data[data_name]["species_configs"] = species_configs
+            data[data_name]['test_loader'] = test_loader
 
     return data
 
