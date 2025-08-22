@@ -466,44 +466,37 @@ def main():
             for params in all_params
         }
         
-        # Collect results as they complete with timeout to prevent hanging
+        # Collect results as they complete (no global timeout to avoid killing good jobs)
         completed = 0
-        try:
-            for future in concurrent.futures.as_completed(future_to_params, timeout=3600):  # 1 hour timeout
-                result = future.result()
-                results.append(result)
-                completed += 1
+        for future in concurrent.futures.as_completed(future_to_params):
+            result = future.result()
+            results.append(result)
+            completed += 1
+            
+            # Progress update with worker distribution
+            if completed % 10 == 0 or completed == len(all_params):
+                elapsed = (datetime.now() - start_time).total_seconds() / 60
                 
-                # Progress update with worker distribution
-                if completed % 10 == 0 or completed == len(all_params):
-                    elapsed = (datetime.now() - start_time).total_seconds() / 60
-                    
-                    # Count GPU vs CPU workers
-                    gpu_workers = {}
-                    cpu_workers = 0
-                    for r in results:
-                        if 'gpu_id' in r:
-                            if r['gpu_id'] >= 0:
-                                gpu_workers[r['gpu_id']] = gpu_workers.get(r['gpu_id'], 0) + 1
-                            else:
-                                cpu_workers += 1
-                    
-                    # Build distribution info
-                    dist_parts = []
-                    if gpu_workers:
-                        gpu_info = " | ".join([f"GPU{k}:{v}" for k, v in sorted(gpu_workers.items())])
-                        dist_parts.append(gpu_info)
-                    if cpu_workers > 0:
-                        dist_parts.append(f"CPU:{cpu_workers}")
-                    
-                    distribution = " | ".join(dist_parts) if dist_parts else "None"
-                    logger.info(f"Progress: {completed}/{len(all_params)} | Elapsed: {elapsed:.1f} min | Distribution: {distribution}")
-                    
-        except concurrent.futures.TimeoutError:
-            logger.error("Training timed out after 1 hour. Some workers may be stuck.")
-            # Cancel remaining futures
-            for future in future_to_params:
-                future.cancel()
+                # Count GPU vs CPU workers
+                gpu_workers = {}
+                cpu_workers = 0
+                for r in results:
+                    if 'gpu_id' in r:
+                        if r['gpu_id'] >= 0:
+                            gpu_workers[r['gpu_id']] = gpu_workers.get(r['gpu_id'], 0) + 1
+                        else:
+                            cpu_workers += 1
+                
+                # Build distribution info
+                dist_parts = []
+                if gpu_workers:
+                    gpu_info = " | ".join([f"GPU{k}:{v}" for k, v in sorted(gpu_workers.items())])
+                    dist_parts.append(gpu_info)
+                if cpu_workers > 0:
+                    dist_parts.append(f"CPU:{cpu_workers}")
+                
+                distribution = " | ".join(dist_parts) if dist_parts else "None"
+                logger.info(f"Progress: {completed}/{len(all_params)} | Elapsed: {elapsed:.1f} min | Distribution: {distribution}")
     
     # Save results using project structure
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
