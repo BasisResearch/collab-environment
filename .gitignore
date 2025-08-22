@@ -95,4 +95,6 @@ out
 /docs/source/.ipynb_checkpoints/
 config-local/
 *preview*.htm*
-simulated_data
+simulated_data/
+logs/
+results/

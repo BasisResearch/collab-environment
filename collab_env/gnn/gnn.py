@@ -563,7 +563,10 @@ def train_rules_gnn(
     rollout_everyother = -1,
     ablate_boid_interaction = False,
     train_logger = None,
-    collect_debug = False
+    collect_debug = False,
+    val_dataloader = None,
+    early_stopping_patience = 10,
+    min_delta = 1e-6
 ):
     if train_logger is None:
         train_logger = logger
@@ -574,6 +577,11 @@ def train_rules_gnn(
     debug_result_all = {}
 
     train_losses = []  # train loss by epoch
+    val_losses = []   # validation loss by epoch
+    best_val_loss = float('inf')
+    patience_counter = 0
+    best_model_state = None
+    
     if not training: #testing mode
         epochs = 1
         model.training = False
@@ -620,7 +628,63 @@ def train_rules_gnn(
             train_losses_by_batch.append(loss)
 
         train_losses.append(train_losses_by_batch)
-        train_logger.debug(f"Epoch {ep:03d} | Train: {np.mean(train_losses[-1]):.4f}")
+        epoch_train_loss = np.mean(train_losses[-1])
+        train_logger.debug(f"Epoch {ep:03d} | Train loss: {epoch_train_loss:.4g}")
+        
+        # Validation evaluation
+        epoch_val_loss = None
+        if val_dataloader is not None and training:
+            train_logger.debug("Validating...")
+            model.eval()  # Set to eval mode for validation
+            with torch.no_grad():
+                val_losses_by_batch = []
+                for batch_idx, (position, species_idx) in enumerate(val_dataloader):
+                    S, Frame, N, _ = position.shape
+                    (val_loss, _, _) = run_gnn(
+                        model,
+                        position,
+                        species_idx,
+                        species_dim,
+                        visual_range = visual_range,
+                        sigma = 0,  # No noise during validation
+                        device = device,
+                        training = False,  # No gradient updates
+                        lr = None,
+                        full_frames = full_frames,
+                        rollout = rollout,
+                        rollout_everyother = rollout_everyother,
+                        ablate_boid_interaction = ablate_boid_interaction,
+                        collect_debug = False)
+                    val_losses_by_batch.append(val_loss)
+                
+                epoch_val_loss = np.mean(val_losses_by_batch)
+                val_losses.append(val_losses_by_batch)
+                
+                # Early stopping logic
+                if epoch_val_loss < best_val_loss - min_delta:
+                    best_val_loss = epoch_val_loss
+                    patience_counter = 0
+                    # Save best model state
+                    best_model_state = model.state_dict().copy()
+                else:
+                    patience_counter += 1
+                
+                train_logger.debug(f"Epoch {ep:03d} | Train: {epoch_train_loss:.4g} | Val: {epoch_val_loss:.4g} | Patience: {patience_counter}/{early_stopping_patience}")
+                
+                # Early stopping check
+                if patience_counter >= early_stopping_patience:
+                    train_logger.info(f"Early stopping at epoch {ep+1}. Best val loss: {best_val_loss:.4g}")
+                    # Restore best model
+                    if best_model_state is not None:
+                        model.load_state_dict(best_model_state)
+                    break
+            
+            model.train()  # Set back to train mode
+    
+    # If we have a best model state and we did early stopping, use it
+    if best_model_state is not None and training and val_dataloader is not None:
+        model.load_state_dict(best_model_state)
+        train_logger.info(f"Restored best model with validation loss: {best_val_loss:.4f}")
 
     return np.array(train_losses), model, debug_result_all
 
@@ -793,8 +857,6 @@ def save_model(model, model_spec, train_spec, file_name):
     )
     torch.save(model.state_dict(), model_output)
 
-    logger.debug(f"Saved model to {model_output}.")
-
     # model specs
     model_spec_path = expand_path(
         f"trained_models/{file_name}_model_spec.pkl",
@@ -811,7 +873,7 @@ def save_model(model, model_spec, train_spec, file_name):
     with open(train_spec_path, "wb") as f: # 'wb' for write binary
         pickle.dump(train_spec, f)
     
-    return 1
+    return model_output, model_spec_path, train_spec_path
 
 
 

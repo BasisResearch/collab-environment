@@ -29,23 +29,47 @@ from collab_env.data.file_utils import expand_path, get_project_root
 def worker_wrapper(params):
     """Wrapper to set environment before calling actual training function"""
     import os
-    data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction = params
+    import torch
     
-    # Set CUDA_VISIBLE_DEVICES in this process before CUDA is initialized
-    if gpu_count > 0:
-        gpu_id = worker_id % gpu_count
-        # os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
-        logger.debug(f"Worker {worker_id} assigned to GPU {gpu_id}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
-    else:
-        logger.debug(f"Worker {worker_id} assigned to CPU")
+    try:
+        data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction, no_validation, early_stopping_patience, min_delta = params
         
-    # Now call the actual training function
-    return train_single_config(params)
+        # Set CUDA_VISIBLE_DEVICES in this process before CUDA is initialized
+        if gpu_count > 0:
+            gpu_id = worker_id % gpu_count
+            # os.environ['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
+            logger.debug(f"Worker {worker_id} assigned to GPU {gpu_id}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
+        else:
+            logger.debug(f"Worker {worker_id} assigned to CPU")
+            
+        # Call the actual training function
+        result = train_single_config(params)
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Worker {worker_id} failed with error: {e}")
+        return {
+            "data_name": params[0] if len(params) > 0 else "unknown",
+            "model_name": params[1] if len(params) > 1 else "unknown", 
+            "final_loss": float('inf'),
+            "status": "failed",
+            "error": str(e),
+            "worker_id": worker_id if 'worker_id' in locals() else -1
+        }
+    finally:
+        # Clean up CUDA context to prevent hanging
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
+        # Force garbage collection
+        import gc
+        gc.collect()
 
 
 def train_single_config(params):
     """Train a single configuration - runs on any available GPU"""
-    data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction = params
+    data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction, no_validation, early_stopping_patience, min_delta = params
     
     # Determine device and worker label
     if gpu_count > 0:
@@ -57,21 +81,34 @@ def train_single_config(params):
         worker_label = f"CPU/W{worker_id:02d}"
     
     
-    # Configure logger for this worker with thread-safe serialization
-    logger.remove()  # Remove default handler
+    # Configure worker logger - loguru handles multiprocessing with enqueue=True
+    # Import a fresh logger instance for this worker process
+    from loguru import logger as worker_base_logger
+    
+    # Remove existing handlers and add our own for this worker process
+    worker_base_logger.remove()
     
     def format_with_worker(record):
         if "worker" in record["extra"]:
-            return "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{extra[worker]}</cyan> | <level>{message}</level>\n"
+            return "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{extra[worker]}</cyan> | <level>{message}</level>\n"
         else:
-            return "<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>\n"
+            return "<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>\n"
     
-    # Only show INFO and above for worker processes to reduce noise
-    # Use enqueue=True for thread safety without JSON serialization
-    logger.add(sys.stderr, format=format_with_worker, level="DEBUG", enqueue=True)
+    # Add stderr handler with worker-specific formatting
+    worker_base_logger.add(sys.stderr, format=format_with_worker, level="DEBUG", enqueue=True)
     
-    # Bind worker label to logger
-    worker_logger = logger.bind(worker=worker_label)
+    # Create worker logger with binding
+    worker_logger = worker_base_logger.bind(worker=worker_label)
+    
+    # Add file logging for this specific worker using project structure
+    worker_log_file = expand_path(
+        f"logs/worker_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{worker_label.replace('/', '_')}.log",
+        get_project_root()
+    )
+    # Ensure logs directory exists
+    worker_log_file.parent.mkdir(exist_ok=True)
+    
+    worker_logger.add(str(worker_log_file), format=format_with_worker, level="DEBUG", enqueue=True)
     
     worker_logger.debug(f"Device {device}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
 
@@ -174,8 +211,8 @@ def train_single_config(params):
             except Exception as e:
                 worker_logger.warning(f"Model compilation failed: {e}, continuing without compilation")
         
-        worker_logger.debug(f"Training model")
-        # Train
+        worker_logger.debug(f"Training model with validation and early stopping")
+        # Train with validation and early stopping
         train_losses, trained_model, debug_result = train_rules_gnn(
             model,
             train_loader,
@@ -187,7 +224,10 @@ def train_single_config(params):
             sigma=noise,
             device=device,
             train_logger=worker_logger,
-            collect_debug=False  # Disable debug to avoid CPU transfers
+            collect_debug=False,  # Disable debug to avoid CPU transfers
+            val_dataloader=test_loader if not no_validation else None,  # Use test_loader for validation unless disabled
+            early_stopping_patience=early_stopping_patience,  # Early stopping patience from args
+            min_delta=min_delta  # Minimum improvement threshold from args
         )
         
         # Save model
@@ -195,13 +235,21 @@ def train_single_config(params):
         train_spec = {"visual_range": visual_range, "sigma": noise, "epochs": epochs}
         save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
 
-        worker_logger.debug(f"Saving model {save_name}")
-        save_model(trained_model, model_spec, train_spec, save_name)
+        worker_logger.debug(f"Saving model {save_name}...")
+        model_output, model_spec_path, train_spec_path = save_model(trained_model, model_spec, train_spec, save_name)
+        worker_logger.debug(f"Model saved to {model_output}.")
+        worker_logger.debug(f"Model spec saved to {model_spec_path}.")
+        worker_logger.debug(f"Train spec saved to {train_spec_path}.")
         
         # Return result
         final_loss = np.mean(train_losses[-1]) if len(train_losses) > 0 else float('inf')
         
         worker_logger.success(f"Completed: {save_name} | Loss: {final_loss:.6f}")
+        
+        # Clean up to prevent hanging processes
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
+            torch.cuda.synchronize()
         
         return {
             "data_name": data_name,
@@ -257,6 +305,12 @@ def main():
                        help="Batch size for training (default: 16 - optimized for RTX 4090)")
     parser.add_argument("--epochs", type=int, default=1,
                        help="Number of epochs for training (default: 1)")
+    parser.add_argument("--early-stopping-patience", type=int, default=2,
+                       help="Early stopping patience - stop if no improvement for N epochs (default: 2)")
+    parser.add_argument("--min-delta", type=float, default=1e-6,
+                       help="Minimum improvement threshold for early stopping (default: 1e-6)")
+    parser.add_argument("--no-validation", action="store_true",
+                       help="Disable validation and early stopping")
     parser.add_argument("--test", action="store_true",
                        help="Quick test with minimal parameters")
     parser.add_argument("--cpu-only", action="store_true",
@@ -273,9 +327,22 @@ def main():
     # Configure main logger with thread-safe output
     logger.remove()
     logger.add(sys.stderr, 
-              format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>\n",
+              format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>\n",
               level="DEBUG",
               enqueue=True)  # Thread-safe logging without JSON
+    
+    # Add file logging for main process using project structure
+    main_log_file = expand_path(
+        f"logs/training_main_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log",
+        get_project_root()
+    )
+    # Ensure logs directory exists
+    main_log_file.parent.mkdir(exist_ok=True)
+    
+    logger.add(str(main_log_file),
+              format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>\n",
+              level="DEBUG",
+              enqueue=True)
     
     # Apply CPU optimizations if requested
     if args.cpu_optimize or args.cpu_only:
@@ -337,7 +404,7 @@ def main():
         noise_levels = [0]
         heads = [1]
         visual_ranges = [0.1]
-        seeds = range(1)
+        seeds = range(2*max_workers)
     else:
         model_names = ["vpluspplus_a", "lazy"]
         noise_levels = [0, 0.005]
@@ -355,7 +422,8 @@ def main():
                     for seed in seeds:
                         all_params.append(
                             (args.dataset, model, noise, head, vr, seed, gpu_count, worker_id, 
-                             args.batch_size, args.epochs, args.compile, args.memory_fraction)
+                             args.batch_size, args.epochs, args.compile, args.memory_fraction,
+                             args.no_validation, args.early_stopping_patience, args.min_delta)
                         )
                         worker_id += 1
     
@@ -366,7 +434,7 @@ def main():
     if gpu_count > 0:
         logger.info("GPU Assignment Plan:")
         for i in range(min(8, len(all_params))):  # Show first 8 assignments
-            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _ = all_params[i]
+            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _ = all_params[i]
             assigned_gpu = wid % gpu_count
             logger.debug(f"  Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs})")
         if len(all_params) > 8:
@@ -374,7 +442,7 @@ def main():
     else:
         logger.info("CPU Training Plan:")
         for i in range(min(8, len(all_params))):  # Show first 8 assignments
-            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _ = all_params[i]
+            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _ = all_params[i]
             logger.debug(f"  Config {wid:02d} -> CPU: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs})")
         if len(all_params) > 8:
             logger.debug(f"  ... and {len(all_params) - 8} more configurations")
@@ -430,9 +498,14 @@ def main():
             for future in future_to_params:
                 future.cancel()
     
-    # Save results
+    # Save results using project structure
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_file = f"results_{args.dataset}_{timestamp}.json"
+    results_file = expand_path(
+        f"results/results_{args.dataset}_{timestamp}.json",
+        get_project_root()
+    )
+    # Ensure results directory exists
+    results_file.parent.mkdir(exist_ok=True)
     
     with open(results_file, "w") as f:
         json.dump(results, f, indent=2)

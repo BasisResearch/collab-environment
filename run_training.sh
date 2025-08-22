@@ -52,7 +52,7 @@ CMD="$CMD --seeds $SEEDS"
 
 # Add GPU optimizations if GPUs are available
 if [ "$NUM_GPUS" -gt 0 ]; then
-    CMD="$CMD --compile"
+    # CMD="$CMD --compile"  # Disabled: compilation slower for variable graph sizes
     CMD="$CMD --memory-fraction 0.85"
     LOG_FILE="training_${NUM_GPUS}x_gpu_$(date +%Y%m%d_%H%M%S).log"
 else
@@ -66,4 +66,4 @@ echo ""
 $CMD 2>&1 | tee "$LOG_FILE"
 
 echo ""
-echo "Training complete! Results saved to $LOG_FILE"
+echo "Training complete! Logs saved to logs/ directory and results saved to results/ directory"
