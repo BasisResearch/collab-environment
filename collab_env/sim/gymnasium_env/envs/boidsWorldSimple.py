@@ -129,11 +129,16 @@ class BoidsWorldSimpleEnv(gym.Env):
         logger.debug(f"video path is {self.video_file_path}")
         logger.debug(f"store video is {self.store_video}")
         self.mesh_target_list = [None] * self.num_targets
+        self.mesh_target_raycasting = [None] * self.num_targets
+
         self.agent_trajectories = agent_trajectories
         self.target_trajectories = target_trajectories
         self.run_trajectories = run_trajectories
         self.show_trajectory_lines = show_trajectory_lines
         self.save_image = save_image
+        self.save_image_init = (
+            save_image  # used to reset for saving images for each episode
+        )
         self.saved_image_path = saved_image_path
         self.color_tracks_by_time = color_tracks_by_time
         self.number_track_color_groups = number_track_color_groups
@@ -191,9 +196,9 @@ class BoidsWorldSimpleEnv(gym.Env):
                 "target_loc": spaces.Tuple(
                     [
                         spaces.Box(
-                            low=-torch.inf, high=torch.inf, shape=(3,), dtype=np.float64
+                            low=-torch.inf, high=torch.inf, shape=(3,), dtype=np.float32
                         )
-                        for _ in range(num_targets)
+                        for _ in range(max(num_targets, 1))
                     ]
                 ),
                 #
@@ -210,7 +215,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                                     shape=(1,),
                                     dtype=np.float32,
                                 )
-                                for _ in range(self.num_targets)
+                                for _ in range(max(num_targets, 1))
                             ]
                         )
                         for _ in range(self.num_agents)
@@ -226,7 +231,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                                     shape=(1,),
                                     dtype=np.float32,
                                 )
-                                for _ in range(self.num_targets)
+                                for _ in range(max(num_targets, 1))
                             ]
                         )
                         for _ in range(self.num_agents)
@@ -242,7 +247,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                                     shape=(3,),
                                     dtype=np.float32,
                                 )
-                                for _ in range(self.num_targets)
+                                for _ in range(max(num_targets, 1))
                             ]
                         )
                         for _ in range(self.num_agents)
@@ -445,8 +450,12 @@ class BoidsWorldSimpleEnv(gym.Env):
         # There should be a more efficient way to do this without a for loop, but
         # I don't have time to worry about it right now
         #
-        for t in self.mesh_target_list:
-            d, c = self.compute_distance_and_closest_points(t, self._agent_location)
+        for i in range(len(self.mesh_target_list)):
+            d, c = self.compute_distance_and_closest_points(
+                self.mesh_target_list[i],
+                self._agent_location,
+                raycasting=self.mesh_target_raycasting[i],
+            )
             distances.append(d)
             closest_points.append(c)
 
@@ -618,7 +627,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             # use the first time step in the trajectory to
             # initialize the agent positions.
             self._agent_location = self.agent_trajectories[:, 0]
-            self._agent_velocity = np.zeros(self.num_agents)
+            self._agent_velocity = np.zeros((self.num_agents, 3))
         else:
             if self.walking:
                 self._agent_location = [
@@ -732,14 +741,6 @@ class BoidsWorldSimpleEnv(gym.Env):
         to split these up into groups of lines sets based on time step and 
         color the groups. 
         """
-        # colors = [
-        #     [
-        #         (agent_index % 2) * 0.5,
-        #         agent_index / self.num_agents,
-        #         1 - (agent_index / self.num_agents),
-        #     ]
-        #     for i in range(len(lines))
-        # ]
         color_list = [color] * len(lines)
 
         line_set.colors = open3d.utility.Vector3dVector(color_list)
@@ -770,6 +771,13 @@ class BoidsWorldSimpleEnv(gym.Env):
                 turbo_colormap_data[1:],
             )
         )
+
+        """
+        TOC -- 082425 9:42AM
+        This code assumes that the length of the agents' trajectories could be 
+        different for each agent. This could probably run a little faster if
+        we didn't assume that and instead computed the colors once. 
+        """
         for agent_index in range(self.num_agents):
             points = self.agent_trajectories[agent_index]
             logger.debug(f"number of points = {len(points)}")
@@ -835,6 +843,8 @@ class BoidsWorldSimpleEnv(gym.Env):
                         color_transition_index += 1
                     logger.debug(f"step = {step}")
                 logger.debug(f"color list\n{color_list}")
+                logger.debug(f"len of color list = {len(color_list)}")
+                logger.debug(f"len of color map = {len(turbo_colormap_data)}")
             else:
                 # Create a LineSet
                 """
@@ -874,8 +884,10 @@ class BoidsWorldSimpleEnv(gym.Env):
     def reset(self, seed=None, options=None):
         # We need the following line to seed self.np_random
         super().reset(seed=seed)
+        logger.debug(f"seed = {seed}")
         self.terminated = False
         self.truncated = False
+        self.save_image = self.save_image_init
 
         """ 
         TOC -- 080825 11:12AM
@@ -996,19 +1008,23 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         """
 
+        self.time_step += 1
+
         """
         TOC 080825 11:16AM
         For now there is nothing to change when we draw the trajectories, but we 
         really should probably be doing something else. 
         """
-        if self.show_trajectory_lines or self.run_trajectories:
+        if self.show_trajectory_lines:
+            terminated = not self.show_visualizer
+
+        elif self.run_trajectories:
             terminated = False
 
         else:
-            self.time_step += 1
-
             if self.time_step == self.target_creation_time:
                 self.create_targets()
+
             """
             Some of this code, like the wall avoidance, should be in action
             selection of the agent. Maybe not. 
@@ -1261,15 +1277,21 @@ class BoidsWorldSimpleEnv(gym.Env):
             distances[i] = norms[argmin]
         return distances, closest_points
 
-    def compute_distance_and_closest_points(self, mesh, agents_loc):
+    def compute_distance_and_closest_points(self, mesh, agents_loc, raycasting=None):
         """
         TOC -- 072325
         This should be done more intelligently.
 
-
         """
         if mesh is None:
             return np.zeros(self.num_agents), np.zeros(self.num_agents)
+
+        #
+        # If no raycaster is passed in, we will assume the distances to the mesh scene
+        # are being computed.
+        #
+        if raycasting is None:
+            raycasting = self.raycasting_scene
 
         """
         TOC -- 073125 
@@ -1291,7 +1313,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         """ 
         TOC -- 073125 
         Do we really need both signed and unsigned distances? Also, do we need to call
-        both compute_distance() and compute_closest_points()?  
+        both compute_distance() and compute_closest_points()? I think that is information
+        the GNN wanted in the output file. 
         """
         # Compute distance of the query point from the surface
         # unsigned_distance = scene.compute_distance(query_points)
@@ -1300,11 +1323,11 @@ class BoidsWorldSimpleEnv(gym.Env):
         #
         # closest_points_dict = scene.compute_closest_points(query_points)
 
-        unsigned_distance = self.raycasting_scene.compute_distance(query_points)
+        unsigned_distance = raycasting.compute_distance(query_points)
         # signed_distance = self.raycasting_scene.compute_signed_distance(query_points)
         # occupancy = self.raycasting_scene.compute_occupancy(query_points)
 
-        closest_points_dict = self.raycasting_scene.compute_closest_points(query_points)
+        closest_points_dict = raycasting.compute_closest_points(query_points)
 
         logger.debug(f"unsigned distance {unsigned_distance.numpy()}")
         # logger.debug(f"signed_distance {signed_distance.numpy()}")
@@ -1563,7 +1586,8 @@ class BoidsWorldSimpleEnv(gym.Env):
 
     def create_targets(self):
         """
-        This method simply adds the target meshes that were already created to the visualizer.
+        This method simply adds the target meshes that were already created to the visualizer
+        or recolors the submesh target if we have one.
         Returns:
 
         """
@@ -1606,6 +1630,16 @@ class BoidsWorldSimpleEnv(gym.Env):
         Returns:
 
         """
+
+    def init_target_mesh_raycasting(self, target_mesh):
+        temp_mesh = open3d.t.geometry.TriangleMesh.from_legacy(target_mesh)
+
+        # Create a scene and add the triangle mesh
+        raycasting = open3d.t.geometry.RaycastingScene()
+        _ = raycasting.add_triangles(
+            temp_mesh
+        )  # we do not need the geometry ID for mesh
+        return raycasting
 
     def init_target_meshes(self):
         self.mesh_target_list = [None] * self.num_targets
@@ -1654,6 +1688,9 @@ class BoidsWorldSimpleEnv(gym.Env):
             # self.mesh_ground_target.translate(self._ground_target_location)
             self.vis.update_geometry(self.mesh_target_list[i])
             # self.vis.update_geometry(self.mesh_ground_target)
+            self.mesh_target_raycasting[i] = self.init_target_mesh_raycasting(
+                self.mesh_target_list[i]
+            )
 
     def init_meshes(self):
         """
@@ -1759,14 +1796,14 @@ class BoidsWorldSimpleEnv(gym.Env):
                 temp_mesh_scene
             )  # we do not need the geometry ID for mesh
 
-            """
-            TOC -- 082525 10:35AM 
-            These must be called after the raycasting scene has been initialized. 
-            Seems like there must be a better design for this, especially if we 
-            separate the rendering out into a different class. 
-            """
-            self.init_agent_meshes()
-            self.init_target_meshes()
+        """
+        TOC -- 082525 10:35AM 
+        These must be called after the raycasting scene has been initialized. 
+        Seems like there must be a better design for this, especially if we 
+        separate the rendering out into a different class. 
+        """
+        self.init_agent_meshes()
+        self.init_target_meshes()
 
         # self.vis.add_geometry(self.mesh_top_corner)
 
@@ -1776,6 +1813,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
     def save_image_to_file(self):
         self.image_count += 1
+        logger.debug(f"image count = {self.image_count}")
         # Capture video
         img = self.vis.capture_screen_float_buffer()
         # logger.debug(f'img is {img}')
@@ -1839,23 +1877,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         # Save the image to a file when user requests. Then reset the save flag
         # so we don't keep saving images.
         if self.save_image:
+            logger.debug("calling save image to file and resetting save flag")
             self.save_image_to_file()
-
-            # self.image_count += 1
-            # # Capture video
-            # img = self.vis.capture_screen_float_buffer()
-            # # logger.debug(f'img is {img}')
-            #
-            # img = (255 * np.asarray(img)).astype(np.uint8)
-            # # logger.debug(f'after astype {img}')
-            # img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
-            # # logger.debug(f'after cvtColor {img}')
-            # image_path = expand_path(
-            #     f"image-{self.image_count}.png", self.saved_image_path
-            # )
-            # cv2.imwrite(image_path, img)
-            # # don't keep saving the image, just save it once
-            # logger.debug(f"image written to {image_path}")
             self.save_image = False
 
         if self.store_video:

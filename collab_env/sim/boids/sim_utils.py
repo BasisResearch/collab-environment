@@ -3,6 +3,7 @@ import struct
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
+from loguru import logger
 
 
 def function_filter(function_list):
@@ -231,10 +232,14 @@ def plot_trajectories(df, env, frame_limit=None):
     #
 
     _, _ = env.reset(options=agent_trajectories)
-    done = False
-    while not done:
+    count = 0
+    terminated = False
+    truncated = False
+    while not (terminated or truncated):
         # truncated indicates the user hit quit in the open3d visualizer
-        _, _, _, done, _ = env.step(np.zeros((num_agents, 3)))
+        _, _, terminated, truncated, _ = env.step(np.zeros((num_agents, 3)))
+        count += 1
+        logger.debug(f"count={count}")
 
     """
     TOC -- 081825 9:01PM

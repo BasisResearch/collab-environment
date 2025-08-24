@@ -198,7 +198,7 @@ class BoidsWorldAgent:
             velocity[agent_index] = (
                 velocity[agent_index] / norm_velocity * self.max_speed
             )
-        elif norm_velocity < self.min_speed:
+        elif 0.0 < norm_velocity < self.min_speed:
             velocity[agent_index] = (
                 velocity[agent_index] / norm_velocity * self.min_speed
             )
@@ -293,12 +293,16 @@ class BoidsWorldAgent:
                 num_close = 0
                 num_neighbors = 0
                 ground_force = np.zeros(3)
-                # I wonder if we could do this with j starting at i+1
+
+                """
+                TOC -- 082425 12:26AM
+                This needs to be done with broadcasting and array operations.
+                """
                 for other in range(self.num_agents):
                     if i != other:
                         # separate
                         dist = np.linalg.norm(location[i] - location[other])
-                        if dist < self.min_separation:
+                        if 0.0 < dist < self.min_separation:
                             diff_vector = location[i] - location[other]
                             sum_separation_vector += diff_vector / (dist**2)
                             num_close += 1
