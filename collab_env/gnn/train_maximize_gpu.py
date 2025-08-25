@@ -14,6 +14,7 @@ import json
 from datetime import datetime
 import argparse
 from loguru import logger
+import pickle
 
 # Add project paths
 current_dir = Path(__file__).parent
@@ -260,6 +261,14 @@ def train_single_config(params):
         #model_spec = {"model_name": model_name, "heads": heads}
         train_spec = {"visual_range": visual_range, "sigma": noise, "epochs": epochs}
         save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout{rollout}"
+        if rollout:
+            rollout_path = expand_path(
+                f"trained_models/{save_name}.pkl",
+                get_project_root()
+            )
+ 
+            with open(rollout_path, "wb") as f: # 'wb' for write binary
+                pickle.dump(debug_result, f)
 
         worker_logger.debug(f"Saving model {save_name}...")
         model_output, model_spec_path, train_spec_path = save_model(trained_model, model_spec, train_spec, save_name)
