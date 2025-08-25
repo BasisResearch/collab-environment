@@ -41,6 +41,7 @@ dependencies = [
   "gymnasium",
   "torch_geometric",
   "ipympl",
+  "pyarrow",
   "pycolmap",
   "pyvista",
   "trame",

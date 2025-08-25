@@ -45,11 +45,6 @@ if __name__ == "__main__":
 
     agent = BoidsWorldAgent(
         env=env,
-        action_to_direction=None,
-        learning_rate=learning_rate,
-        initial_epsilon=start_epsilon,
-        epsilon_decay=epsilon_decay,
-        final_epsilon=final_epsilon,
         num_agents=NUM_AGENTS,
         walking=WALKING,
     )
@@ -71,7 +66,7 @@ if __name__ == "__main__":
         # logger.debug('starting main loop ')
 
         # while not done:
-        for _ in tqdm(range(25000)):
+        for _ in tqdm(range(250)):
             # Agent chooses action (initially random, gradually more intelligent)
             action = agent.get_action(obs)
             # print('action = ' + str(action))

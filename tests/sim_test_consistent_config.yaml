@@ -1,0 +1,104 @@
+
+simulator:
+  seed: [1250, 399, 551, 399, 330, 483, 907, 157, 500, 723] # one seed required for each episode
+  walking: False
+  num_agents: 20
+  num_targets: 1
+  num_ground_targets: 1
+  submesh_target: True
+  submesh_show_points: True # put spheres on at least some of the submesh vertices
+  moving_targets: False
+  num_episodes: 1
+  num_frames: 20
+  target_creation_time: [5]  # min is 1, which creates the target at the beginning of the episode.
+  show_box: False # should move this to visuals
+  # run_main_folder: "collab_env/sim/runs"
+  run_main_folder: "sim-output/tests-sim-runs"
+  run_sub_folder_prefix: "boids_sim_run-consistent"
+  show_trajectories: False
+  trajectory_frame_limit: 3000
+
+
+visuals:
+  store_video: False
+  show_visualizer: True
+  width: 1920
+  height: 1280
+  video_codec: '*mpv4'
+  video_fps: 30
+  video_file_extension: 'mp4'
+  agent_shape: 'sphere'
+  agent_color: [0, 0, 1]
+  agent_scale: 5.0
+  target_scale: 0.5
+  target_mesh_init_color: [[1,0,1]]
+  target_mesh_color: [[0,1,0]]
+
+tracks:
+  color_by_time: True
+  number_of_color_groups: 200
+  track_color_rate: 1
+
+
+environment:
+  max_dist_from_center: 3
+  box_size: 1500
+  scene_scale: 300.0
+  scene_position: [750, 20, 750]
+  target_speed: 0.0
+  init_range_low: 0.4
+  init_range_high: 0.6
+  height_init_max: 450
+  target_position: [[750, 20, 750]]
+
+agent:
+  min_ground_separation: 7.5
+  ground_avoidance_mean: 1.0
+  ground_avoidance_variance: 0.01
+  ground_avoidance_max_speed: 0.1
+  min_separation: 20.0
+  neighborhood_dist: 80.0
+  separation_weight: 15.0
+  alignment_weight: 1.0
+  cohesion_weight: 0.5
+  ground_weight: 0.0
+  target_weight: [0.002]
+  max_speed: 1.0
+  min_speed: 0.1
+  max_force: 0.1
+  mean_init_velocity: 0.0
+  variance_init_velocity: 0.5
+  init_range_low: 0.4
+  init_range_high: 0.6
+  height_range_low: 0.0
+  height_range_high: 1.0
+  height_init_min: 100
+  height_init_max: 300
+  random_walk: False
+
+meshes:
+    # mesh_scene: ''
+    # scene_angle: [0.0, 0.0, 0.0]
+    mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
+    scene_angle: [-90.0, 0.0, 0.0]
+    #mesh_scene: 'meshes/labeled_meshes/mesh.ply'
+    #mesh_scene: 'meshes/labeled_meshes/query-tree_top-cluster.ply'
+    #scene_angle: [0.0, 0.0, 0.0]
+    # mesh_scene: 'meshes/query-tree.ply'
+    # scene_angle: [-90.0, 0.0, 0.0]
+    #scene_angle: [0.0, 0.0, 0.0]
+    #mesh_scene: 'meshes/example_mesh.ply'
+    #scene_angle: [-10.0, 0.0, -115.0]
+    sub_mesh_target: ['meshes/labeled_meshes/query-tree_top-cluster.ply']
+    # sub_mesh_angle: [0.0, 0.0, 0.0]
+
+files:
+    output_folder_prefix: 'boids_sim_runs' # which of these am I using?
+    trajectory_file:  'all' # 'episode-0-completed-20250818-132529.parquet'
+    trajectory_folder: 'sim-output/boids_sim_run-started-20250818-192228'
+
+logging:
+  logfile_prefix: 'logfile'
+  log_level: 'DEBUG'
+  logging: True
+  log_functions: ['init_trajectory_lines']

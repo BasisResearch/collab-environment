@@ -94,3 +94,5 @@ out
 data/
 config-local/
 *preview*.htm*
+/sim-output/
+/good-runs/
