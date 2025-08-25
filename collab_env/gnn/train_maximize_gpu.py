@@ -203,8 +203,11 @@ def train_single_config(params):
                 get_project_root(),
             )
             model.load_state_dict(torch.load(model_path,map_location='cuda:0'))
+            collect_debug = True,  # Disable debug to avoid CPU transfers
+ 
         else:
             loader = train_loader
+            collect_debug = False
         
         worker_logger.debug(f"Setting seed {seed}")
         # Set seed for reproducibility
@@ -251,7 +254,7 @@ def train_single_config(params):
             device = device,
             rollout = rollout,
             train_logger=worker_logger,
-            collect_debug=False,  # Disable debug to avoid CPU transfers
+            collect_debug=collect_debug,  # Disable debug to avoid CPU transfers
             val_dataloader=test_loader if not no_validation else None,  # Use test_loader for validation unless disabled
             early_stopping_patience=early_stopping_patience,  # Early stopping patience from args
             min_delta=min_delta  # Minimum improvement threshold from args
