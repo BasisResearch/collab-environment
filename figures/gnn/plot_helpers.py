@@ -13,8 +13,12 @@ def rollout_to_pos_vel_acc(rollout_debug_result, starting_frame = 0, ending_fram
     pos_all_files = []
     vel_all_files = []
     acc_all_files = []
+
+    # infer total file sizes
+    file_num = np.sum([rollout_debug_result[0][b]['predicted'][0].shape[0] for b in rollout_debug_result[0].keys()])
+    print(file_num)
     
-    for file_id in rollout_debug_result[0]:
+    for file_id in range(file_num):
         pos, vel, acc, pos_gnn, vel_gnn, acc_gnn, frame_sets = debug_result2prediction(
                             rollout_debug_result,
                             file_id = file_id, epoch_num = 0)
@@ -70,15 +74,16 @@ def return_deltapos_vnext(pos, vel, acc, threshold = 0.1):
 
     return pos_diff, v_next
 
-def figure_data_C(test_loader, rollout_debug_result, model = False, starting_frame = 5, ending_frame = 50):
+def figure_data_C(test_loader, rollout_debug_result, model = False,
+                    starting_frame = 5, ending_frame = 50, subsample = 1):
     """Panel C """
     if model:
         (pos_concatenated, vel_concatenated, acc_concatenated) = rollout_to_pos_vel_acc(
-            rollout_debug_result, starting_frame, ending_frame)
+            rollout_debug_result, starting_frame, ending_frame, subsample)
     else:
         (pos_concatenated, vel_concatenated, acc_concatenated) = data_to_pos_vel_acc(test_loader,
                                                                                     starting_frame,
-                                                                                    ending_frame)
+                                                                                    ending_frame, subsample)
 
     pos_diff, v_next = return_deltapos_vnext(pos_concatenated,
                                              vel_concatenated,
@@ -182,9 +187,9 @@ def figure_data_B(test_loader, rollout_debug_result, model = False, starting_fra
         (pos_concatenated, vel_concatenated, acc_concatenated) = rollout_to_pos_vel_acc(
             rollout_debug_result, starting_frame, ending_frame)
     else:
-        (pos_concatenated, vel_concatenated, acc_concatenated) = data_to_pos_vel_acc(test_loader,
-                                                                                    starting_frame,
-                                                                                    ending_frame)
+        (pos_concatenated, vel_concatenated, acc_concatenated) = data_to_pos_vel_acc(
+            test_loader, starting_frame, ending_frame)
+
     if "singleton" in version:
         del_v, acc_ = return_deltav_acc_singleton(pos_concatenated,
                                                 vel_concatenated,

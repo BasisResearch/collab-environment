@@ -32,7 +32,7 @@ def worker_wrapper(params):
     import torch
     
     try:
-        data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction, no_validation, early_stopping_patience, min_delta, train_size = params
+        data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction, no_validation, early_stopping_patience, min_delta, train_size, rollout = params
         
         # Set CUDA_VISIBLE_DEVICES in this process before CUDA is initialized
         if gpu_count > 0:
@@ -69,7 +69,10 @@ def worker_wrapper(params):
 
 def train_single_config(params):
     """Train a single configuration - runs on any available GPU"""
-    data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction, no_validation, early_stopping_patience, min_delta, train_size = params
+    (data_name, model_name, noise, heads, visual_range, seed,
+        gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction,
+        no_validation, early_stopping_patience, min_delta, train_size,
+        rollout) = params
     
     # Determine device and worker label
     if gpu_count > 0:
@@ -150,6 +153,7 @@ def train_single_config(params):
             dataset, batch_size=batch_size, return_train=True, device=device, train_size=train_size
         )
         worker_logger.debug(f"Test loader length: {len(test_loader)}, train loader length: {len(train_loader)}")
+        worker_logger.debug(f"Rolling out or not: {rollout}")
         
         # Create model
         in_node_dim = 20 if "food" in data_name else 19
@@ -157,29 +161,49 @@ def train_single_config(params):
         worker_logger.debug(f"Creating model {model_name}")
         
         if "lazy" in model_name:
-            model = Lazy(
-                model_name="lazy",
-                prediction_integration="Euler",
-                input_differentiation="finite",
-                in_node_dim=3,
-                start_frame=3,
-                heads=1
-            )
+            model_spec = {
+                "model_name":"lazy",
+                "prediction_integration":"Euler",
+                "input_differentiation":"finite",
+                "in_node_dim":3,
+                "start_frame":3,
+                "heads":1
+            }
+            model = Lazy(**model_spec)
             lr = None
             training = False
         else:
+            model_spec = {
+                "model_name": "vpluspplus_a",
+                "node_feature_function": "vel_plus_pos_plus",
+                "node_prediction": "acc",
+                "prediction_integration": "Euler",
+                "input_differentiation": "finite",
+                "in_node_dim": in_node_dim,
+                "start_frame": 3,
+                "heads": heads
+            }
             model = GNN(
-                model_name="vpluspplus_a",
-                node_feature_function="vel_plus_pos_plus",
-                node_prediction="acc",
-                prediction_integration="Euler",
-                input_differentiation="finite",
-                in_node_dim=in_node_dim,
-                start_frame=3,
-                heads=heads
+                **model_spec
             )
             lr = 1e-4
             training = True
+
+        # need to overwrite for rolling out operation.
+        if rollout > 0:
+            training = False
+            lr = None
+            epochs = 1
+            loader = test_loader
+            no_validation = True
+            file_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
+            model_path = expand_path(
+                f"trained_models/{file_name}.pt",
+                get_project_root(),
+            )
+            model.load_state_dict(torch.load(model_path,map_location='cuda:0'))
+        else:
+            loader = train_loader
         
         worker_logger.debug(f"Setting seed {seed}")
         # Set seed for reproducibility
@@ -216,14 +240,15 @@ def train_single_config(params):
         # Train with validation and early stopping
         train_losses, trained_model, debug_result = train_rules_gnn(
             model,
-            train_loader,
-            species_dim=len(species_configs.keys()),
-            visual_range=visual_range,
-            epochs=epochs,
-            lr=lr,
-            training=training,
-            sigma=noise,
-            device=device,
+            loader,
+            species_dim = len(species_configs.keys()),
+            visual_range = visual_range,
+            epochs = epochs,
+            lr = lr,
+            training = training,
+            sigma = noise,
+            device = device,
+            rollout = rollout,
             train_logger=worker_logger,
             collect_debug=False,  # Disable debug to avoid CPU transfers
             val_dataloader=test_loader if not no_validation else None,  # Use test_loader for validation unless disabled
@@ -232,9 +257,9 @@ def train_single_config(params):
         )
         
         # Save model
-        model_spec = {"model_name": model_name, "heads": heads}
+        #model_spec = {"model_name": model_name, "heads": heads}
         train_spec = {"visual_range": visual_range, "sigma": noise, "epochs": epochs}
-        save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
+        save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout{rollout}"
 
         worker_logger.debug(f"Saving model {save_name}...")
         model_output, model_spec_path, train_spec_path = save_model(trained_model, model_spec, train_spec, save_name)
@@ -308,7 +333,7 @@ def main():
                        help="Number of seeds (default: 5)")
     parser.add_argument("--batch-size", type=int, default=16,
                        help="Batch size for training (default: 16 - optimized for RTX 4090)")
-    parser.add_argument("--epochs", type=int, default=1,
+    parser.add_argument("--epochs", type=int, default=10,
                        help="Number of epochs for training (default: 1)")
     parser.add_argument("--early-stopping-patience", type=int, default=2,
                        help="Early stopping patience - stop if no improvement for N epochs (default: 2)")
@@ -328,6 +353,9 @@ def main():
                        help="GPU memory fraction to allocate (default: 0.9)")
     parser.add_argument("--train-size", type=float, default=0.7,
                        help="Train size (default: 0.7)")
+    parser.add_argument("--rollout", type=int, default=-1,
+                       help="Do rollout starting at which frame")
+
     
     args = parser.parse_args()
     
@@ -345,6 +373,13 @@ def main():
     )
     # Ensure logs directory exists
     main_log_file.parent.mkdir(exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    results_file = expand_path(
+        f"results/results_{args.dataset[1:]}_{timestamp}.json",
+        get_project_root()
+    )
+    # Ensure results directory exists
+    results_file.parent.mkdir(exist_ok=True)
     
     logger.add(str(main_log_file),
               format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>\n",
@@ -413,11 +448,11 @@ def main():
         visual_ranges = [0.1]
         seeds = range(2*max_workers)
     else:
-        # model_names = ["vpluspplus_a", "lazy"]
+        #model_names = ["vpluspplus_a", "lazy"]
         model_names = ["vpluspplus_a"]
-        noise_levels = [0, 0.005]
-        heads = [1, 2, 3]
-        visual_ranges = [0.5]
+        noise_levels = [0] #[0, 0.005]
+        heads = [1] #[1 2 3]
+        visual_ranges = [0.1] #[0.1, 0.5]
         seeds = range(args.seeds)
     
     # Generate all combinations with worker IDs
@@ -431,7 +466,7 @@ def main():
                         all_params.append(
                             (args.dataset, model, noise, head, vr, seed, gpu_count, worker_id, 
                              args.batch_size, args.epochs, args.compile, args.memory_fraction,
-                             args.no_validation, args.early_stopping_patience, args.min_delta, args.train_size)
+                             args.no_validation, args.early_stopping_patience, args.min_delta, args.train_size, args.rollout)
                         )
                         worker_id += 1
     
@@ -442,16 +477,16 @@ def main():
     if gpu_count > 0:
         logger.info("GPU Assignment Plan:")
         for i in range(min(8, len(all_params))):  # Show first 8 assignments
-            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _ = all_params[i]
+            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout = all_params[i]
             assigned_gpu = wid % gpu_count
-            logger.info(f"  Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs})")
+            logger.info(f"Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs}), rollout = {rollout}  ")
         if len(all_params) > 8:
             logger.info(f"  ... and {len(all_params) - 8} more configurations")
     else:
         logger.info("CPU Training Plan:")
         for i in range(min(8, len(all_params))):  # Show first 8 assignments
-            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _ = all_params[i]
-            logger.info(f"  Config {wid:02d} -> CPU: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs})")
+            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout = all_params[i]
+            logger.info(f"  Config {wid:02d} -> CPU: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs}), rollout = {rollout}  ")
         if len(all_params) > 8:
             logger.info(f"  ... and {len(all_params) - 8} more configurations")
     logger.info("="*60)
@@ -500,14 +535,6 @@ def main():
                 logger.info(f"Progress: {completed}/{len(all_params)} | Elapsed: {elapsed:.1f} min | Distribution: {distribution}")
     
     # Save results using project structure
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    results_file = expand_path(
-        f"results/results_{args.dataset}_{timestamp}.json",
-        get_project_root()
-    )
-    # Ensure results directory exists
-    results_file.parent.mkdir(exist_ok=True)
-    
     with open(results_file, "w") as f:
         json.dump(results, f, indent=2)
     

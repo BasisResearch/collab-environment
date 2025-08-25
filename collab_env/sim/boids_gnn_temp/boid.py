@@ -88,8 +88,8 @@ def init_multi_species_boids(species_configs, species_counts, width, height,
                 'dy':0})
             continue
         for _ in range(count):
-            np.random.seed(seed + _)
-            random.seed(seed + _) 
+            np.random.seed(2 * seed + _)
+            random.seed(2 * seed + _) 
             boids.append({
                 'x': random.random() * width,
                 'y': random.random() * height,
