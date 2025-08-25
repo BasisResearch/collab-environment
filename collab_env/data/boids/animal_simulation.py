@@ -301,10 +301,10 @@ def static_visualize_2sets(p, v, p2, v2,
         ax.scatter(p[i,:,0],p[i,:,1], color = cmap1(norm(i)))
         ax.scatter(p2[i,:,0],p2[i,:,1], color = cmap2(norm(i)))
         if v is not None:
-            ax.quiver(p[i,:,0], p[i,:,1], v[i+1,:,0] * 10, v[i+1,:,1] * 10,
+            ax.quiver(p[i,:,0], p[i,:,1], v[i+1,:,0], v[i+1,:,1],
                         color = cmap1(norm(i)), alpha = 0.5,
                         scale_units='xy', scale=1)
-            ax.quiver(p2[i,:,0], p2[i,:,1], v2[i+1,:,0] * 10, v2[i+1,:,1] * 10,
+            ax.quiver(p2[i,:,0], p2[i,:,1], v2[i+1,:,0], v2[i+1,:,1],
                         color = cmap2(norm(i)), alpha = 0.5,
                         scale_units='xy', scale=1)
 
@@ -315,10 +315,10 @@ def static_visualize_2sets(p, v, p2, v2,
         ax.scatter(p[i,:,0],p[i,:,1], color = "0.5", alpha = 0.5)
         ax.scatter(p2[i,:,0],p2[i,:,1], color = "0.5", alpha = 0.5)
         if v is not None:
-            ax.quiver(p[i,:,0], p[i,:,1], v[i+1,:,0] * 10, v[i+1,:,1] * 10,
+            ax.quiver(p[i,:,0], p[i,:,1], v[i+1,:,0], v[i+1,:,1],
                         color = "0.5", alpha = 0.5,
                         scale_units='xy', scale=1)
-            ax.quiver(p2[i,:,0], p2[i,:,1], v2[i+1,:,0] * 10, v2[i+1,:,1] * 10,
+            ax.quiver(p2[i,:,0], p2[i,:,1], v2[i+1,:,0], v2[i+1,:,1],
                         color = "0.5", alpha = 0.5,
                         scale_units='xy', scale=1)
 

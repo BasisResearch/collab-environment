@@ -16,6 +16,7 @@ def rollout_to_pos_vel_acc(rollout_debug_result, starting_frame = 0, ending_fram
 
     # infer total file sizes
     file_num = np.sum([rollout_debug_result[0][b]['predicted'][0].shape[0] for b in rollout_debug_result[0].keys()])
+    print(file_num)
     
     for file_id in range(file_num):
         pos, vel, acc, pos_gnn, vel_gnn, acc_gnn, frame_sets = debug_result2prediction(

@@ -688,12 +688,111 @@ def train_rules_gnn(
 
     return np.array(train_losses), model, debug_result_all
 
-def get_input_adj(input_data_loader):
-    """
-    Takes input data loader of any batch size, the function will return a list of length file number
-    """
-    return None
 
+def debatch_edge_index_weight(edge_index_output, edge_weight_output, INODE_NUM):
+    """
+    INODE_NUM: node dimension number for each file
+    Takes batched sparse adjacency matrix
+        and return seperate adjacency matrix for each file.
+    """
+    file_ind = torch.floor(edge_index_output / INODE_NUM) #file in this batch
+    assert torch.all(file_ind[0] == file_ind[1])
+    node_ind = edge_index_output % INODE_NUM #node in this batch
+    
+    W_by_file = []
+    for file in np.unique(file_ind):
+        col_ind = file_ind[0] == file
+        edge_index_output_file = node_ind[:, col_ind]
+        edge_weight_output_file = edge_weight_output[col_ind]
+        W = return_adjacency_matrix(
+            INODE_NUM, edge_index_output_file, edge_weight_output_file)
+        W_by_file.append(W)
+
+    return W_by_file
+    
+def get_input_adjcency_from_debug_batch(
+    input_data_loader, starting_frame, visual_range, epoch_list):
+    "organization is epoch -> file -> frame"
+
+    data_list = list(iter(input_data_loader))
+    B = len(data_list)
+
+    W_out_epoch = {}
+    for epoch in epoch_list:
+        W_out = {}
+        file_num = 0
+        
+        for batch_ind in range(B):
+            position, species_idx = data_list[batch_ind]
+            S, F, N, dim = position.shape
+
+            for file in range(S):
+                W_out[file] = []
+                for f in range(starting_frame, F):
+                    edge_index_input = build_single_graph_edges(
+                        position[file, f, :, :], visual_range=visual_range
+                    )
+                    W_input_frame = normalize_by_col(
+                        N, 1, edge_index_input, return_matrix=True
+                    )
+                    W_out[file].append(W_input_frame)
+            file_num += S
+
+        W_out_epoch[epoch] = W_out
+
+    return W_out_epoch
+
+def get_output_adjcency_from_debug_batch(
+    debug_result, epoch_list=None
+):
+    "organization is epoch -> file -> frame"
+
+    if epoch_list is None:
+        epochs = list(debug_result.keys())
+        epoch_list = [epochs[-1]]
+
+    epoch_num = 0
+    FRAME_NUM = 0
+    INODE_NUM = 20
+    batch_num = 0
+    frame = 0
+
+    W_out_epoch = {} 
+    for epoch in epoch_list:
+        W_out = {}
+        
+        file_num = 0
+        B = len(debug_result[epoch_num])
+        F = len(debug_result[epoch_num][batch_num]['actual'])
+        
+        for batch_ind in range(B):
+            file_num_batch = len(debug_result[epoch_num][batch_num]['actual'][FRAME_NUM]) #first frame
+            
+            # initialize all files
+            for file_id in range(file_num, file_num + file_num_batch):
+                W_out[file_id] = []
+            file_num = file_num + file_num_batch
+
+            for frame in range(F):
+                edge_index_output, edge_weight_output = debug_result[epoch_num][batch_num]['W'][frame]
+                
+                W_by_file = debatch_edge_index_weight(edge_index_output, edge_weight_output, INODE_NUM)
+                for W_ in W_by_file:
+                    W_out[file_id].append(W_)
+        W_out_epoch[epoch] = W_out
+
+    return W_out_epoch
+
+def get_adjcency_from_debug_batch(
+    debug_result, input_data_loader, visual_range, starting_frame
+):
+    """
+    handle batching
+    """
+    W_out_epoch = get_output_adjcency_from_debug_batch(debug_result, epoch_list=None)
+    W_input_epoch = get_input_adjcency_from_debug_batch(input_data_loader,
+        starting_frame, visual_range, epoch_list = list(W_out_epoch.keys()))
+    return W_input_epoch, W_output_epoch
 
 
 def get_adjcency_from_debug(
@@ -838,6 +937,13 @@ def load_model(name, file_name):
 
     # Create an instance of the model (with the same architecture)
     model_spec["model_name"] = name
+    model_spec["node_feature_function"] = "vel_plus_pos_plus"
+    model_spec["node_prediction"] = "acc"
+    model_spec["prediction_integration"]= "Euler"
+    model_spec["input_differentiation"]= "finite"
+    model_spec["in_node_dim"]= 19
+    model_spec["start_frame"]= 3
+ 
     if "lazy" in name:
         gnn_model = Lazy(**model_spec)
         logger.debug("Loaded lazy model.")
