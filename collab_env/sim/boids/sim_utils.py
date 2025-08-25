@@ -173,18 +173,17 @@ def get_submesh_indices_from_ply(file_path):
         for i in range(vertex_count):
             # custom_property_row = []
             # Read the vertex data according to the property types
-            data = file.read(
-                3 * 8
-            )  # Assuming first three properties are float (x, y, z)
-            _ = struct.unpack("<ddd", data)  # Little-endian float unpacking
+            _ = file.read(3 * 8)  # Assuming first three properties are float (x, y, z)
+            # _ = struct.unpack("<ddd", data)  # Little-endian float unpacking
             # vertices.append(vertex)
 
             # skip the normals
-            _ = file.read(3 * 8)  # Assuming first three properties are float (x, y, z)
+            _ = file.read(
+                3 * 8
+            )  # Assuming next three properties are float (n_x, n_y, n_z)
 
             # read the red
-            # Read the custom property (assuming it's a float)
-            data = file.read(1)  # Assuming custom property is a float
+            data = file.read(1)  # Assuming indicator property is a byte
             red = struct.unpack("<B", data)[0]  # Little-endian float unpacking
             # red_list.append(red)
             if red > 0:

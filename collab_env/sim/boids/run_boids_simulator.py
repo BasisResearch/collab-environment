@@ -254,20 +254,21 @@ if __name__ == "__main__":
         #
         agent.set_target_weight(0.0, 0)
         for time_step in tqdm(range(config["simulator"]["num_frames"])):
-            if time_step == target_creation_time:
-                """
-                TOC -- 082325 11:02PM
-                I am only setting the first target weight here. That is a problem that
-                needs to be fixed with multiple targets. 
-                """
-                agent.set_target_weight(config["agent"]["target_weight"][0], 0)
+            for t in range(len(target_creation_time)):
+                if time_step == target_creation_time[t]:
+                    """
+                    TOC -- 082325 11:02PM
+                    I am only setting the first target weight here. That is a problem that
+                    needs to be fixed with multiple targets. 
+                    """
+                    agent.set_target_weight(config["agent"]["target_weight"][t], t)
 
-                """
-                TOC -- 080425 2:40PM
-                I can't call this method since the environment is in a wrapper. 
-                I need to understand wrappers better.
-                """
-                # env.create_target()
+                    """
+                    TOC -- 080425 2:40PM
+                    I can't call this method since the environment is in a wrapper. 
+                    I need to understand wrappers better.
+                    """
+                    # env.create_target()
 
             # Agent chooses action
             action = agent.get_action(obs)

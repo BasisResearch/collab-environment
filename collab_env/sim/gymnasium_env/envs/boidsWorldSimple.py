@@ -62,7 +62,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         video_fps=30,
         vis_width=1920,
         vis_height=1027,
-        target_creation_time=0,
+        target_creation_time=None,  # need to figure this out
         agent_trajectories=None,
         target_trajectories=None,
         run_trajectories=False,  # run trajectories is for actually moving the agent meshes
@@ -113,7 +113,9 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.box_size = box_size  # tne size of the cube boundary around the world
         self.show_box = show_box
         self.walking = walking
-        self.target_creation_time = target_creation_time
+        self.target_creation_time = (
+            [0] if target_creation_time is None else target_creation_time
+        )
         self.agent_scale = agent_scale
         self.scene_scale = scene_scale
         self.scene_filename = scene_filename
@@ -161,14 +163,29 @@ class BoidsWorldSimpleEnv(gym.Env):
         then just get the vertices out of the scene vertices by choosing by index after we load and rotate
         the scene in load_and_rotate()  
         """
-        self.submesh_vertices = None
         self.submesh_target = False
+        #
+        # TOC -- 082425 1:01PM
+        # Create a ragged numpy array. Not sure I need this to be a numpy array. Should
+        # probably just use a python list. This blew up as an np.array, just go with
+        # a list.
+        #
+        self.num_submesh_targets = 0
+        self.submesh_vertex_indices = []
+        self.submesh_vertices = []
         if self.target_mesh_file is not None:
+            self.num_submesh_targets = len(self.target_mesh_file)
             self.submesh_target = True
-            self.submesh_vertex_indices = get_submesh_indices_from_ply(
-                expand_path(self.target_mesh_file, get_project_root())
-            )
-            logger.info(f"{len(self.submesh_vertex_indices)} found in sub-mesh target")
+            self.submesh_vertices = [None] * self.num_submesh_targets
+            for t in range(self.num_submesh_targets):
+                self.submesh_vertex_indices.append(
+                    get_submesh_indices_from_ply(
+                        expand_path(self.target_mesh_file[t], get_project_root())
+                    )
+                )
+                logger.info(
+                    f"{len(self.submesh_vertex_indices[t])} found in sub-mesh target"
+                )
 
         self.observation_space = spaces.Dict(
             {
@@ -271,7 +288,6 @@ class BoidsWorldSimpleEnv(gym.Env):
                 ),
             }
         )
-
         logger.debug("obs space: " + str(self.observation_space))
 
         # actions are velocities
@@ -323,18 +339,31 @@ class BoidsWorldSimpleEnv(gym.Env):
                     self.mesh_scene, self._agent_location
                 )
             )
-        if self.submesh_target:
-            distances_to_target_mesh, target_mesh_closest_points = (
-                self.compute_target_distances_to_vertices()
-            )
-        else:
+
+        if self.num_targets > self.num_submesh_targets:
             distances_to_target_mesh, target_mesh_closest_points = (
                 self.compute_mesh_target_distances()
             )
-        return {
-            "agent_loc": tuple(self._agent_location),
-            "agent_vel": tuple(self._agent_velocity),
-            "target_loc": (tuple(self._target_location)),
+
+        if self.submesh_target:
+            distances_to_submesh_targets, closest_points_submesh_targets = (
+                self.compute_target_distances_to_vertices()
+            )
+            if self.num_targets > self.num_submesh_targets:
+                distances_to_target_mesh = np.concatenate(
+                    (distances_to_submesh_targets, distances_to_target_mesh), axis=1
+                )
+                target_mesh_closest_points = np.concatenate(
+                    (closest_points_submesh_targets, target_mesh_closest_points), axis=1
+                )
+            else:
+                distances_to_target_mesh = distances_to_submesh_targets
+                target_mesh_closest_points = closest_points_submesh_targets
+
+        result = {
+            "agent_loc": self._agent_location,
+            "agent_vel": self._agent_velocity,
+            "target_loc": self._target_location,
             # "target_loc":
             "distances_to_target_centers": self.compute_target_center_distances(),
             "distances_to_target_mesh_closest_points": distances_to_target_mesh,  # modified 080625 9:08PM
@@ -342,6 +371,15 @@ class BoidsWorldSimpleEnv(gym.Env):
             "mesh_scene_distance": scene_distances,
             "mesh_scene_closest_points": scene_closest_points,
         }
+        logger.debug(f"len of obs agent_loc {len(result['agent_loc'])}")
+        logger.debug(f"len of obs agent_vel {len(result['agent_vel'])}")
+        logger.debug(f"{result['target_loc'].shape}")
+        logger.debug(f"{result['distances_to_target_centers'].shape}")
+        logger.debug(f"{result['distances_to_target_mesh_closest_points'].shape}")
+        logger.debug(f"{result['target_mesh_closest_points'].shape}")
+        logger.debug(f"{result['mesh_scene_distance'].shape}")
+        logger.debug(f"{result['mesh_scene_closest_points'].shape}")
+        return result
 
     def _get_obs_to_target_centers(self):
         """ """
@@ -364,9 +402,9 @@ class BoidsWorldSimpleEnv(gym.Env):
                 self.mesh_scene, self._agent_location
             )
         return {
-            "agent_loc": tuple(self._agent_location),
-            "agent_vel": tuple(self._agent_velocity),
-            "target_loc": (tuple(self._target_location)),
+            "agent_loc": spaces.Tuple(self._agent_location),
+            "agent_vel": spaces.Tuple(self._agent_velocity),
+            "target_loc": spaces.Tuple(self._target_location),
             # "target_loc":
             "distances_to_targets": self.compute_target_center_distances(),
             "mesh_distance": distances,
@@ -400,6 +438,12 @@ class BoidsWorldSimpleEnv(gym.Env):
             "mesh_closest_points": closest_points,
         }
 
+    """
+    TOC -- 082425 1:17PM
+    I don't think this function is called anymore. It will blow up if it is, so I 
+    guess we will find out.  
+    """
+
     def get_distances(self, agent_locations, submesh_vertices):
         distances = np.zeros(len(agent_locations))
         closest_points = np.zeros((len(agent_locations), 3))
@@ -424,8 +468,12 @@ class BoidsWorldSimpleEnv(gym.Env):
         d, c = self.compute_distance_and_closest_points_to_vertices(
             self.submesh_vertices, self._agent_location
         )
-        distances = np.array([d])
-        closest_points = np.array([c])
+        """
+        TOC -- 082425 1:15PM
+        These are now coming back as lists, so no need to force that here. 
+        """
+        distances = np.array(d)
+        closest_points = np.array(c)
         distances = np.array(distances).transpose()
 
         logger.debug(f"dist {distances}")
@@ -550,6 +598,11 @@ class BoidsWorldSimpleEnv(gym.Env):
             if self.specified_target_position is not None:
                 self._target_location = np.zeros((self.num_targets, 3))
                 for i in range(self.num_targets):
+                    """
+                    TOC -- 082425 2:18PM (comment added)
+                    This gives an option of not putting a specified position for each 
+                    target. Those unspecified will be chosen randomly. 
+                    """
                     if len(self.specified_target_position[i]) > 0:
                         self._target_location[i] = np.array(
                             self.specified_target_position[i]
@@ -938,7 +991,6 @@ class BoidsWorldSimpleEnv(gym.Env):
         # can't compute distances until the target meshes are set up.
         observation = self._get_obs()
         info = self._get_info()
-
         return observation, info
 
     """
@@ -1022,8 +1074,9 @@ class BoidsWorldSimpleEnv(gym.Env):
             terminated = False
 
         else:
-            if self.time_step == self.target_creation_time:
-                self.create_targets()
+            for t in range(self.num_targets):
+                if self.time_step == self.target_creation_time[t]:
+                    self.create_targets(t)
 
             """
             Some of this code, like the wall avoidance, should be in action
@@ -1267,14 +1320,15 @@ class BoidsWorldSimpleEnv(gym.Env):
         Returns:
 
         """
-        distances = np.zeros(len(locations))
-        closest_points = np.zeros((len(locations), 3))
-        for i in range(len(locations)):
-            diff = submesh_vertices - locations[i]
-            norms = np.apply_along_axis(np.linalg.norm, 1, diff)
-            argmin = np.argmin(norms)
-            closest_points[i] = submesh_vertices[argmin]
-            distances[i] = norms[argmin]
+        distances = np.zeros((self.num_submesh_targets, len(locations)))
+        closest_points = np.zeros((self.num_submesh_targets, len(locations), 3))
+        for t in range(self.num_submesh_targets):
+            for i in range(len(locations)):
+                diff = submesh_vertices[t] - locations[i]
+                norms = np.apply_along_axis(np.linalg.norm, 1, diff)
+                argmin = np.argmin(norms)
+                closest_points[t][i] = submesh_vertices[t][argmin]
+                distances[t][i] = norms[argmin]
         return distances, closest_points
 
     def compute_distance_and_closest_points(self, mesh, agents_loc, raycasting=None):
@@ -1584,7 +1638,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
             self.vis.add_geometry(self.mesh_agent[i])
 
-    def create_targets(self):
+    def create_targets(self, target_index):
         """
         This method simply adds the target meshes that were already created to the visualizer
         or recolors the submesh target if we have one.
@@ -1592,15 +1646,26 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         """
 
-        if self.submesh_target:
+        # if self.submesh_target:
+        #
+
+        # # If no existing colors, create a default white array
+        # if len(colors) == 0:
+        #     colors = np.ones_like(vertices)
+
+        """
+        TOC -- 082425 1:52PM 
+        We will treat the initial indices as submesh targets. If there are 
+        more targets than that, we will treat them as plain targets that are
+        not a submesh of the scene and need to be created. That doesn't really
+        make a lot of sense. Maybe we just shouldn't allow mixing and matching. 
+        """
+        if target_index < self.num_submesh_targets:
             colors = np.asarray(self.mesh_scene.vertex_colors)
-
-            # # If no existing colors, create a default white array
-            # if len(colors) == 0:
-            #     colors = np.ones_like(vertices)
-
-            # Modify colors for specific indices
-            colors[self.submesh_vertex_indices] = self.submesh_color
+            # Modify colors for specific target
+            colors[self.submesh_vertex_indices[target_index]] = self.submesh_color[
+                target_index
+            ]
 
             # Update mesh vertex colors
             self.mesh_scene.vertex_colors = open3d.utility.Vector3dVector(colors)
@@ -1610,9 +1675,19 @@ class BoidsWorldSimpleEnv(gym.Env):
             TOC -- 080525
             Right now all targets will be created at the same time. This needs to be changed 
             to have configurable times for each target. 
+            
+            TOC -- 082425 1:58PM 
+            The targets will be created based on the target_index if the target_index is beyond
+            the submesh targets. Need to change init_targets to handle this. Also need to fix
+            how we are handling the ground targets, since I am doing something janky with that
+            index too. This needs a better design. Maybe initialization should handle all of
+            this and the other methods should split up ground, air, and submesh targets more
+            simply. 
             """
-            for i in range(self.num_targets):
-                self.vis.add_geometry(self.mesh_target_list[i])
+            # for i in range(self.num_targets):
+            self.vis.add_geometry(
+                self.mesh_target_list[target_index - self.num_submesh_targets]
+            )
             # if self.walking:
             #     self.vis.add_geometry(self.mesh_ground_target[i])
             # else:
@@ -1642,8 +1717,14 @@ class BoidsWorldSimpleEnv(gym.Env):
         return raycasting
 
     def init_target_meshes(self):
-        self.mesh_target_list = [None] * self.num_targets
-        for i in range(self.num_targets):
+        """
+        TOC -- 082425 2:33PM
+        This needs to change to only create targets beyond the number of submesh targets.
+        Returns:
+
+        """
+        self.mesh_target_list = [None] * (self.num_targets - self.num_submesh_targets)
+        for i in range(self.num_targets - self.num_submesh_targets):
             self.mesh_target_list[i] = open3d.geometry.TriangleMesh.create_sphere(
                 radius=1.0
             )
@@ -1664,10 +1745,13 @@ class BoidsWorldSimpleEnv(gym.Env):
             If agents are walking, put the target on the mesh scene. Screws up the scale 
             somehow. It must not be drawn to the correct spot. Try not drawing it.   
             """
-            if i >= self.ground_target_first_index and self.mesh_scene is not None:
+            if (
+                i + self.num_submesh_targets >= self.ground_target_first_index
+                and self.mesh_scene is not None
+            ):
                 distances, closest_points = self.compute_distance_and_closest_points(
                     self.mesh_scene,
-                    [self._target_location[i]],
+                    [self._target_location[i + self.num_submesh_targets]],
                 )
                 # self.mesh_sphere_target.translate(closest_points.numpy()[0] - self._target_location)
                 #
@@ -1716,16 +1800,17 @@ class BoidsWorldSimpleEnv(gym.Env):
                 angles=self.scene_angle,
             )
 
-            if self.target_mesh_file is not None:
-                vertex_mask = np.zeros(len(self.mesh_scene.vertices), dtype=bool)
-                vertex_mask[self.submesh_vertex_indices] = True
-                """
-                TOC -- 081225 4:08PM
-                This doesn't work without converting to np.array. Need to work this out. 
-                """
-                self.submesh_vertices = np.array(self.mesh_scene.vertices)[
-                    vertex_mask
-                ]  # + mesh.get_center()
+            if self.submesh_target is not None:
+                for t in range(self.num_submesh_targets):
+                    vertex_mask = np.zeros(len(self.mesh_scene.vertices), dtype=bool)
+                    vertex_mask[self.submesh_vertex_indices[t]] = True
+                    """
+                    TOC -- 081225 4:08PM
+                    This doesn't work without converting to np.array. Need to work this out. 
+                    """
+                    self.submesh_vertices[t] = np.array(self.mesh_scene.vertices)[
+                        vertex_mask
+                    ]  # + mesh.get_center()
 
         if self.show_box:
             self.add_box()
@@ -1770,9 +1855,13 @@ class BoidsWorldSimpleEnv(gym.Env):
                 # # If no existing colors, create a default white array
                 # if len(colors) == 0:
                 #     colors = np.ones_like(vertices)
-
-                # Modify colors for specific indices
-                colors[self.submesh_vertex_indices] = self.submesh_init_color
+                """
+                TOC -- 082425 1:20PM
+                This now handles a list of colors, one for each submesh. 
+                """
+                for t in range(self.num_submesh_targets):
+                    # Modify colors for specific indices
+                    colors[self.submesh_vertex_indices[t]] = self.submesh_init_color[t]
 
                 # Update mesh vertex colors
                 self.mesh_scene.vertex_colors = open3d.utility.Vector3dVector(colors)

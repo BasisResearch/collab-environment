@@ -256,35 +256,6 @@ class BoidsWorldAgent:
                 and (obs["mesh_scene_distance"][i] < self.min_ground_separation)
             ):
                 self.mesh_avoidance(velocity, location, i, obs)
-                # """
-                # TOC -- 081125 -- 9:44AM
-                # These numbers need to be configurable.
-                # """
-                # # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
-                # # velocity[i] = velocity[i] + np.array([0.0, -velocity[i][1], 0.0])
-                #
-                #
-                # # velocity[i] = velocity[i] + self.env.np_random.normal(0.1, 0.01, 3)
-                #
-                #
-                # '''
-                # TOC -- 081725 6:50PM
-                # Let's try going in the opposite direction of the closest point instead of up, front, right.
-                # '''
-                # closest_point = obs['mesh_closest_points'][i]
-                # acceleration = self.min_ground_separation**2/(location[i] - closest_point)
-                # acceleration[1] = np.abs(acceleration[1]) # make sure we move up.
-                # self.cap_force_and_apply(acceleration, velocity, i)
-                #
-                # '''
-                # TOC -- 081725 6:01PM
-                # With this approach they get stuck on obstacles.
-                # Capping and applying the force causes boids to go into a tree and disappear.
-                # '''
-                # # acceleration = -velocity[i]/np.linalg.norm(velocity[i]) * self.max_force
-                # # self.cap_force_and_apply(acceleration, velocity, i)
-                # # velocity[i] = velocity[i] + acceleration + self.env.np_random.normal(0, 0.02, 3)
-
             else:
                 # velocity[i] = vel # not sure which is faster, getting the whole thing before or walking through
                 sum_separation_vector = np.zeros(3)
