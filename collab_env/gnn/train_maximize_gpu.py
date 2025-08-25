@@ -33,7 +33,7 @@ def worker_wrapper(params):
     import torch
     
     try:
-        data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction, no_validation, early_stopping_patience, min_delta, train_size, rollout = params
+        data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction, no_validation, early_stopping_patience, min_delta, train_size, rollout, rollout_frames = params
         
         # Set CUDA_VISIBLE_DEVICES in this process before CUDA is initialized
         if gpu_count > 0:
@@ -73,7 +73,7 @@ def train_single_config(params):
     (data_name, model_name, noise, heads, visual_range, seed,
         gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction,
         no_validation, early_stopping_patience, min_delta, train_size,
-        rollout) = params
+        rollout, rollout_frames) = params
     
     # Determine device and worker label
     if gpu_count > 0:
@@ -149,7 +149,7 @@ def train_single_config(params):
             weights_only=False
         )
         
-        worker_logger.debug(f"Creating test and train loaders")
+        worker_logger.debug("Creating test and train loaders")
         test_loader, train_loader = dataset2testloader(
             dataset, batch_size=batch_size, return_train=True, device=device, train_size=train_size
         )
@@ -240,7 +240,7 @@ def train_single_config(params):
             except Exception as e:
                 worker_logger.warning(f"Model compilation failed: {e}, continuing without compilation")
         
-        worker_logger.debug(f"Training model with validation and early stopping")
+        worker_logger.debug("Training model with validation and early stopping")
         # Train with validation and early stopping
         train_losses, trained_model, debug_result = train_rules_gnn(
             model,
@@ -253,6 +253,7 @@ def train_single_config(params):
             sigma = noise,
             device = device,
             rollout = rollout,
+            rollout_frames = rollout_frames,
             train_logger=worker_logger,
             collect_debug=collect_debug,  # Disable debug to avoid CPU transfers
             val_dataloader=test_loader if not no_validation else None,  # Use test_loader for validation unless disabled
@@ -263,7 +264,7 @@ def train_single_config(params):
         # Save model
         #model_spec = {"model_name": model_name, "heads": heads}
         train_spec = {"visual_range": visual_range, "sigma": noise, "epochs": epochs}
-        save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout{rollout}"
+        save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout_{rollout}_frames_{rollout_frames}"
         if rollout:
             rollout_path = expand_path(
                 f"trained_models/{save_name}.pkl",
@@ -367,6 +368,8 @@ def main():
                        help="Train size (default: 0.7)")
     parser.add_argument("--rollout", type=int, default=-1,
                        help="Do rollout starting at which frame")
+    parser.add_argument("--rollout-frames", type=int, default=300,
+                        help="Number of frames to rollout")
 
     
     args = parser.parse_args()
@@ -387,7 +390,7 @@ def main():
     main_log_file.parent.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     results_file = expand_path(
-        f"results/results_{args.dataset[1:]}_{timestamp}.json",
+        f"results/results_{args.dataset}_{timestamp}.json",
         get_project_root()
     )
     # Ensure results directory exists
@@ -462,9 +465,9 @@ def main():
     else:
         #model_names = ["vpluspplus_a", "lazy"]
         model_names = ["vpluspplus_a"]
-        noise_levels = [0] #[0, 0.005]
-        heads = [1] #[1 2 3]
-        visual_ranges = [0.1] #[0.1, 0.5]
+        noise_levels = [0, 0.005] #[0, 0.005]
+        heads = [1, 2, 3] #[1 2 3]
+        visual_ranges = [0.5] #[0.1, 0.5]
         seeds = range(args.seeds)
     
     # Generate all combinations with worker IDs
@@ -478,7 +481,7 @@ def main():
                         all_params.append(
                             (args.dataset, model, noise, head, vr, seed, gpu_count, worker_id, 
                              args.batch_size, args.epochs, args.compile, args.memory_fraction,
-                             args.no_validation, args.early_stopping_patience, args.min_delta, args.train_size, args.rollout)
+                             args.no_validation, args.early_stopping_patience, args.min_delta, args.train_size, args.rollout, args.rollout_frames)
                         )
                         worker_id += 1
     
@@ -489,16 +492,16 @@ def main():
     if gpu_count > 0:
         logger.info("GPU Assignment Plan:")
         for i in range(min(8, len(all_params))):  # Show first 8 assignments
-            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout = all_params[i]
+            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout, rollout_frames = all_params[i]
             assigned_gpu = wid % gpu_count
-            logger.info(f"Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs}), rollout = {rollout}  ")
+            logger.info(f"Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs}), rollout = {rollout}, rollout_frames = {rollout_frames}  ")
         if len(all_params) > 8:
             logger.info(f"  ... and {len(all_params) - 8} more configurations")
     else:
         logger.info("CPU Training Plan:")
         for i in range(min(8, len(all_params))):  # Show first 8 assignments
-            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout = all_params[i]
-            logger.info(f"  Config {wid:02d} -> CPU: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs}), rollout = {rollout}  ")
+            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout, rollout_frames = all_params[i]
+            logger.info(f"  Config {wid:02d} -> CPU: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs}), rollout = {rollout}, rollout_frames = {rollout_frames}  ")
         if len(all_params) > 8:
             logger.info(f"  ... and {len(all_params) - 8} more configurations")
     logger.info("="*60)
@@ -565,7 +568,7 @@ def main():
     valid_results = [r for r in results if r["status"] == "success"]
     if valid_results:
         best = min(valid_results, key=lambda x: x["final_loss"])
-        logger.success(f"Best configuration:")
+        logger.success("Best configuration:")
         logger.success(f"  Model: {best['model_name']}")
         logger.success(f"  Noise: {best['noise']}")
         logger.success(f"  Heads: {best['heads']}")

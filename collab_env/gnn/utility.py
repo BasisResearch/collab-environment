@@ -2,7 +2,6 @@ import torch
 import numpy as np
 from scipy.interpolate import UnivariateSpline
 from torch.utils.data import random_split
-from torch_geometric.data import Batch, Data
 from torch_geometric.loader import DataLoader
 
 

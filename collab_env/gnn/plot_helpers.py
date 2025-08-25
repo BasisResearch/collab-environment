@@ -1,8 +1,6 @@
 import torch
-import torch.nn.functional as functional
 import numpy as np
 
-from collab_env.data.file_utils import expand_path, get_project_root
 from collab_env.gnn.gnn import debug_result2prediction
 from collab_env.gnn.utility import handle_discrete_data
 

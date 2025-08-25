@@ -354,6 +354,7 @@ def run_gnn(model,
             debug_result = None,
             full_frames = False,
             rollout = -1,
+            rollout_frames = 300,
             rollout_everyother = -1,
             ablate_boid_interaction = False,
             collect_debug = True):
@@ -405,7 +406,7 @@ def run_gnn(model,
     # frame roll out
     roll_out_flag = np.zeros(Frame)
     if rollout > 0:
-        roll_out_flag[rollout:] = 1
+        roll_out_flag[rollout:rollout+rollout_frames] = 1
     if rollout_everyother > 0:
         roll_out_flag = np.ones(Frame)
         roll_out_flag[::rollout_everyother] = 0
@@ -428,7 +429,8 @@ def run_gnn(model,
     frames = identify_frames(pos, vel)     
     if full_frames:
         frames = np.arange(Frame-1)
-    
+    if rollout > 0:
+        frames = frames[:rollout+rollout_frames]
     for frame_ind in range(len(frames)-1): #range(Frame-1): #since we are predicting frame + 1, we have to stop 1 frame earlier
         frame = frames[frame_ind]
         if frame_ind == 0:
@@ -560,6 +562,7 @@ def train_rules_gnn(
     device = None,
     aux_data = None,
     rollout = -1,
+    rollout_frames = 300,
     rollout_everyother = -1,
     ablate_boid_interaction = False,
     train_logger = None,
@@ -621,6 +624,7 @@ def train_rules_gnn(
                 lr = lr,
                 full_frames = full_frames,
                 rollout = rollout,
+                rollout_frames = rollout_frames,
                 rollout_everyother = rollout_everyother,
                 ablate_boid_interaction = ablate_boid_interaction,
                 collect_debug = collect_debug)
@@ -651,7 +655,7 @@ def train_rules_gnn(
                         training = False,  # No gradient updates
                         lr = None,
                         full_frames = full_frames,
-                        rollout = rollout,
+                        rollout = -1, # no rollout during validation
                         rollout_everyother = rollout_everyother,
                         ablate_boid_interaction = ablate_boid_interaction,
                         collect_debug = False)

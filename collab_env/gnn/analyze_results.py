@@ -23,13 +23,13 @@ def create_dataframe_with_summary(results):
     successful_results = [r for r in results if r.get("status") == "success"]
     failed_results = [r for r in results if r.get("status") != "success"]
     
-    print(f"\nResults summary:")
+    print("\nResults summary:")
     print(f"  Total loaded: {len(results)} results")
     print(f"  Successful: {len(successful_results)}")
     print(f"  Failed: {len(failed_results)}")
     
     if failed_results:
-        print(f"\nFailure reasons:")
+        print("\nFailure reasons:")
         import pandas as pd
         failure_counts = pd.Series([r.get("status", "unknown") for r in failed_results]).value_counts()
         for status, count in failure_counts.items():
@@ -191,7 +191,7 @@ def generate_summary_stats(df, save_dir: Path) -> None:
     print("="*60)
     
     # Overall statistics
-    print(f"\nOverall Results:")
+    print("\nOverall Results:")
     print(f"  Total successful runs: {stats['total_runs']}")
     print(f"  Best loss: {stats['best_loss']:.6f}")
     print(f"  Worst loss: {stats['worst_loss']:.6f}")
@@ -202,7 +202,7 @@ def generate_summary_stats(df, save_dir: Path) -> None:
     # Best configuration
     if 'best_config' in stats:
         best_config = stats['best_config']
-        print(f"\nBest Configuration:")
+        print("\nBest Configuration:")
         for col in ['model_name', 'noise', 'heads', 'visual_range', 'seed']:
             if col in best_config:
                 print(f"  {col}: {best_config[col]}")
@@ -210,7 +210,7 @@ def generate_summary_stats(df, save_dir: Path) -> None:
     
     # Statistics by model
     if 'by_model' in stats:
-        print(f"\nBy Model:")
+        print("\nBy Model:")
         import pandas as pd
         model_stats = pd.DataFrame.from_dict(stats['by_model'], orient='index')
         print(model_stats)
@@ -294,12 +294,12 @@ def main():
     generate_summary_stats(df, output_dir)
     
     print(f"\nAnalysis complete! Results saved to: {output_dir}")
-    print(f"Check the following files:")
-    print(f"  - loss_distribution.png")
-    print(f"  - hyperparameter_heatmap.png") 
-    print(f"  - seed_variance.png")
-    print(f"  - training_timeline.png")
-    print(f"  - summary_stats.txt")
+    print("Check the following files:")
+    print("  - loss_distribution.png")
+    print("  - hyperparameter_heatmap.png") 
+    print("  - seed_variance.png")
+    print("  - training_timeline.png")
+    print("  - summary_stats.txt")
 
 
 if __name__ == "__main__":
