@@ -1,7 +1,9 @@
-from collab_env.data.gcs_utils import GCSClient
 import uuid
+
 import pytest
+
 from collab_env.data.file_utils import expand_path, get_project_root
+from collab_env.data.gcs_utils import GCSClient
 
 
 # fixture

@@ -1,9 +1,10 @@
 """Tests if GNN objects initializes correctly"""
 
-from collab_env.gnn.gnn_definition import GNN
-from collab_env.gnn.gnn import node_feature_vel
 import numpy as np
 import torch
+
+from collab_env.gnn.gnn import node_feature_vel
+from collab_env.gnn.gnn_definition import GNN
 
 
 def test_gnn_shape():

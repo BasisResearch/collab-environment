@@ -91,6 +91,7 @@ site/
 out
 *.matrix.gz
 /docs/source/.ipynb_checkpoints/
+data/
 config-local/
 *preview*.htm*
 /sim-output/

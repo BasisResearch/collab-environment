@@ -9,11 +9,11 @@ sys.path.append("/workspace/collab-environment/")
 sys.path.append("/workspace/collab-environment/collab_env/gnn")
 sys.path.append("/workspace/collab-environment/collab_env/data/boids")
 
-from collab_env.gnn.gnn_definition import GNN 
-from collab_env.gnn.gnn_definition import Lazy
-from collab_env.gnn.gnn import node_feature_vel
 import numpy as np
 import torch
+
+from collab_env.gnn.gnn import node_feature_vel
+from collab_env.gnn.gnn_definition import GNN, Lazy
 
 positions1 = np.hstack([np.random.randn(10).reshape((-1,1)),
                        np.random.randn(10).reshape((-1,1))]) + 5 # generate 10 points from a 2D Gaussian

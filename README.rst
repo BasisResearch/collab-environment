@@ -10,23 +10,68 @@ collab-environment
 
 Setup
 -----
+
+**Note:**  For alignment functionality, we strongly recommend a CUDA 11.8 compatible GPU. Using a different CUDA version will alter COLMAP results. We recommend matching the CUDA version within `collab-splats`.
+
 * Using pip / uv:
 
+  For installation with pip / uv, all dependencies are installed via a shell script:
+
    .. code:: sh
-      
-      pip install -e ".[dev]"
+
+      bash setup.sh
 
 
 * Using conda
 
-   We also provide a conda `env.yml` file that can be used to create a conda environment with the necessary dependencies. Run the following command to create the environment:
+   We also provide a conda `env.yml` file that can be used to create a conda environment with the necessary dependencies. Run the following commands to create the environment:
+
+   .. code:: sh
+   
+      conda env create -n collab-env -f env.yml
+      conda activate collab-env
+      bash setup.sh
+
+
+* Building the Docker image
+
+  We provide a prebuilt Docker image as well as the associated Dockerfile. To build the image, run the following commands:
 
    .. code:: sh
 
-      conda env create -n collab-environment -f env.yml
-      conda activate collab-environment
+      docker build --platform=linux/amd64  --progress=plain -t IMAGE_NAME .
+      docker push IMAGE_NAME:latest
+
+  To pull and run the image, run the following commands:
+
+    .. code:: sh
+      docker image pull tommybotch/collab-environment:latest
+      docker run -it --rm -p 8888:8888 tommybotch/collab-environment:latest
+
+* Install exiftool
+
+  Processing the FLIR (thermal) videos requires the installation of exiftool. This can be done with the following commands:
+
+   .. code:: sh
+
+      # For MacOS
+      brew install exiftool
+
+      # For Linux (Ubuntu/Debian)
+      sudo apt-get install libimage-exiftool-perl
+
+      # For Linux (RHEL/CentOS/Fedora) 
+      sudo yum install perl-Image-ExifTool
 
 
+* Using gcloud
+
+   Use of gcloud data access requires API keys stored outside this repository. Please obtain the API keys and create a ```.env``` file
+   in the root directory of this repository. See below for an example:
+
+   .. code:: sh
+   
+      COLLAB_DATA_KEY=path/to/api/key.json
 
 Usage
 -----
@@ -86,6 +131,7 @@ The parquet file contains a dataframe with the following columns:
 * target_mesh_closest_point_t : the point on the t-th target mesh that is closest to the object
 * mesh_scene_distance : the distance of the object to the closest point on the mesh scene
 * mesh_scene_closest_point: the point on the mesh scene that is closest to the object
+
 
 Contributing
 ------------

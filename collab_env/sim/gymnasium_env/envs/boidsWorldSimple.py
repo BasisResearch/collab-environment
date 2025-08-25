@@ -1,9 +1,9 @@
 import gymnasium as gym
-import torch
-from gymnasium import spaces
 import numpy as np
 import open3d
 import cv2
+import torch
+from gymnasium import spaces
 
 # from Boids.sim_utils import calc_angles
 from loguru import logger
@@ -11,6 +11,7 @@ from loguru import logger
 from collab_env.data.file_utils import get_project_root, expand_path
 from collab_env.sim.boids.sim_utils import get_submesh_indices_from_ply
 from collab_env.sim.util.color_maps import ColorMaps
+
 
 
 HIT_DISTANCE = 0.01
@@ -1393,7 +1394,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         for i in range(self.num_agents):
             """
             TOC -- 072625
-            We have the acceleration in the BoidsAgent where it chooses actions. That is what we 
+            We have the acceleration in the BoidsAgent where it chooses actions. That is what we
             need I think to compute the orientation of the agent meshes. Or not.
             """
 
@@ -1554,10 +1555,6 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.vis.create_window(
             width=self.vis_width, height=self.vis_height, visible=self.show_visualizer
         )
-
-        """
-        TOC -- 081325 -- 7:00PM
-        """
 
         self.vis.register_key_callback(ord("P"), self.key_callback_save_image)
         self.vis.register_key_callback(ord("Q"), self.key_callback_quit)
