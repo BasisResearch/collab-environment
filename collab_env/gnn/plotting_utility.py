@@ -61,6 +61,7 @@ def load_various_data(data_names, batch_size, device = 'cpu',return_dict = True)
 
 def load_rollout(model_name,
                 data_name = None,
+                root_path = "trained_models",
                 noise = 0,
                 head = 1,
                 visual_range = 0.1, seed = 0, rollout_starting_frame = 5):
@@ -68,7 +69,7 @@ def load_rollout(model_name,
     file_name = f"{data_name}_{model_name}_{save_name_postfix}"
 
     rollout_path = expand_path(
-            f"trained_models/{file_name}_rollout_{rollout_starting_frame}.pkl",
+            f"{root_path}/{file_name}_rollout_{rollout_starting_frame}.pkl",
             get_project_root()
     )
 

@@ -201,7 +201,7 @@ def train_single_config(params):
                 f"trained_models/{file_name}.pt",
                 get_project_root(),
             )
-            model.load_state_dict(torch.load(model_path,map_location='cuda:0'))
+            model.load_state_dict(torch.load(model_path,map_location=device))
         else:
             loader = train_loader
         

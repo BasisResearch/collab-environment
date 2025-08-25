@@ -911,26 +911,26 @@ def find_frame_sets(lst):
     
     return out
 
-def load_model(name, file_name):
+def load_model(name, file_name, root_path = "trained_models"):
     model_path = expand_path(
-        f"trained_models/{file_name}.pt",
+        f"{root_path}/{file_name}.pt",
         get_project_root(),
     )
     model_spec_path = expand_path(
-        f"trained_models/{file_name}_model_spec.pkl",
+        f"{root_path}/{file_name}_model_spec.pkl",
         get_project_root(),
     )
     train_spec_path = expand_path(
-        f"trained_models/{file_name}_train_spec.pkl",
+        f"{root_path}/{file_name}_train_spec.pkl",
         get_project_root(),
     )
     
-    # save model spec
+    # load model spec
     with open(model_spec_path, "rb") as f: # 'wb' for write binary
         model_spec = pickle.load(f)
     logger.debug("Loaded model spec.")
     
-    # save training spec
+    # load training spec
     with open(train_spec_path, "rb") as f: # 'wb' for write binary
         train_spec = pickle.load(f)
     logger.debug("Loaded training spec.")
@@ -941,7 +941,7 @@ def load_model(name, file_name):
     model_spec["node_prediction"] = "acc"
     model_spec["prediction_integration"]= "Euler"
     model_spec["input_differentiation"]= "finite"
-    model_spec["in_node_dim"]= 19
+    model_spec["in_node_dim"]= 20 if "food" in file_name else 19
     model_spec["start_frame"]= 3
  
     if "lazy" in name:
@@ -953,7 +953,7 @@ def load_model(name, file_name):
     
     # load model
     # Load the state dictionary
-    gnn_model.load_state_dict(torch.load(model_path))
+    gnn_model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
     logger.debug("Loaded model.")
     
     # Set the model to evaluation mode (important for inference)
