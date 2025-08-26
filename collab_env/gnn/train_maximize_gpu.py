@@ -33,7 +33,7 @@ def worker_wrapper(params):
     import torch
     
     try:
-        data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction, no_validation, early_stopping_patience, min_delta, train_size, rollout = params
+        data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction, no_validation, early_stopping_patience, min_delta, train_size, rollout, total_rollout = params
         
         # Set CUDA_VISIBLE_DEVICES in this process before CUDA is initialized
         if gpu_count > 0:
@@ -73,7 +73,7 @@ def train_single_config(params):
     (data_name, model_name, noise, heads, visual_range, seed,
         gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction,
         no_validation, early_stopping_patience, min_delta, train_size,
-        rollout) = params
+        rollout, total_rollout) = params
     
     # Determine device and worker label
     if gpu_count > 0:
@@ -253,6 +253,7 @@ def train_single_config(params):
             sigma = noise,
             device = device,
             rollout = rollout,
+            total_rollout = total_rollout,
             train_logger=worker_logger,
             collect_debug=collect_debug,  # Disable debug to avoid CPU transfers
             val_dataloader=test_loader if not no_validation else None,  # Use test_loader for validation unless disabled
@@ -367,6 +368,8 @@ def main():
                        help="Train size (default: 0.7)")
     parser.add_argument("--rollout", type=int, default=-1,
                        help="Do rollout starting at which frame")
+    parser.add_argument("--total_rollout", type=int, default=100,
+                       help="Total number of rollout")
 
     
     args = parser.parse_args()
@@ -462,9 +465,9 @@ def main():
     else:
         #model_names = ["vpluspplus_a", "lazy"]
         model_names = ["vpluspplus_a"]
-        noise_levels = [0] #[0, 0.005]
-        heads = [1] #[1 2 3]
-        visual_ranges = [0.1] #[0.1, 0.5]
+        noise_levels = [0.005] #[0, 0.005]
+        heads = [1,2,3] #[1 2 3]
+        visual_ranges = [0.5] #[0.1, 0.5]
         seeds = range(args.seeds)
     
     # Generate all combinations with worker IDs
@@ -478,7 +481,7 @@ def main():
                         all_params.append(
                             (args.dataset, model, noise, head, vr, seed, gpu_count, worker_id, 
                              args.batch_size, args.epochs, args.compile, args.memory_fraction,
-                             args.no_validation, args.early_stopping_patience, args.min_delta, args.train_size, args.rollout)
+                             args.no_validation, args.early_stopping_patience, args.min_delta, args.train_size, args.rollout, args.total_rollout)
                         )
                         worker_id += 1
     
@@ -489,7 +492,7 @@ def main():
     if gpu_count > 0:
         logger.info("GPU Assignment Plan:")
         for i in range(min(8, len(all_params))):  # Show first 8 assignments
-            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout = all_params[i]
+            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout, total_rollout = all_params[i]
             assigned_gpu = wid % gpu_count
             logger.info(f"Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs}), rollout = {rollout}  ")
         if len(all_params) > 8:
@@ -497,7 +500,7 @@ def main():
     else:
         logger.info("CPU Training Plan:")
         for i in range(min(8, len(all_params))):  # Show first 8 assignments
-            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout = all_params[i]
+            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout, total_rollout = all_params[i]
             logger.info(f"  Config {wid:02d} -> CPU: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs}), rollout = {rollout}  ")
         if len(all_params) > 8:
             logger.info(f"  ... and {len(all_params) - 8} more configurations")
