@@ -264,8 +264,8 @@ def train_single_config(params):
         # Save model
         #model_spec = {"model_name": model_name, "heads": heads}
         train_spec = {"visual_range": visual_range, "sigma": noise, "epochs": epochs}
-        save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout_{rollout}_frames_{rollout_frames}"
-        if rollout:
+        if rollout > 0:
+            save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout_{rollout}_frames_{rollout_frames}"
             rollout_path = expand_path(
                 f"trained_models/{save_name}.pkl",
                 get_project_root()
@@ -273,6 +273,8 @@ def train_single_config(params):
  
             with open(rollout_path, "wb") as f: # 'wb' for write binary
                 pickle.dump(debug_result, f)
+        else:
+            save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
 
         worker_logger.debug(f"Saving model {save_name}...")
         model_output, model_spec_path, train_spec_path = save_model(trained_model, model_spec, train_spec, save_name)
@@ -308,7 +310,8 @@ def train_single_config(params):
         }
         
     except Exception as e:
-        worker_logger.error(f"Failed: {data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed} | Error: {e}")
+        import traceback
+        worker_logger.error(f"Failed: {data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed} | Error: {e}\n{traceback.format_exc()}")
         return {
             "data_name": data_name,
             "model_name": model_name,
@@ -458,10 +461,10 @@ def main():
     # Define hyperparameter grid
     if args.test:
         model_names = ["vpluspplus_a"]
-        noise_levels = [0]
+        noise_levels = [0.0]
         heads = [1]
-        visual_ranges = [0.1]
-        seeds = range(2*max_workers)
+        visual_ranges = [0.25]
+        seeds = range(max_workers)
     else:
         #model_names = ["vpluspplus_a", "lazy"]
         model_names = ["vpluspplus_a"]

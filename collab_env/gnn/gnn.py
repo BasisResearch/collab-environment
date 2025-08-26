@@ -313,6 +313,17 @@ def run_gnn_frame_pyg(model, pyg_batch, v_minushalf, delta_t, device=None):
     
     if node_prediction == "position":
         pred_pos = pred.view(B, N, 2)
+        # For position prediction, we need to maintain the same number of nodes
+        # Use finite differences but pad to maintain N nodes
+        if N > 1:
+            pred_vel = torch.zeros_like(pred_pos)
+            pred_vel[:, :-1] = pred_pos[:, 1:] - pred_pos[:, :-1]
+            pred_acc = torch.zeros_like(pred_pos)
+            if N > 2:
+                pred_acc[:, :-1] = pred_vel[:, 1:] - pred_vel[:, :-1]
+        else:
+            pred_vel = torch.zeros_like(pred_pos)
+            pred_acc = torch.zeros_like(pred_pos)
         
     elif node_prediction == "acc":
         pred_acc = pred.view(B, N, 2)
@@ -339,6 +350,7 @@ def run_gnn_frame_pyg(model, pyg_batch, v_minushalf, delta_t, device=None):
         pred_vel = pred.view(B, N, 2)
         init_p = pyg_batch.init_pos.view(B, N, 2)
         pred_pos = init_p + pred_vel
+        pred_acc = pred_vel[:,1:] - pred_vel[:,:-1]
     
     return pred_pos, pred_vel, pred_acc, pred_vplushalf, W
 
@@ -357,7 +369,8 @@ def run_gnn(model,
             rollout_frames = 300,
             rollout_everyother = -1,
             ablate_boid_interaction = False,
-            collect_debug = True):
+            collect_debug = True,
+            gnn_logger = logger):
     """
     This functions calls run_gnn_frame()
     training: set to True if training, set to false to test on heldout dataset.
@@ -390,11 +403,9 @@ def run_gnn(model,
     delta_t = 1
 
     S, Frame, N, _ = position.shape
-
     pos, vel, acc, v_function = handle_discrete_data(
         position, model.input_differentiation
     )
-
     pos = torch.as_tensor(pos)
     vel = torch.as_tensor(vel)
     acc = torch.as_tensor(acc)
@@ -468,6 +479,7 @@ def run_gnn(model,
             continue
 
         target_pos = pos[:, frame_next]  # 1 step ahead/next frame
+        target_vel = vel[:, frame_next]
         target_acc = acc[:, frame_next]
         species_idx = species_idx.to(device)    # [S, N]
 
@@ -494,7 +506,15 @@ def run_gnn(model,
             pred_vel_ = pred_vel.detach().clone().to(device)
         if pred_acc is not None:
             pred_acc_ = pred_acc.detach().clone().to(device)
-        loss = functional.mse_loss(pred_acc, target_acc) #+ 0.1 * torch.sum(edge_weight)
+            
+        if model.node_prediction == "acc":
+            loss = functional.mse_loss(pred_acc, target_acc) #+ 0.1 * torch.sum(edge_weight)
+        elif model.node_prediction == "velocity":
+            loss = functional.mse_loss(pred_vel, target_vel) #+ 0.1 * torch.sum(edge_weight)
+        elif model.node_prediction == "position":
+            loss = functional.mse_loss(pred_pos, target_pos) #+ 0.1 * torch.sum(edge_weight)
+        else:
+            raise ValueError(f"Unknown node prediction: {model.node_prediction}")
 
         if lr is not None:
             optimizer.zero_grad()
@@ -611,7 +631,7 @@ def train_rules_gnn(
             train_logger.debug(f"Epoch {ep+1}/{epochs} | Processing batch {batch_idx+1}/{len(dataloader)}")
 
             S, Frame, N, _ = position.shape
-
+            
             (loss, debug_result_all[ep][batch_idx], model) = run_gnn(
                 model,
                 position,
@@ -627,7 +647,8 @@ def train_rules_gnn(
                 rollout_frames = rollout_frames,
                 rollout_everyother = rollout_everyother,
                 ablate_boid_interaction = ablate_boid_interaction,
-                collect_debug = collect_debug)
+                collect_debug = collect_debug,
+                gnn_logger = train_logger)
 
             train_losses_by_batch.append(loss)
 

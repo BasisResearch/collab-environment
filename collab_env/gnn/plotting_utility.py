@@ -64,12 +64,12 @@ def load_rollout(model_name,
                 root_path = "trained_models",
                 noise = 0,
                 head = 1,
-                visual_range = 0.1, seed = 0, rollout_starting_frame = 5):
+                visual_range = 0.1, seed = 0, rollout_starting_frame = 5, rollout_frames = 300):
     save_name_postfix = f"n{noise}_h{head}_vr{visual_range}_s{seed}"
     file_name = f"{data_name}_{model_name}_{save_name_postfix}"
 
     rollout_path = expand_path(
-            f"{root_path}/{file_name}_rollout_{rollout_starting_frame}.pkl",
+            f"{root_path}/{file_name}_rollout_{rollout_starting_frame}_frames_{rollout_frames}.pkl",
             get_project_root()
     )
 
