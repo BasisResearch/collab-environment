@@ -354,6 +354,7 @@ def run_gnn(model,
             debug_result = None,
             full_frames = False,
             rollout = -1,
+            total_rollout = 60,
             rollout_everyother = -1,
             ablate_boid_interaction = False,
             collect_debug = True):
@@ -428,6 +429,9 @@ def run_gnn(model,
     frames = identify_frames(pos, vel)     
     if full_frames:
         frames = np.arange(Frame-1)
+    
+    if total_rollout > 0:
+        frames = frames[:total_rollout]
     
     for frame_ind in range(len(frames)-1): #range(Frame-1): #since we are predicting frame + 1, we have to stop 1 frame earlier
         frame = frames[frame_ind]
@@ -561,6 +565,7 @@ def train_rules_gnn(
     aux_data = None,
     rollout = -1,
     rollout_everyother = -1,
+    total_rollout = 100,
     ablate_boid_interaction = False,
     train_logger = None,
     collect_debug = False,
@@ -592,6 +597,8 @@ def train_rules_gnn(
     
     if rollout > 0:
         train_logger.debug("rolling out...")
+        full_frames = True
+
         
     for ep in range(epochs):
         torch.cuda.empty_cache()
@@ -621,6 +628,7 @@ def train_rules_gnn(
                 lr = lr,
                 full_frames = full_frames,
                 rollout = rollout,
+                total_rollout = total_rollout,
                 rollout_everyother = rollout_everyother,
                 ablate_boid_interaction = ablate_boid_interaction,
                 collect_debug = collect_debug)
@@ -652,6 +660,7 @@ def train_rules_gnn(
                         lr = None,
                         full_frames = full_frames,
                         rollout = rollout,
+                        total_rollout = total_rollout,
                         rollout_everyother = rollout_everyother,
                         ablate_boid_interaction = ablate_boid_interaction,
                         collect_debug = False)
@@ -696,11 +705,15 @@ def debatch_edge_index_weight(edge_index_output, edge_weight_output, INODE_NUM):
         and return seperate adjacency matrix for each file.
     """
     file_ind = torch.floor(edge_index_output / INODE_NUM) #file in this batch
+    print("file_ind", np.unique(file_ind))
     assert torch.all(file_ind[0] == file_ind[1])
     node_ind = edge_index_output % INODE_NUM #node in this batch
     
     W_by_file = []
+    file_IDs = []
     for file in np.unique(file_ind):
+        file_IDs.append(file)
+        
         col_ind = file_ind[0] == file
         edge_index_output_file = node_ind[:, col_ind]
         edge_weight_output_file = edge_weight_output[col_ind]
@@ -708,7 +721,7 @@ def debatch_edge_index_weight(edge_index_output, edge_weight_output, INODE_NUM):
             INODE_NUM, edge_index_output_file, edge_weight_output_file)
         W_by_file.append(W)
 
-    return W_by_file
+    return W_by_file, file_IDs
     
 def get_input_adjcency_from_debug_batch(
     input_data_loader, starting_frame, visual_range, epoch_list):
@@ -763,7 +776,7 @@ def get_output_adjcency_from_debug_batch(
         
         file_num = 0
         B = len(debug_result[epoch_num])
-        F = len(debug_result[epoch_num][batch_num]['actual'])
+        F = ending_frame - starting_frame + 1
         
         for batch_ind in range(B):
             file_num_batch = len(debug_result[epoch_num][batch_num]['actual'][FRAME_NUM]) #first frame
@@ -774,11 +787,12 @@ def get_output_adjcency_from_debug_batch(
             file_num = file_num + file_num_batch
 
             for frame in range(F):
-                edge_index_output, edge_weight_output = debug_result[epoch_num][batch_num]['W'][frame]
+                edge_index_output, edge_weight_output = debug_result[epoch_num][batch_ind]['W'][frame]
                 
-                W_by_file = debatch_edge_index_weight(edge_index_output, edge_weight_output, INODE_NUM)
-                for W_ in W_by_file:
-                    W_out[file_id].append(W_)
+                file_ID, W_by_file = debatch_edge_index_weight(edge_index_output, edge_weight_output, INODE_NUM)
+                for _ in range(len(W_by_file)):
+                    file_id = file_ID[_]
+                    W_out[file_id].append(W_by_file[_])
         W_out_epoch[epoch] = W_out
 
     return W_out_epoch
@@ -792,7 +806,7 @@ def get_adjcency_from_debug_batch(
     W_out_epoch = get_output_adjcency_from_debug_batch(debug_result, epoch_list=None)
     W_input_epoch = get_input_adjcency_from_debug_batch(input_data_loader,
         starting_frame, visual_range, epoch_list = list(W_out_epoch.keys()))
-    return W_input_epoch, W_output_epoch
+    return W_input_epoch, W_out_epoch
 
 
 def get_adjcency_from_debug(
