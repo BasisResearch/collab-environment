@@ -72,16 +72,8 @@ def load_boids_dataset(data_path, num_sequences=None, device='cpu'):
         # Check raw data range
         logger.info(f"Position range: [{positions.min().item():.3f}, {positions.max().item():.3f}]")
         
-        # Data appears to already be normalized to [0,1], convert to [-1,1] for better training
-        if positions.min() >= 0 and positions.max() <= 1:
-            logger.info("Data appears normalized to [0,1], converting to [-1,1]")
-            positions = positions * 2.0 - 1.0
-            velocities = velocities * 2.0  # Scale velocities accordingly
-        elif hasattr(dataset, 'width') and positions.max() > 10:
-            # Data in pixel coordinates, normalize to [-1,1]
-            logger.info(f"Converting pixel coordinates (width: {dataset.width}) to [-1,1]")
-            positions = (positions - dataset.width/2) / (dataset.width/2)
-            velocities = velocities / (dataset.width/2)
+        # Keep data in original coordinate system
+        logger.info("Using original coordinate system without conversion")
         
         logger.info(f"Final position range: [{positions.min().item():.3f}, {positions.max().item():.3f}]")
         logger.info(f"Final velocity range: [{velocities.min().item():.3f}, {velocities.max().item():.3f}]")

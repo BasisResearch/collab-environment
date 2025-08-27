@@ -232,6 +232,9 @@ def main():
     else:
         context_len = seq_len  # Use saved seq_len during visualization
     
+    # Store context_len for visualization (gt_frames is now 0)
+    gt_frames_used = 0
+    
     rollout_positions, rollout_velocities, edge_probs = generate_rollout(
         model, rel_rec, rel_send,
         initial_positions, initial_velocities, initial_species,
@@ -247,22 +250,31 @@ def main():
     xlim = (args.vis_limits[0], args.vis_limits[1])
     ylim = (args.vis_limits[2], args.vis_limits[3])
     
-    # Static plot
+    # Static plot - show context + predictions vs corresponding ground truth
+    # Include context frames for both GT and predictions to see the full trajectory
+    
+    # Ground truth: same period as rollout (context_len + rollout_steps frames)
+    gt_full_period = ground_truth_pos[:, :rollout_positions.shape[1]]
+    
+    # NRI: full rollout (already includes context + predictions)  
+    nri_full_trajectory = rollout_positions
+    
     static_path = Path(args.output_dir) / 'nri_trajectories.png'
     plot_trajectories_and_interactions(
-        ground_truth_pos=ground_truth_pos,
-        predicted_pos=rollout_positions,
+        ground_truth_pos=gt_full_period,
+        predicted_pos=nri_full_trajectory,
         edge_probs=edge_probs,
         save_path=static_path,
         xlim=xlim,
-        ylim=ylim
+        ylim=ylim,
+        skip_frames=0
     )
     
-    # Animation
+    # Animation - also show context + predictions
     animation_path = Path(args.output_dir) / 'nri_rollout.mp4'
     create_animation(
-        ground_truth_pos=ground_truth_pos,
-        predicted_pos=rollout_positions,
+        ground_truth_pos=gt_full_period,
+        predicted_pos=nri_full_trajectory,
         save_path=animation_path,
         xlim=xlim,
         ylim=ylim

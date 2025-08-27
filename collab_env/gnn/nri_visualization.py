@@ -23,30 +23,33 @@ def generate_rollout(model, rel_rec, rel_send, initial_positions, initial_veloci
         device: Device to run on
         
     Returns:
-        rollout_positions: [agents, rollout_steps, 2] predicted positions
-        rollout_velocities: [agents, rollout_steps, 2] predicted velocities
+        rollout_positions: [agents, context_len+rollout_steps, 2] context + predictions 
+        rollout_velocities: [agents, context_len+rollout_steps, 2] context + predictions
         edge_probs: [edges, n_edge_types] edge type probabilities
     """
     model.eval()
     
-    # Use initial context
+    # gt_frames defaults to 0 - use pure predictions after context
+    
+    # Use initial context - start with exactly what the model needs
     pos = initial_positions[:, :, :context_len].clone().to(device)
     vel = initial_velocities[:, :, :context_len].clone().to(device)
     spec = species.to(device)
     
-    rollout_positions = []
-    rollout_velocities = []
+    # No additional frames needed! The model should use the context_len frames
+    # The gt_frames parameter controls how many *predictions* we replace with GT,
+    # but we don't need to extend the context before starting predictions
+    
+    # Now generate predictions - these are what we'll return
+    predicted_positions = []
+    predicted_velocities = []
     edge_probs = None
     
     with torch.no_grad():
         for step in range(rollout_steps):
-            # Use recent context
-            if pos.shape[2] >= context_len:
-                recent_pos = pos[:, :, -context_len:]
-                recent_vel = vel[:, :, -context_len:]
-            else:
-                recent_pos = pos
-                recent_vel = vel
+            # Always use model predictions (gt_frames=0)
+            recent_pos = pos[:, :, -context_len:]
+            recent_vel = vel[:, :, -context_len:]
             
             # Prepare NRI input
             nri_data = model.prepare_boids_data(recent_pos, recent_vel, spec)
@@ -69,38 +72,40 @@ def generate_rollout(model, rel_rec, rel_send, initial_positions, initial_veloci
                 next_vel = vel[:, :, -1:] + next_pos * 0.01
                 next_pos = pos[:, :, -1:] + next_vel * 0.01
             
-            # Append to sequences
+            # Append to sequences for next prediction
             pos = torch.cat([pos, next_pos], dim=2)
             vel = torch.cat([vel, next_vel], dim=2)
             
-            rollout_positions.append(next_pos[0, :, 0])
-            rollout_velocities.append(next_vel[0, :, 0])
+            # Store positions/velocities for return
+            predicted_positions.append(next_pos[0, :, 0])
+            predicted_velocities.append(next_vel[0, :, 0])
     
     # Stack predicted positions and velocities
-    predicted_positions = torch.stack(rollout_positions, dim=1)  # [agents, rollout_steps]
-    predicted_velocities = torch.stack(rollout_velocities, dim=1)
+    pred_pos_tensor = torch.stack(predicted_positions, dim=1)  # [agents, rollout_steps]
+    pred_vel_tensor = torch.stack(predicted_velocities, dim=1)
     
-    # Use the first frame of initial positions as it matches ground truth frame 0
-    original_initial_pos = initial_positions[0, :, 0, :2]  # First frame matches ground truth frame 0
-    original_initial_vel = initial_velocities[0, :, 0, :2]
+    # Return full context + predictions
+    # Extract the full context that was used
+    context_frames = initial_positions[0, :, :context_len, :2]  # [agents, context_len, 2] 
+    context_vel = initial_velocities[0, :, :context_len, :2]
     
-    # Concatenate: [initial_frame, predicted_frames]
+    # Concatenate: [context_frames, predicted_frames]
     full_rollout_pos = torch.cat([
-        original_initial_pos.unsqueeze(1),  # [agents, 1, 2]
-        predicted_positions  # [agents, rollout_steps, 2]
-    ], dim=1)  # [agents, rollout_steps+1, 2]
+        context_frames,  # [agents, context_len, 2]
+        pred_pos_tensor  # [agents, rollout_steps, 2]
+    ], dim=1)  # [agents, context_len + rollout_steps, 2]
     
     full_rollout_vel = torch.cat([
-        original_initial_vel.unsqueeze(1),  # [agents, 1, 2]
-        predicted_velocities  # [agents, rollout_steps, 2]
-    ], dim=1)  # [agents, rollout_steps+1, 2]
+        context_vel,  # [agents, context_len, 2]
+        pred_vel_tensor  # [agents, rollout_steps, 2]
+    ], dim=1)  # [agents, context_len + rollout_steps, 2]
     
     return full_rollout_pos, full_rollout_vel, edge_probs
 
 
 def plot_trajectories_and_interactions(ground_truth_pos, predicted_pos, edge_probs=None,
                                        save_path='nri_visualization.png',
-                                       xlim=(0, 1), ylim=(0, 1)):
+                                       xlim=(0, 1), ylim=(0, 1), skip_frames=0):
     """
     Create static visualization of trajectories and interaction matrix.
     
@@ -109,6 +114,9 @@ def plot_trajectories_and_interactions(ground_truth_pos, predicted_pos, edge_pro
         predicted_pos: [agents, timesteps, 2] predicted positions
         edge_probs: [edges, n_edge_types] edge type probabilities
         save_path: Path to save figure
+        xlim: X-axis limits (min, max)
+        ylim: Y-axis limits (min, max)
+        skip_frames: Number of initial frames to skip in visualization
     """
     n_agents = ground_truth_pos.shape[0]
     colors = plt.cm.tab20(np.linspace(0, 1, n_agents))
@@ -120,8 +128,10 @@ def plot_trajectories_and_interactions(ground_truth_pos, predicted_pos, edge_pro
     ax = axes[0]
     for i in range(n_agents):
         traj = ground_truth_pos[i].cpu() if hasattr(ground_truth_pos, 'cpu') else ground_truth_pos[i]
-        ax.plot(traj[:, 0], traj[:, 1], c=colors[i], alpha=0.7, linewidth=1.5)
-        ax.scatter(traj[0, 0], traj[0, 1], c=[colors[i]], s=50, marker='o', edgecolor='black')
+        traj = traj[skip_frames:]  # Skip initial frames
+        if len(traj) > 0:
+            ax.plot(traj[:, 0], traj[:, 1], c=colors[i], alpha=0.7, linewidth=1.5)
+            ax.scatter(traj[0, 0], traj[0, 1], c=[colors[i]], s=50, marker='o', edgecolor='black')
     ax.set_title('Ground Truth Trajectories')
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
@@ -134,8 +144,10 @@ def plot_trajectories_and_interactions(ground_truth_pos, predicted_pos, edge_pro
     ax = axes[1]
     for i in range(n_agents):
         traj = predicted_pos[i].cpu() if hasattr(predicted_pos, 'cpu') else predicted_pos[i]
-        ax.plot(traj[:, 0], traj[:, 1], c=colors[i], alpha=0.7, linewidth=1.5)
-        ax.scatter(traj[0, 0], traj[0, 1], c=[colors[i]], s=50, marker='o', edgecolor='black')
+        traj = traj[skip_frames:]  # Skip initial frames
+        if len(traj) > 0:
+            ax.plot(traj[:, 0], traj[:, 1], c=colors[i], alpha=0.7, linewidth=1.5)
+            ax.scatter(traj[0, 0], traj[0, 1], c=[colors[i]], s=50, marker='o', edgecolor='black')
     ax.set_title('NRI Predicted Trajectories')
     ax.set_xlim(*xlim)
     ax.set_ylim(*ylim)
