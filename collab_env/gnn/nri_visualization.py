@@ -99,7 +99,8 @@ def generate_rollout(model, rel_rec, rel_send, initial_positions, initial_veloci
 
 
 def plot_trajectories_and_interactions(ground_truth_pos, predicted_pos, edge_probs=None,
-                                       save_path='nri_visualization.png'):
+                                       save_path='nri_visualization.png',
+                                       xlim=(0, 1), ylim=(0, 1)):
     """
     Create static visualization of trajectories and interaction matrix.
     
@@ -122,8 +123,8 @@ def plot_trajectories_and_interactions(ground_truth_pos, predicted_pos, edge_pro
         ax.plot(traj[:, 0], traj[:, 1], c=colors[i], alpha=0.7, linewidth=1.5)
         ax.scatter(traj[0, 0], traj[0, 1], c=[colors[i]], s=50, marker='o', edgecolor='black')
     ax.set_title('Ground Truth Trajectories')
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*ylim)
     ax.set_aspect('equal')
     ax.grid(True, alpha=0.3)
     ax.set_xlabel('X')
@@ -136,8 +137,8 @@ def plot_trajectories_and_interactions(ground_truth_pos, predicted_pos, edge_pro
         ax.plot(traj[:, 0], traj[:, 1], c=colors[i], alpha=0.7, linewidth=1.5)
         ax.scatter(traj[0, 0], traj[0, 1], c=[colors[i]], s=50, marker='o', edgecolor='black')
     ax.set_title('NRI Predicted Trajectories')
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*ylim)
     ax.set_aspect('equal')
     ax.grid(True, alpha=0.3)
     ax.set_xlabel('X')
@@ -188,7 +189,8 @@ def edge_probs_to_adjacency(edge_probs, n_agents):
     return adj_matrix
 
 
-def create_animation(ground_truth_pos, predicted_pos, save_path='nri_rollout.mp4', fps=20):
+def create_animation(ground_truth_pos, predicted_pos, save_path='nri_rollout.mp4', fps=20, 
+                    xlim=(0, 1), ylim=(0, 1)):
     """
     Create animation comparing ground truth and predicted trajectories.
     
@@ -197,6 +199,8 @@ def create_animation(ground_truth_pos, predicted_pos, save_path='nri_rollout.mp4
         predicted_pos: [agents, timesteps, 2] predicted positions
         save_path: Path to save animation
         fps: Frames per second for animation
+        xlim: X-axis limits (min, max)
+        ylim: Y-axis limits (min, max)
     """
     n_agents = ground_truth_pos.shape[0]
     n_timesteps = min(ground_truth_pos.shape[1], predicted_pos.shape[1])
@@ -206,16 +210,16 @@ def create_animation(ground_truth_pos, predicted_pos, save_path='nri_rollout.mp4
     
     # Setup plots
     ax1.set_title('Ground Truth')
-    ax1.set_xlim(0, 1)
-    ax1.set_ylim(0, 1)
+    ax1.set_xlim(*xlim)
+    ax1.set_ylim(*ylim)
     ax1.set_aspect('equal')
     ax1.grid(True, alpha=0.3)
     ax1.set_xlabel('X')
     ax1.set_ylabel('Y')
     
     ax2.set_title('NRI Prediction')
-    ax2.set_xlim(0, 1)
-    ax2.set_ylim(0, 1)
+    ax2.set_xlim(*xlim)
+    ax2.set_ylim(*ylim)
     ax2.set_aspect('equal')
     ax2.grid(True, alpha=0.3)
     ax2.set_xlabel('X')

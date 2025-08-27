@@ -80,6 +80,8 @@ def main():
                        help='Directory for saving/loading models')
     parser.add_argument('--output-dir', type=str, default='trained_models/nri_outputs',
                        help='Directory for visualization outputs')
+    parser.add_argument('--vis-limits', type=float, nargs=4, default=[0, 1, 0, 1],
+                       help='Visualization axis limits as 4-tuple: xmin xmax ymin ymax')
     
     # Device
     parser.add_argument('--device', type=str, default='cuda' if torch.cuda.is_available() else 'cpu',
@@ -241,13 +243,19 @@ def main():
     # Create visualizations
     logger.info("Creating visualizations...")
     
+    # Parse visualization limits
+    xlim = (args.vis_limits[0], args.vis_limits[1])
+    ylim = (args.vis_limits[2], args.vis_limits[3])
+    
     # Static plot
     static_path = Path(args.output_dir) / 'nri_trajectories.png'
     plot_trajectories_and_interactions(
         ground_truth_pos=ground_truth_pos,
         predicted_pos=rollout_positions,
         edge_probs=edge_probs,
-        save_path=static_path
+        save_path=static_path,
+        xlim=xlim,
+        ylim=ylim
     )
     
     # Animation
@@ -255,7 +263,9 @@ def main():
     create_animation(
         ground_truth_pos=ground_truth_pos,
         predicted_pos=rollout_positions,
-        save_path=animation_path
+        save_path=animation_path,
+        xlim=xlim,
+        ylim=ylim
     )
     
     # Print summary
