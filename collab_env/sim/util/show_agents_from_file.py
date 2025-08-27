@@ -1,5 +1,5 @@
 """
-TOC -- 080625 2:51PM
+-- 080625 2:51PM
 
 This program will read the agent positions from a file and display them in the viewer and video through time.
 
@@ -45,7 +45,7 @@ def setup_logging(config, run_folder):
     if not config["logging"]["logging"]:
         logger.disable("")
     else:
-        # TOC -- 080325 11:19AM
+        # -- 080325 11:19AM
         # Remove the existing handlers and add a new one attached to the
         # log file in the run folder and with the prefix specified in the config
         # file.
@@ -91,14 +91,14 @@ if __name__ == "__main__":
     #
     # Get the config file name if specified on the command line
     #
-    # TOC -- 080625 2:52PM
+    # -- 080625 2:52PM
     # Seems like this should go in some sort of util function since we need it for multiple programs -- unless we
     # combine all of this into one simulator program -- which might be the right idea actually.
 
     trajectory_config, trajectory_config_filename = get_config(args.config_file)
     print("trajectory config filename: ", trajectory_config_filename)
 
-    # TOC -- 080225 9:15AM
+    # -- 080225 9:15AM
     # Create the output folder
     new_folder_name = f"{trajectory_config['simulator']['run_main_folder']}/{trajectory_config['simulator']['run_sub_folder_prefix']}-started-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
     new_run_folder = expand_path(new_folder_name, get_project_root())
@@ -109,7 +109,7 @@ if __name__ == "__main__":
     #
     setup_logging(trajectory_config, new_run_folder)
 
-    # TOC -- 080225 9:54AM
+    # -- 080225 9:54AM
     # Copy the config file into the run folder to record configuration for the run.
     # There may be a better way to do this to make sure we get all parameters stored
     # in case there are still hardcoded values in the code -- which should be removed
@@ -119,7 +119,7 @@ if __name__ == "__main__":
     )
     shutil.copy(trajectory_config_filename, trajectory_copied_config_file_path)
 
-    # TOC -- 080225
+    # -- 080225
     # Find the part for the video in the run folder.
     video_file_path = expand_path(
         f"video.{trajectory_config['visuals']['video_file_extension']}", new_run_folder
@@ -228,7 +228,7 @@ if __name__ == "__main__":
     )
 
     """ 
-    TOC -- 080705 1:28PM
+    -- 080705 1:28PM
     Need to be able to set agent locations in the rendering, which requires that the rendering be separated 
     from the environment. This is a bit of a chore. 
     
@@ -248,10 +248,10 @@ if __name__ == "__main__":
     done = False
 
     """
-    TOC -- 073125 -- 8:46AM
+    -- 073125 -- 8:46AM
     Need to decide on how this is going to end. 
 
-    TOC -- 073124 2:21PM 
+    -- 073124 2:21PM 
     We are going with a limited number of frames.
     """
     # logger.debug('starting main loop ')

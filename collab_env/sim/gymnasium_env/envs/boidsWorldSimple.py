@@ -13,7 +13,6 @@ from collab_env.sim.boids.sim_utils import get_submesh_indices_from_ply
 from collab_env.sim.util.color_maps import ColorMaps
 
 
-
 HIT_DISTANCE = 0.01
 SPEED = 0.1
 
@@ -124,6 +123,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.scene_angle = np.array(scene_angle)
         self.show_visualizer = show_visualizer
         self.store_video = store_video
+        self.store_video_init = store_video
         self.video_file_path = video_file_path
         self.video_codec = video_codec
         self.video_fps = video_fps
@@ -156,7 +156,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.raycasting_scene = None
 
         """
-        TOC -- 081225 3:58PM
+        -- 081225 3:58PM
         If we have a target mesh file to read in, we need to get the vertices labeled as the 
         target from the file and rotate and translate them to their corresponding positions
         on the scene mesh. That was silly. We get the indices by calling get_submesh_indices_from_ply(). 
@@ -166,7 +166,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
         self.submesh_target = False
         #
-        # TOC -- 082425 1:01PM
+        # -- 082425 1:01PM
         # Create a ragged numpy array. Not sure I need this to be a numpy array. Should
         # probably just use a python list. This blew up as an np.array, just go with
         # a list.
@@ -187,6 +187,13 @@ class BoidsWorldSimpleEnv(gym.Env):
                 logger.info(
                     f"{len(self.submesh_vertex_indices[t])} found in sub-mesh target"
                 )
+            """
+            -- 082525 12:42PM 
+            Stubbed for testing second mesh since I don't have a second query file yet.
+            
+            TAKE THIS OUT AFTER TESTING 
+            """
+            # self.submesh_vertex_indices[1] = list(range(121350, 121550))
 
         self.observation_space = spaces.Dict(
             {
@@ -206,7 +213,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                         for _ in range(num_agents)
                     ]
                 ),
-                # TOC -- 080525 2:01PM
+                # -- 080525 2:01PM
                 # replaced this with list of targets.
                 # "target_loc": spaces.Box(
                 #     low=-torch.inf, high=torch.inf, shape=(3,), dtype=np.float64
@@ -220,7 +227,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                     ]
                 ),
                 #
-                # TOC -- 080525 2:06PM
+                # -- 080525 2:06PM
                 # updated to deal with multiple targets.
                 #
                 "distances_to_target_centers": spaces.Tuple(
@@ -300,7 +307,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         )
 
         """
-        TOC -- 080125 1154PM 
+        -- 080125 1154PM 
         What is this? This must be from the original gymnasium example.
         Maybe this is standard Gymnasium stuff that we should stick to, but take
         it out for now.  
@@ -320,12 +327,12 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.mesh_agent = None
 
     def _get_obs(self):
-        # TOC -- 080625 9:03PM
+        # -- 080625 9:03PM
         # Modifying to move to the closest points on the target meshes rather than the
         # center of the target meshes. This requires a change to the observation space
         # to include the closest points between agents and targets. This will be an array
         # of shape (num_agents, num_targets) with each entry being a box of length 3.
-        # TOC -- 080425 7:50PM
+        # -- 080425 7:50PM
         # distances and closest points should be set to some bogus value when there is no scene
         # we cannot set them to None, or we will fail the observation space checker in Gymnasium.
         # This is already done in compute_distance_and_closest_points() but it is better to do
@@ -387,7 +394,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         """
         #
-        # TOC -- 080425 7:50PM
+        # -- 080425 7:50PM
         # distances and closest points should be set to some bogus value when there is no scene.
         # We cannot set them to None, or we will fail the observation space checker in Gymnasium.
         # This is already done in compute_distance_and_closest_points() but it is better to do
@@ -414,7 +421,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
     def _get_obs_no_target_list(self):
         #
-        # TOC -- 080425 7:50PM
+        # -- 080425 7:50PM
         # distances and closest points should be set to some bogus value when there is no scene
         # we cannot set them to None, or we will fail the observation space checker in Gymnasium.
         # This is already done in compute_distance_and_closest_points() but it is better to do
@@ -440,7 +447,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         }
 
     """
-    TOC -- 082425 1:17PM
+    -- 082425 1:17PM
     I don't think this function is called anymore. It will blow up if it is, so I 
     guess we will find out.  
     """
@@ -470,7 +477,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             self.submesh_vertices, self._agent_location
         )
         """
-        TOC -- 082425 1:15PM
+        -- 082425 1:15PM
         These are now coming back as lists, so no need to force that here. 
         """
         distances = np.array(d)
@@ -495,7 +502,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         distances = []
         closest_points = []
         #
-        # TOC -- 080625 10:27PM
+        # -- 080625 10:27PM
         # There should be a more efficient way to do this without a for loop, but
         # I don't have time to worry about it right now
         #
@@ -532,11 +539,11 @@ class BoidsWorldSimpleEnv(gym.Env):
 
     def compute_target_center_distances(self):
         """
-        TOC -- 071825
+        -- 071825
         need to make this faster
         might want to have a different target for each agent -- in fact, definitely do
 
-        TOC -- 080425
+        -- 080425
         This needs to work with multiple targets and ground versus non ground. We could
         just have a set of indices that are ground targets or a set that are not since
         ground targets seem more likely. That way we only need one array. Not sure that is
@@ -559,10 +566,10 @@ class BoidsWorldSimpleEnv(gym.Env):
 
     def _get_info(self):
         """
-        TOC -- 071625
+        -- 071625
         need to look at this for performance later.
 
-        TOC -- 080325
+        -- 080325
         Took this out since it was unused.
         """
 
@@ -577,7 +584,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
         if self.run_trajectories:
             """ 
-            TOC -- 080825 11:21AM
+            -- 080825 11:21AM
             Fix this after figure out agent trajectoies. Actually, we may never need this since we may never do
             moving targets.  
             """
@@ -587,7 +594,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                 self._target_location = np.zeros((self.num_targets, 3))
         else:
             """
-            TOC -- 081125 7:00PM
+            -- 081125 7:00PM
             If we do not have a fixed target location, initialize list of targets with random positions
             We know we have a fixed location for a target if the user specified a non-empty list for the target.  
             """
@@ -600,7 +607,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                 self._target_location = np.zeros((self.num_targets, 3))
                 for i in range(self.num_targets):
                     """
-                    TOC -- 082425 2:18PM (comment added)
+                    -- 082425 2:18PM (comment added)
                     This gives an option of not putting a specified position for each 
                     target. Those unspecified will be chosen randomly. 
                     """
@@ -656,11 +663,11 @@ class BoidsWorldSimpleEnv(gym.Env):
             # assert(False)
 
             #
-            # TOC -- 080525 3:54PM
+            # -- 080525 3:54PM
             # I think this will work without the if, but better to be safe
             #
             """
-            TOC -- 082125 9:48PM 
+            -- 082125 9:48PM 
             This doesn't seem right. This should be put on the mesh scene not 0 on the 
             bottom of the cube. This needs to be fixed. 
             """
@@ -668,7 +675,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                 self._target_location[self.ground_target_first_index :, 1] = 0.0
 
             """
-            TOC -- 080325 
+            -- 080325 
             This need to be configurable.
             """
             # set the target velocity
@@ -734,7 +741,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                 logger.debug("agent loc:" + str(self._agent_location))
 
             """
-            TOC -- 072325 
+            -- 072325 
             We have to wait for rendering to be initialized for the mesh_scene to be created I think. 
             """
             if self.mesh_scene is not None and self.walking:
@@ -744,10 +751,10 @@ class BoidsWorldSimpleEnv(gym.Env):
                 self._agent_location = closest_points
 
             """
-            TOC -- 073025 
+            -- 073025 
             Need to replace hard coded numbers. 
     
-            TOC -- 080325
+            -- 080325
             Replaced
             """
             self._agent_velocity = [
@@ -776,7 +783,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
 
         """
-        TOC -- 081225 9:17AM
+        -- 081225 9:17AM
         Need to look into the fact that there seems to be an extra set of points all at 0 at the end of the
         list of points. 
         """
@@ -787,10 +794,16 @@ class BoidsWorldSimpleEnv(gym.Env):
         )
 
         """
-        TOC -- 080825 12:05PM 
+        -- 082525 10:41PM 
+        Occasionally have a problem with empty linesets and get warning from Open3D. 
+        This could be caused by a weird group size, but need to investigate. 
+        """
+
+        """
+        -- 080825 12:05PM 
         Make these colors configurable.
 
-        TOC -- 081125 3:18PM
+        -- 081125 3:18PM
         The colors need to change through time, so I think I am going to have
         to split these up into groups of lines sets based on time step and 
         color the groups. 
@@ -802,7 +815,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.trajectory_line_set.append(line_set)
 
     """
-    TOC -- 082025 9:26PM 
+    -- 082025 9:26PM 
     There are better, probably more efficient, ways to do this turbo colormap. Fix 
     this after the paper is submitted. 
     """
@@ -827,7 +840,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         )
 
         """
-        TOC -- 082425 9:42AM
+        -- 082425 9:42AM
         This code assumes that the length of the agents' trajectories could be 
         different for each agent. This could probably run a little faster if
         we didn't assume that and instead computed the colors once. 
@@ -902,7 +915,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             else:
                 # Create a LineSet
                 """
-                TOC -- 081225 8:41AM
+                -- 081225 8:41AM
                 To get these colors to depend on time, we will need to group time ranges and
                 create a different line_set for each time grouping.
                 """
@@ -913,10 +926,10 @@ class BoidsWorldSimpleEnv(gym.Env):
                 )
 
                 """
-                TOC -- 080825 12:05PM
+                -- 080825 12:05PM
                 Make these colors configurable.
     
-                TOC -- 081125 3:18PM
+                -- 081125 3:18PM
                 The colors need to change through time, so I think I am going to have
                 to split these up into groups of lines sets based on time step and
                 color the groups.
@@ -941,37 +954,53 @@ class BoidsWorldSimpleEnv(gym.Env):
         logger.debug(f"seed = {seed}")
         self.terminated = False
         self.truncated = False
+        self.time_step = 0
+
+        """
+        -- 082525 2:30PM 
+        Reset the save image flag to what it was at initialization since it is turned off
+        once the first image is saved so that we don't save every frame. 
+        
+        Do the same for store_video since we turn that off for show_trajectories. 
+        """
+
         self.save_image = self.save_image_init
+        self.store_video = self.store_video_init
 
         """ 
-        TOC -- 080825 11:12AM
+        -- 080825 11:12AM
         # The only option we have at the moment is to show the lines -- this design needs to change
         
-        TOC -- 081325 8:01AM 
+        -- 081325 8:01AM 
         Need to be able to run the animation to display the specified trajectories. So this option should
         be a dictionary with an option to either show the tracks or animate the given trajectories.  
         """
 
         if options is not None:
             # turn the video off when we are just showing the visualizer to grab the trajectory figure.
+            """
+            -- 082525 2:28PM
+            Turning store video off doesn't work. This screws up the next episode because video
+            is off when they want it one. 
+            """
             self.store_video = False
             self.show_trajectory_lines = True
             self.agent_trajectories = options
 
         """
-        TOC -- 080525 
+        -- 080525 
         replace with function 
         """
         self.init_agents()
 
         """
-        TOC -- 080525 
+        -- 080525 
         replace with function 
         """
         self.init_targets()
 
         """
-        TOC -- 080225 8:08AM
+        -- 080225 8:08AM
         Why am I setting these to None after I called render_frame() above? 
         These need to be moved -- moved and it still works. 
         """
@@ -979,13 +1008,13 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.geometry = None
         self.mesh_sphere_agent = None
 
-        # TOC -- 080225 4:40PM
+        # -- 080225 4:40PM
         # Always need to call _render_frame from reset because we rely on the meshes
         # for the simulation.
         # if self.render_mode == "human":
         self._render_frame()
 
-        # TOC -- 080525 9:38PM
+        # -- 080525 9:38PM
         # These have to be called after render_frame sets up the target meshes.
         # I don't like this because init doesn't set up all of the instance variables. That
         # should be fixed -- though this still needs to be done in this order because we
@@ -995,7 +1024,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         return observation, info
 
     """
-    TOC -- 081225 
+    -- 081225 
     Removed because I don't use this anymore. 
     """
     # def compute_direction(self, action_list):
@@ -1011,7 +1040,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
     def update_target_locations(self):
         #
-        # TOC -- 080425 8:00PM
+        # -- 080425 8:00PM
         # If there is no mesh_scene, just move the ground target along the bottom of the box
         # by setting its velocity in the vertical direction to 0, but right now there is no
         # ground target if we are not walking. We can go back to this when we create multiple
@@ -1021,7 +1050,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         #
 
         #
-        # TOC -- 080525 3:18PM
+        # -- 080525 3:18PM
         # make sure the ground targets will move to the ground
         #
         for i in range(self.num_ground_targets):
@@ -1039,14 +1068,14 @@ class BoidsWorldSimpleEnv(gym.Env):
             else:
                 self._target_velocity[i + self.ground_target_first_index][1] = 0.0
             """
-            TOC -- 080425 2:33PM
+            -- 080425 2:33PM
             Need not do to this until the targets are created. Also need one target or a list instead of using ground. 
             """
             # self._ground_target_location = (
             #        self._ground_target_location + self._ground_target_velocity
             # )
             """
-            TOC -- 080525 -- 3:16PM
+            -- 080525 -- 3:16PM
             This should work as a numpy array instead of needing to do this is a for loop
             """
             self._target_location = self._target_location + self._target_velocity
@@ -1064,7 +1093,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.time_step += 1
 
         """
-        TOC 080825 11:16AM
+        -- 080825 11:16AM
         For now there is nothing to change when we draw the trajectories, but we 
         really should probably be doing something else. 
         """
@@ -1091,7 +1120,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             # prev_distance = self.compute_distances()
 
             """
-            TOC -- 072125
+            -- 072125
             Need to fix all these types to make sure I consistently have ndarrays.
             
             needed to update the agent velocities to be the current action  
@@ -1099,13 +1128,13 @@ class BoidsWorldSimpleEnv(gym.Env):
             self._agent_velocity = action
 
             """
-            TOC -- 072125 16:42 
+            -- 072125 16:42 
             if outside the box, go backwards along the axis that hit but do so randomly so it looks less
             like a bounce. (Maybe I should do this for hitting the obstacles as well but obstacle avoidance
             should be done in the Agent class when it chooses an action. The environment can bounce the agents
             but they should control their own steering.)
             
-            TOC -- 072925 
+            -- 072925 
             Also need to bounce if the agents hit the mesh when not walking. Not sure what to do with walking 
             to make sure they don't move into the mesh -- this might be done naturally because we move to the 
             closest point on the mess but I am not sure if that code includes point inside the mesh.    
@@ -1127,7 +1156,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                         )
 
             """
-            TOC -- 072325 -- 0808PM 
+            -- 072325 -- 0808PM 
             Take out the movement to check to see if initialization puts the agents on the mesh.
             Another function is moving these, which is bad. Only step should move the agents. 
             
@@ -1150,16 +1179,16 @@ class BoidsWorldSimpleEnv(gym.Env):
                 self.update_target_locations()
 
             """
-            TOC -- 071625
+            -- 071625
             needs distances to be a list 
             
-            TOC -- 072825 
+            -- 072825 
             not sure I am using distances anymore. Ah, I was treating the world to be constrained within a sphere but went 
             with the cube when the sphere calculations didn't work so well. Perhaps I should go back to the sphere approach
             since Matt suggested that is what he likes to do with dynamical systems involving particles running out to 
             infinity. Also, Reynolds indicated that having a target point to go to created unnatural behavior in boids.
             
-            TOC -- 073125 2:51PM
+            -- 073125 2:51PM
             Looks like I am using this to determine whether anyone hit the target. Not sure this is necessary. I think
             we have this computed in the observation, but not sure we have that in time for checking the hit if we need
             to do that to determine whether the agent ate the food.  
@@ -1169,7 +1198,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
             # logger.debug('new distance:' + str(distance))
             """
-            TOC -- 072125 12:41PM -- reverse direction if too far from the center -- maybe change this to add the target as a 
+            -- 072125 12:41PM -- reverse direction if too far from the center -- maybe change this to add the target as a 
             part of the velocity calculation at some point.
             
             Skipping the distance approach and going with the box idea to see if that is better. 
@@ -1190,7 +1219,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             # print('step(): after reverse velocities : ' + str(self._agent_velocity))
 
             """
-            TOC -- 072125 -- Check norms 
+            -- 072125 -- Check norms 
             """
             # if reversed:
             #     norms = np.apply_along_axis(np.linalg.norm, 1, self._agent_location)
@@ -1201,16 +1230,16 @@ class BoidsWorldSimpleEnv(gym.Env):
 
             # logger.debug('distance condition thingy ' + str(distance[distance < HIT_DISTANCE]))
             """
-            TOC -- 072925 
+            -- 072925 
             I am setting terminated to be when an agent hits the goal. Somewhere, I must have set this to false. I should 
             set this to false here if that is what I want. Terminated should be controlled here and nowhere else. 
             runboids() is just ignoring terminated -- Never mind.  
             """
             """
-            TOC -- 080325
+            -- 080325
             Hit distance should be configurable
             
-            TOC -- 081425 8:49AM
+            -- 081425 8:49AM
             Need some sort of systematic way to say a run is terminated. This one doesn't make
             much sense, 
             """
@@ -1226,12 +1255,12 @@ class BoidsWorldSimpleEnv(gym.Env):
         observation = self._get_obs()
 
         """
-        TOC -- 073125 2:51PM
+        -- 073125 2:51PM
         This isn't used. Can probably speed things up by skipping this.
         """
         info = self._get_info()
 
-        # TOC -- 080225 4:41PM
+        # -- 080225 4:41PM
         # always want to call _render_frame because we rely on the meshes for the simulation
         # if self.render_mode == "human":
         self._render_frame()
@@ -1240,14 +1269,14 @@ class BoidsWorldSimpleEnv(gym.Env):
         # logger.debug('step(): reward: ' + str(reward), level=3)
         # logger.debug('step(): info: ' + str(info), level=4)
         """
-        TOC -- 081425 8:42AM
+        -- 081425 8:42AM
         return self.truncated so that user can quit out of visualizer to 
         quit the run instead of having to Ctrl-C. 
         """
         return observation, reward, terminated, self.truncated, info
 
     """
-    TOC -- 073125 2:30PM
+    -- 073125 2:30PM
     Why is this not getting called from reset? I guess that makes sense. I haven't played with this rgb_array thing 
     yet. I should probably do that to record video of each run without having to actually visualize it.  
     """
@@ -1297,7 +1326,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         )
 
         """
-        TOC -- 080325
+        -- 080325
         This color should be configurable.
         """
         colors = [[1, 0, 0] for _ in range(len(lines))]
@@ -1310,7 +1339,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         locations,
     ):
         """
-        TOC -- 082225 10:41AM
+        -- 082225 10:41AM
 
         Need to look into k-d trees for doing the distance computations.
 
@@ -1334,7 +1363,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
     def compute_distance_and_closest_points(self, mesh, agents_loc, raycasting=None):
         """
-        TOC -- 072325
+        -- 072325
         This should be done more intelligently.
 
         """
@@ -1349,10 +1378,10 @@ class BoidsWorldSimpleEnv(gym.Env):
             raycasting = self.raycasting_scene
 
         """
-        TOC -- 073125 
+        -- 073125 
         This Raycasting setup shouldn't be redone every time we need to calculate distances. 
         
-        TOC -- 082225 10:32AM
+        -- 082225 10:32AM
         There is an issue with the order in which initialization happens. init_targets() calls this function 
         before init_meshes has been called. Setting up the raycasting make sense in init_meshes but 
         """
@@ -1366,7 +1395,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         query_points = open3d.core.Tensor(agents_loc, dtype=open3d.core.Dtype.Float32)
 
         """ 
-        TOC -- 073125 
+        -- 073125 
         Do we really need both signed and unsigned distances? Also, do we need to call
         both compute_distance() and compute_closest_points()? I think that is information
         the GNN wanted in the output file. 
@@ -1393,13 +1422,13 @@ class BoidsWorldSimpleEnv(gym.Env):
         # Reset to home position
         for i in range(self.num_agents):
             """
-            TOC -- 072625
+            -- 072625
             We have the acceleration in the BoidsAgent where it chooses actions. That is what we
             need I think to compute the orientation of the agent meshes. Or not.
             """
 
             """
-            TOC -- 072525
+            -- 072525
             I believe this is necessary because the rotations are not relative. Oh, but if the rotations
             are not relative, then there is no need to keep track of the previous velocity. We can just 
             rotate to the new velocity from [0,0,1], which is apparently the default direction. So I don't
@@ -1408,7 +1437,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             # self.mesh_arrow_agent[i].transform(np.eye(4))
 
             """
-            TOC -- 072725 -- 11:28AM
+            -- 072725 -- 11:28AM
             Rotations not working yet. Fix that in open3DTests project before incorporating
             """
             #
@@ -1449,25 +1478,25 @@ class BoidsWorldSimpleEnv(gym.Env):
         logger.debug(f"Center of mesh: {mesh_scene.get_center()}")
 
         """
-        TOC -- 072325 
+        -- 072325 
         Took this from the example code from Open3D but this wasn't necessary. 
         """
         # self.mesh_scene_for_distance = open3d.t.geometry.TriangleMesh.from_legacy(self.mesh_scene)
 
         """
-        TOC -- 072325 -- Test distance calculation to splat mesh. 
+        -- 072325 -- Test distance calculation to splat mesh. 
         """
         # self.compute_distance_to_splat_mesh(self.mesh_scene)
 
         """
-        TOC -- 073025 -- 8:21PM
+        -- 073025 -- 8:21PM
         Not sure why this is translating to this particular position -- needed that for first
         splat but I need to generalize. 
         Why am I scaling this centered at the target location instead of the center of the scene?
         This is a bug.  
         """
         #
-        # TOC -- 080325 1:19PM
+        # -- 080325 1:19PM
         # The new meshes seem to come in centered at about the origin once they are rotated 90
         # degrees, but the mesh ground is a little below the bottom of the box. We could
         # translate the box, but I sort of like having the box bottom and sides to be 0 -- though
@@ -1478,7 +1507,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         # be configurable. We should translate and rotate it once though. Not sure what was up
         # with the double translation I had in here.
 
-        # TOC -- 080225 8:30AM
+        # -- 080225 8:30AM
         # This scaling should be happening centered at the center of the mesh_scene
         # rather than the target location. Seems to work.
         #
@@ -1486,14 +1515,14 @@ class BoidsWorldSimpleEnv(gym.Env):
         mesh_scene.scale(scale=self.scene_scale, center=mesh_scene.get_center())
 
         """
-        TOC -- 072725 -- 11:37AM
+        -- 072725 -- 11:37AM
 
         This is specific to the first of Tommy's splats. This needs to be generalized to reorient 
         whatever scene mesh we are given to match the ground.  
         """
 
         """
-        TOC -- 073025 -- 7:45PM
+        -- 073025 -- 7:45PM
         Put all translation and rotation of the scene here
         
         Tommy's first mesh came in at an odd angle. The new meshes seem to be rotated 90 degrees.
@@ -1508,11 +1537,11 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         # Apply the rotation
         """
-        TOC -- 073025
+        -- 073025
         Need to make sure this is the correct center for rotation. Seems like it should 
         be the center of the mesh scene after it has been translated.
         
-        TOC -- 081225 3:20PM
+        -- 081225 3:20PM
         I am switching this to rotate around the origin and to do the translate to the 
         position after the rotate. I am not sure this will work for general rotations 
         and positions, so this needs to be tested. Though it seems to work for the 
@@ -1540,10 +1569,10 @@ class BoidsWorldSimpleEnv(gym.Env):
         Returns:
         """
         """ 
-        TOC -- 073125 
+        -- 073125 
         Is this the right way to visualize. Kind of think there may have been a newer way to do this.
 
-        TOC -- 080125 10:59PM
+        -- 080125 10:59PM
         Do we need to create the window if we aren't visualizing? Need to investigate
         our ability to compute things about the scene mesh separately from the 
         visualizer. The simulation seems to run when we don't create the window. Need 
@@ -1564,13 +1593,13 @@ class BoidsWorldSimpleEnv(gym.Env):
             #
             # Create VideoWriter object.
             #
-            # TOC -- 080325 12:13PM
+            # -- 080325 12:13PM
             # This file type should be configurable.
             #
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
 
             """
-            TOC -- 080925 4:10PM
+            -- 080925 4:10PM
             I think this needs to use the expand path function to find the correct
             path to the output folder.
             """
@@ -1584,7 +1613,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
     def init_agent_meshes(self):
         #
-        # TOC -- 072325
+        # -- 072325
         # Move all agents to the closest point on the mesh
         #
         if (
@@ -1596,7 +1625,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                 self.mesh_scene, self._agent_location
             )
             #
-            # TOC -- 080625 10:49PM
+            # -- 080625 10:49PM
             # closest points is now already converted to numpy so don't need to do that
             # any more.
             #
@@ -1606,7 +1635,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.mesh_agent = [None] * self.num_agents
         for i in range(self.num_agents):
             """
-            TOC -- 080225 1:57PM 
+            -- 080225 1:57PM 
             Have a config option to make this a sphere instead of a cone. 
             """
             if self.agent_shape == "SPHERE":
@@ -1651,7 +1680,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         #     colors = np.ones_like(vertices)
 
         """
-        TOC -- 082425 1:52PM 
+        -- 082425 1:52PM 
         We will treat the initial indices as submesh targets. If there are 
         more targets than that, we will treat them as plain targets that are
         not a submesh of the scene and need to be created. That doesn't really
@@ -1669,11 +1698,11 @@ class BoidsWorldSimpleEnv(gym.Env):
             self.vis.update_geometry(self.mesh_scene)
         else:
             """
-            TOC -- 080525
+            -- 080525
             Right now all targets will be created at the same time. This needs to be changed 
             to have configurable times for each target. 
             
-            TOC -- 082425 1:58PM 
+            -- 082425 1:58PM 
             The targets will be created based on the target_index if the target_index is beyond
             the submesh targets. Need to change init_targets to handle this. Also need to fix
             how we are handling the ground targets, since I am doing something janky with that
@@ -1715,7 +1744,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
     def init_target_meshes(self):
         """
-        TOC -- 082425 2:33PM
+        -- 082425 2:33PM
         This needs to change to only create targets beyond the number of submesh targets.
         Returns:
 
@@ -1738,7 +1767,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             #     scale=self.target_scale, center=self.mesh_ground_target.get_center()
             # )
             """
-            TOC -- 072325 
+            -- 072325 
             If agents are walking, put the target on the mesh scene. Screws up the scale 
             somehow. It must not be drawn to the correct spot. Try not drawing it.   
             """
@@ -1752,14 +1781,14 @@ class BoidsWorldSimpleEnv(gym.Env):
                 )
                 # self.mesh_sphere_target.translate(closest_points.numpy()[0] - self._target_location)
                 #
-                # TOC -- 080625 10:38PM
+                # -- 080625 10:38PM
                 # In the new mesh target distance calculation, closest_points is already converted to
                 # numpy. Make sure this is consistent throughout the different configurations.
                 #
                 self._target_location[i] = closest_points[0]
 
             """
-            TOC -- 073125 -- 7:30AM 
+            -- 073125 -- 7:30AM 
             Need to decide on how we are dealing with ground and non-ground targets. The initial non-ground
             target was to keep boids away from the walls, but that doesn't make sense from a food source 
             point of view. Each of the targets is going to have to have some weight (possibly changing)
@@ -1775,7 +1804,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
     def init_meshes(self):
         """
-        TOC -- 073125
+        -- 073125
         Scene may need to be read in reset() since it is needed even if not rendering.
         """
         # self.mesh_scene = self
@@ -1802,7 +1831,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                     vertex_mask = np.zeros(len(self.mesh_scene.vertices), dtype=bool)
                     vertex_mask[self.submesh_vertex_indices[t]] = True
                     """
-                    TOC -- 081225 4:08PM
+                    -- 081225 4:08PM
                     This doesn't work without converting to np.array. Need to work this out. 
                     """
                     self.submesh_vertices[t] = np.array(self.mesh_scene.vertices)[
@@ -1813,7 +1842,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             self.add_box()
 
         """
-        TOC -- 080225 2:56PM
+        -- 080225 2:56PM
         Some of these meshes are not used and need to be removed.
         """
         self.mesh_sphere_world1 = open3d.geometry.TriangleMesh.create_sphere(radius=0.1)
@@ -1834,7 +1863,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         # self.mesh_sphere_start.translate(self._target_location + [2, 2, 2])
 
         """
-        TOC -- 073125 -- 7:22AM
+        -- 073125 -- 7:22AM
         Move all the add geometries into one spot. What is this top corner thing? (That 
         was for debugging the problem with all the boids going to the corner.)
         Do I want to put all of the adds for the agents in this spot too? That requires
@@ -1844,7 +1873,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         if self.mesh_scene is not None:
             if self.submesh_target:
                 """
-                TOC -- 081425 11:32AM
+                -- 081425 11:32AM
                 Change the color of the target submesh so it is discernible in the visualizer. 
                 """
                 colors = np.asarray(self.mesh_scene.vertex_colors)
@@ -1853,7 +1882,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                 # if len(colors) == 0:
                 #     colors = np.ones_like(vertices)
                 """
-                TOC -- 082425 1:20PM
+                -- 082425 1:20PM
                 This now handles a list of colors, one for each submesh. 
                 """
                 for t in range(self.num_submesh_targets):
@@ -1866,7 +1895,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             self.vis.add_geometry(self.mesh_scene)
 
             """
-            TOC -- 082225 1008AM 
+            -- 082225 1008AM 
             This Raycasting setup shouldn't be redone every time we need to calculate distances, 
             so moved it here.  
             
@@ -1883,7 +1912,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             )  # we do not need the geometry ID for mesh
 
         """
-        TOC -- 082525 10:35AM 
+        -- 082525 10:35AM 
         These must be called after the raycasting scene has been initialized. 
         Seems like there must be a better design for this, especially if we 
         separate the rendering out into a different class. 
@@ -1919,13 +1948,13 @@ class BoidsWorldSimpleEnv(gym.Env):
         """
 
         """
-        TOC -- 073125
+        -- 073125
         Since we depend on the scene mesh for calculating distances to agents in the simulation, the scene mesh at
         least needs to be initialized regardless of whether the render mode is human or not. So this code needs to 
         change. Perhaps the scene should be initialized in reset() or init() instead. reset() makes sense if the 
         scene could change based on some user defined configuration between trials. 
         
-        TOC -- 080225 8:35AM
+        -- 080225 8:35AM
         Lots of work needs to be done here to deal with render mode. We need to make sure we 
         can calculate the distances to the mesh when we are not using the viewer and that 
         everything gets initialized correctly. There is lots of garbage code in here. 
@@ -1935,7 +1964,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             self.initialize_visualizer()
             self.init_meshes()
 
-            # TOC -- 080825 11:48AM
+            # -- 080825 11:48AM
             if self.show_trajectory_lines:
                 self.init_trajectory_lines()
 
@@ -1949,7 +1978,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             self.move_agent_meshes()
 
             """
-            TOC -- 080225 2:14PM 
+            -- 080225 2:14PM 
             Why am I not translating the ground target by the ground target velocity?
             """
             if self.moving_targets:
@@ -1959,7 +1988,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.vis.update_renderer()
 
         #
-        # TOC -- 080925 4:03PM
+        # -- 080925 4:03PM
         # Save the image to a file when user requests. Then reset the save flag
         # so we don't keep saving images.
         if self.save_image:
@@ -1985,7 +2014,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         """ """
 
         """
-        TOC -- 080125 
+        -- 080125 
         Added this as part of Issue #13 to clean up the simulator. The 
         visualization window should close properly with this fix. 
         """

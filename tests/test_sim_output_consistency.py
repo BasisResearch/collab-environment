@@ -9,7 +9,7 @@ from loguru import logger
 # import pyarrow as pa
 from collab_env.data.file_utils import get_project_root, expand_path
 
-from tests.sim_test_1 import clean_files
+from tests.sim_test_util import remove_run_folder, create_run_folder
 
 
 def test_sim_output_consistency():
@@ -24,23 +24,17 @@ def test_sim_output_consistency():
     Returns:
 
     """
+    sim_runs_path = expand_path(
+        "sim-output/tests-sim-runs-consistency", get_project_root()
+    )
     remote_test = "CI" in os.environ
     if not remote_test:
         # Clear the sim-runs folder from previous tests -- a little dicey
         # If this is a remote test, these files shouldn't be here, so don't bother. They
         # get cleaned up at the end
-        """
-        TOC -- 081925 11:47AM 
-        This removing of the folder is problematic because I have multiple tests using the same
-        folder and only want it to be removed after all tests. 
-        """
-        sim_runs_path = expand_path("sim-output/tests-sim-runs", get_project_root())
-        clean_files(sim_runs_path)
-        # if os.path.isdir(sim_runs_path):
-        #     logger.info(f"removing path {sim_runs_path}")
-        #     shutil.rmtree(sim_runs_path)
-        # logger.info(f"making directory {sim_runs_path}")
-        # os.mkdir(f"{sim_runs_path}")
+        remove_run_folder(sim_runs_path)
+
+    create_run_folder(sim_runs_path)
 
     program_path = expand_path(
         "collab_env/sim/boids/run_boids_simulator.py", get_project_root()
@@ -54,7 +48,11 @@ def test_sim_output_consistency():
     assert result == 0
 
     # Get the output folders in the run path for this test
-    folder_list = glob(f"{sim_runs_path}/*")
+    """
+    -- 082525 0929PM
+    This is kind of a stupid way to find the files. 
+    """
+    folder_list = glob(f"{sim_runs_path}/boids_sim_run_consistent*")
 
     # get the parquet file in the first folder
     result_file_list = glob(f"{folder_list[0]}/*.parquet")
@@ -139,9 +137,4 @@ def test_sim_output_consistency():
     if remote_test:
         # if this is not a remote test, we should clean up the files
         # clear the sim-runs folder from previous tests
-        clean_files(sim_runs_path)
-        # sim_runs_path = expand_path("sim-output/tests-sim-runs", get_project_root())
-        # logger.info(f"removing path {sim_runs_path}")
-        # shutil.rmtree(sim_runs_path)
-        # logger.info(f"making directory {sim_runs_path}")
-        # os.mkdir(f"{sim_runs_path}")
+        remove_run_folder(sim_runs_path)

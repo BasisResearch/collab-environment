@@ -1,5 +1,5 @@
 """
-TOC
+
 - 7/21/25 12:29 -- they seem to move together with all weights at 1. Need to bound them inside a cube and play with neighborhood sizes as some of
 them seem to stop -- not sure why that is happening.
 - 7/21/25 -- runs with 5 agents and a moving target but the agents scatter.
@@ -19,7 +19,7 @@ NUM_AGENTS = 40
 WALKING = False
 if __name__ == "__main__":
     """
-    TOC -- 073125 3:00PM
+    -- 073125 3:00PM
     Need to include command line arguments
     """
     # Training hyperparameters
@@ -57,10 +57,10 @@ if __name__ == "__main__":
         done = False
 
         """
-        TOC -- 073125 -- 8:46AM
+        -- 073125 -- 8:46AM
         Need to decide on how this is going to end. 
         
-        TOC -- 073124 2:21PM 
+        -- 073124 2:21PM 
         We are going with a limited number of frames.
         """
         # logger.debug('starting main loop ')

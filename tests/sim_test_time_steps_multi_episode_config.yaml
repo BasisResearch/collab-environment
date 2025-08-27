@@ -8,13 +8,13 @@ simulator:
   submesh_target: True
   submesh_show_points: True # put spheres on at least some of the submesh vertices
   moving_targets: False
-  num_episodes: 1
-  num_frames: 20
+  num_episodes: 2
+  num_frames: 30
   target_creation_time: [5]  # min is 1, which creates the target at the beginning of the episode.
   show_box: False # should move this to visuals
   # run_main_folder: "collab_env/sim/runs"
-  run_main_folder: "sim-output/tests-sim-runs-consistency"
-  run_sub_folder_prefix: "boids_sim_run_consistent"
+  run_main_folder: "sim-output/tests-sim-runs-multi-episode"
+  run_sub_folder_prefix: "boids_sim_run_time_steps_multi_episode"
   show_trajectories: False
   trajectory_frame_limit: 3000
 
@@ -101,4 +101,4 @@ logging:
   logfile_prefix: 'logfile'
   log_level: 'DEBUG'
   logging: True
-  log_functions: []
+  log_functions: ['add_obs_to_df', 'test_sim_multi_episode_output_consistency']

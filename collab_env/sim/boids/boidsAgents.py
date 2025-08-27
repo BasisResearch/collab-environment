@@ -2,14 +2,13 @@ from loguru import logger
 
 import gymnasium as gym
 import numpy as np
-from loguru import logger
 
 
 class BoidsWorldAgent:
     """ """
 
     """
-    TOC -- 073125 
+    -- 073125 
     Need to figure out what I am doing with speed. Are these going at max speed and then limited by max_force?  
     """
 
@@ -67,7 +66,7 @@ class BoidsWorldAgent:
         self.env_has_mesh_scene = has_mesh_scene
 
         """
-        TOC -- 080525
+        -- 080525
         This q-table stuff should be removed
         """
         # Q-table: maps (state, action) to expected reward
@@ -117,7 +116,7 @@ class BoidsWorldAgent:
         location = np.array(obs["agent_loc"])
         for i in range(self.num_agents):
             """
-            TOC -- 080825 3:53PM
+            -- 080825 3:53PM
             Duplicates code in SBA for ground response. Need to do that better.  
             """
             if (
@@ -127,7 +126,7 @@ class BoidsWorldAgent:
             ):
                 self.mesh_avoidance(velocity, location, i, obs)
                 # """
-                # TOC -- 081125
+                # -- 081125
                 # These constants need to be configurable.
                 # """
                 # # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
@@ -143,7 +142,7 @@ class BoidsWorldAgent:
         return velocity
 
     """
-    TOC -- 081125 2:49PM
+    -- 081125 2:49PM
     Shijie suggested adding a sensing range for the targets. 
     """
 
@@ -151,7 +150,7 @@ class BoidsWorldAgent:
         target_force = 0
         for t in range(self.num_targets):
             if self.target_weight[t] > 0.0:
-                # TOC -- 080625 9:55PM
+                # -- 080625 9:55PM
                 # change this to use the closest point rather than center of target mesh
                 #
                 # steer = obs["target_loc"][t] - obs["agent_loc"][i]
@@ -163,13 +162,13 @@ class BoidsWorldAgent:
                 logger.debug("steer " + str(steer))
 
                 """
-                TOC -- 072925 10:10AM
+                -- 072925 10:10AM
                 Change this to just use the full force computed to steer rather than pushing it 
                 to max_force, which doesn't make sense. We will limit to max_force when we 
                 accumulate all of the forces. This is different from the way Shiffman does it -- 
                 not sure if he is doing it that way for pedagogical reasons. 
 
-                TOC -- 073125 8:58AM
+                -- 073125 8:58AM
                 I think Shiffman uses max_speed. We should probably treat the forces consistently and 
                 make everyone move at max_speed and then limit the total steering force. This seem to 
                 cause problems with everyone going to the walls, so took it out. 
@@ -190,7 +189,7 @@ class BoidsWorldAgent:
         # apply force
         if np.linalg.norm(total_force) > 0:
             """
-            TOC -- 072225 10:29AM -- Why was this subtraction? Oops. That fixed a lot of problems.   
+            -- 072225 10:29AM -- Why was this subtraction? Oops. That fixed a lot of problems.   
             """
             velocity[agent_index] = total_force + velocity[agent_index]
 
@@ -206,7 +205,7 @@ class BoidsWorldAgent:
 
     def mesh_avoidance(self, velocity, location, agent_index, obs):
         """
-        TOC -- 081125 -- 9:44AM
+        -- 081125 -- 9:44AM
         These numbers need to be configurable.
         """
         # velocity[i] = -velocity[i] + np.random.normal(0, 0.01, 3)# turn around abruptly but add some noise
@@ -215,7 +214,7 @@ class BoidsWorldAgent:
         # velocity[i] = velocity[i] + self.env.np_random.normal(0.1, 0.01, 3)
 
         """
-        TOC -- 081725 6:50PM
+        -- 081725 6:50PM
         Let's try going in the opposite direction of the closest point instead of up, front, right. 
         """
         closest_point = obs["mesh_scene_closest_points"][agent_index]
@@ -226,7 +225,7 @@ class BoidsWorldAgent:
         self.cap_force_and_apply(acceleration, velocity, agent_index)
 
         """
-        TOC -- 081725 6:01PM
+        -- 081725 6:01PM
         With this approach they get stuck on obstacles.
         Capping and applying the force causes boids to go into a tree and disappear.
         """
@@ -240,14 +239,14 @@ class BoidsWorldAgent:
         location = np.array(obs["agent_loc"])
         for i in range(self.num_agents):
             """
-            TOC -- 072325 -- 03:29PM
+            -- 072325 -- 03:29PM
             If we get too close to the ground, reverse direction. This will likely be too abrupt
             and needs to be fixed.
             
-            TOC -- 072925 -- 11:56AM 
+            -- 072925 -- 11:56AM 
             Add a turning factor to make this less abrupt instead of just turning directly around (vanhunteradams uses this)
             
-            TOC -- 080425 -- 9:44PM
+            -- 080425 -- 9:44PM
             Only do the ground separation if there is a scene to hit the ground on. This ground thing 
             needs a more intelligent solution.   
 
@@ -268,7 +267,7 @@ class BoidsWorldAgent:
                 ground_force = np.zeros(3)
 
                 """
-                TOC -- 082425 12:26AM
+                -- 082425 12:26AM
                 This needs to be done with broadcasting and array operations.
                 """
                 for other in range(self.num_agents):
@@ -284,7 +283,7 @@ class BoidsWorldAgent:
                         # TODO: Do this with numpy array condition and np.sum instead
                         # logger.debug(f"neighborhood dist: {self.neighborhood_dist}")
                         """
-                        TOC -- 081125 9:51AM
+                        -- 081125 9:51AM
                         Need to have different neighborhood distances for align and cohesion
                         """
                         if dist < self.neighborhood_dist:
@@ -322,7 +321,7 @@ class BoidsWorldAgent:
                 # alignment
 
                 """
-                TOC -- 072925 -- 10:14AM 
+                -- 072925 -- 10:14AM 
                                     
                 Take out the normalization, max_force will be applied to accumulated force later.  
                 """
@@ -335,9 +334,9 @@ class BoidsWorldAgent:
                 # cohesion
                 if (num_neighbors > 0) and (self.cohesion_weight > 0.0):
                     """
-                    TOC -- 072225 -- 12:54PM -- This was supposed to be location not velocity.
+                    -- 072225 -- 12:54PM -- This was supposed to be location not velocity.
 
-                    TOC -- 072925 -- 10:14AM
+                    -- 072925 -- 10:14AM
                     Take out the normalization, max_force will be applied to accumulated force later.
                     """
                     steer = avg_cohesion_vector - obs["agent_loc"][i]
@@ -352,14 +351,14 @@ class BoidsWorldAgent:
 
                 # target
                 """
-                TOC -- 080525 
+                -- 080525 
                 This needs to be a separate configurable weight for each target 
                 """
                 target_force = self.calc_target_force(obs, agent_index=i)
                 # target_force = 0
                 # for t in range(self.num_targets):
                 #     if self.target_weight[t] > 0.0:
-                #         # TOC -- 080625 9:55PM
+                #         # -- 080625 9:55PM
                 #         # change this to use the closest point rather than center of target mesh
                 #         #
                 #         # steer = obs["target_loc"][t] - obs["agent_loc"][i]
@@ -368,13 +367,13 @@ class BoidsWorldAgent:
                 #         logger.debug("steer " + str(steer))
                 #
                 #         """
-                #         TOC -- 072925 10:10AM
+                #         -- 072925 10:10AM
                 #         Change this to just use the full force computed to steer rather than pushing it
                 #         to max_force, which doesn't make sense. We will limit to max_force when we
                 #         accumulate all of the forces. This is different from the way Shiffman does it --
                 #         not sure if he is doing it that way for pedagogical reasons.
                 #
-                #         TOC -- 073125 8:58AM
+                #         -- 073125 8:58AM
                 #         I think Shiffman uses max_speed. We should probably treat the forces consistently and
                 #         make everyone move at max_speed and then limit the total steering force. This seem to
                 #         cause problems with everyone going to the walls, so took it out.
@@ -386,23 +385,23 @@ class BoidsWorldAgent:
 
                 # ground
                 """
-                TOC -- 080825 3:28PM
+                -- 080825 3:28PM
                 I seem to be dealing with the ground in two different ways. The condition at the beginning seems to
                 take precedence.
                 """
                 if (
                     self.ground_weight > 0.0
                     and not self.walking
-                    and obs["mesh_distance"][i] < self.min_ground_separation
+                    and obs["mesh_scene_distance"][i] < self.min_ground_separation
                 ):
-                    logger.debug(f"mesh distance {obs['mesh_distance'][i]}")
+                    logger.debug(f"mesh distance {obs['mesh_scene_distance'][i]}")
 
                     ground_diff_vector = location[i] - obs["mesh_closest_points"][i]
                     # if np.linalg.norm(ground_diff_vector) < 0.00001:
                     #    ground_force = ground_diff_vector * self.max_force
                     # else:
                     """
-                    TOC -- 072925 -- 10:06AM
+                    -- 072925 -- 10:06AM
                     Not sure why I was making all of these go at maximum force. Shiffman goes at max_speed 
                     but limits the total steering force. Try this without max_speed and do the maximum force
                     below. No, no, no, this is dividing by the square of the norm. The closer we get to the 
@@ -427,7 +426,7 @@ class BoidsWorldAgent:
                 logger.debug(f"total force: {total_force}")
 
                 """
-                TOC -- 073125 9:00AM
+                -- 073125 9:00AM
                 I am second guessing applying max force limit at the end rather than for each force individually. It
                 may be that we want some of the forces not to be limited and so having an option for finer granularity 
                 may be important. 
@@ -441,7 +440,7 @@ class BoidsWorldAgent:
                 # # apply force
                 # if np.linalg.norm(total_force) > 0:
                 #     """
-                #     TOC -- 072225 10:29AM -- Why was this subtraction? Oops. That fixed a lot of problems.
+                #     -- 072225 10:29AM -- Why was this subtraction? Oops. That fixed a lot of problems.
                 #     """
                 #     velocity[i] = total_force + velocity[i]
                 #

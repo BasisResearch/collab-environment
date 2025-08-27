@@ -130,7 +130,7 @@ The parquet file contains a dataframe with the following columns:
 * distance_to_target_mesh_closest_point_t : the distance of the object to the closest point on the t-th target mesh.
 * target_mesh_closest_point_t : the point on the t-th target mesh that is closest to the object
 * mesh_scene_distance : the distance of the object to the closest point on the mesh scene
-* mesh_scene_closest_point: the point on the mesh scene that is closest to the object
+* mesh_scene_closest_point : the point on the mesh scene that is closest to the object
 
 
 Contributing

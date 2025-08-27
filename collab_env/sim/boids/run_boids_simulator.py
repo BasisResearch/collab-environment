@@ -1,5 +1,5 @@
 """
-TOC
+--
 - 7/21/25 12:29 -- they seem to move together with all weights at 1. Need to bound them inside a cube and play with neighborhood sizes as some of
 them seem to stop -- not sure why that is happening.
 - 7/21/25 -- runs with 5 agents and a moving target but the agents scatter.
@@ -38,7 +38,7 @@ from collab_env.sim.boids.sim_utils import (
 
 
 """
-TOC -- 080825 10:10AM
+-- 080825 10:10AM
 This needs to be done much more efficiently.  
 """
 
@@ -62,16 +62,15 @@ if __name__ == "__main__":
         )
 
     config = yaml.safe_load(open(config_filename))
-
     if config["visuals"]["show_visualizer"]:
         render_mode = "human"
     else:
         render_mode = ""
 
-    # TOC -- 080225 9:15AM
+    # -- 080225 9:15AM
     # Create the output folder
     """
-    # TOC -- 080425 1:49PM
+    # -- 080425 1:49PM
     # Using the time in the folder name seems to be causing a problem for the pytest runs. Furthermore, we could have
     # multiple runs happening at the same time, so let's try using the process and thread ids to distinguish.  
     """
@@ -83,7 +82,7 @@ if __name__ == "__main__":
     if not config["logging"]["logging"]:
         logger.disable("")
     else:
-        # TOC -- 080325 11:19AM
+        # -- 080325 11:19AM
         # Remove the existing handlers and add a new one attached to the
         # log file in the run folder and with the prefix specified in the config
         # file.
@@ -106,7 +105,7 @@ if __name__ == "__main__":
                 level=config["logging"]["log_level"],
             )
 
-    # TOC -- 080225 9:54AM
+    # -- 080225 9:54AM
     # Copy the config file into the run folder to record configuration for the run.
     # There may be a better way to do this to make sure we get all parameters stored
     # in case there are still hardcoded values in the code -- which should be removed
@@ -114,7 +113,7 @@ if __name__ == "__main__":
     copied_config_file_path = expand_path("config.yaml", new_run_folder)
     shutil.copy(config_filename, copied_config_file_path)
 
-    # TOC -- 080225
+    # -- 080225
     # Find the path for the video in the run folder.
     video_file_path = expand_path(
         f"video.{config['visuals']['video_file_extension']}", new_run_folder
@@ -123,7 +122,7 @@ if __name__ == "__main__":
 
     target_creation_time = config["simulator"]["target_creation_time"]
     """ 
-    TOC -- 080825 7:15PM
+    -- 080825 7:15PM
     If no fixed target positions were specified, we should pass None to the environment
     """
     fixed_target_position = config["environment"]["target_position"]
@@ -240,11 +239,11 @@ if __name__ == "__main__":
         # Reset the environment
         obs, info = env.reset(seed=seed_list[episode])
 
-        # TOC -- 080225 8:58AM
+        # -- 080225 8:58AM
         # create the dataframe for the simulation output
         # df = pd.DataFrame(columns=pandas_columns)
 
-        # TOC -- 080725 10:45PM
+        # -- 080725 10:45PM
         # Add the initial positions to the dataframe
         df = add_obs_to_df(None, obs, time_step=0)
         done = False
@@ -254,17 +253,20 @@ if __name__ == "__main__":
         #
         agent.set_target_weight(0.0, 0)
         for time_step in tqdm(range(config["simulator"]["num_frames"])):
-            for t in range(len(target_creation_time)):
+            for t in range(num_targets):
                 if time_step == target_creation_time[t]:
                     """
-                    TOC -- 082325 11:02PM
+                    -- 082325 11:02PM
                     I am only setting the first target weight here. That is a problem that
                     needs to be fixed with multiple targets. 
+                    
+                    -- 082525 2:03PM 
+                    This was fixed. 
                     """
                     agent.set_target_weight(config["agent"]["target_weight"][t], t)
 
                     """
-                    TOC -- 080425 2:40PM
+                    -- 080425 2:40PM
                     I can't call this method since the environment is in a wrapper. 
                     I need to understand wrappers better.
                     """
@@ -276,7 +278,7 @@ if __name__ == "__main__":
             # Take the action in the environment and observe the result
             next_obs, reward, terminated, truncated, info = env.step(action)
 
-            # TOC -- 080225 8:58AM
+            # -- 080225 8:58AM
             # Record the observation
             df = add_obs_to_df(df, next_obs, time_step=(time_step + 1))
 
@@ -311,7 +313,7 @@ if __name__ == "__main__":
         pq.write_table(table, file_path)
 
         """
-        TOC -- 080825
+        -- 080825
         plot the trajectories for the paper figures. This need to be redesigned
         so that plotting trajectories is in a separate program that is run on 
         the parquet file rather than with the main simulator. Needs to be able
@@ -324,7 +326,7 @@ if __name__ == "__main__":
             plot_trajectories(df, env)
 
         """
-        TOC -- 081125 3:37PM
+        -- 081125 3:37PM
         How is this working? It looks like I am moving the file while the rendering is 
         still writing to it. 
         """

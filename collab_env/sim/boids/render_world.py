@@ -86,7 +86,7 @@ class RenderWorld:
         self.time_step = 0
 
         """
-        TOC -- 080125 1154PM 
+        -- 080125 1154PM 
         What is this? This must be from the original gymnasium example.
         Maybe this is standard Gymnasium stuff that we should stick to.  
         """
@@ -106,7 +106,7 @@ class RenderWorld:
 
     def reset(self, seed=None, options=None):
         """
-        TOC -- 080225 8:08AM
+        -- 080225 8:08AM
         Why am I setting these to None after I called render_frame() above?
         These need to be moved -- moved and it still works.
         """
@@ -114,7 +114,7 @@ class RenderWorld:
         self.geometry = None
         self.mesh_sphere_agent = None
 
-        # TOC -- 080225 4:40PM
+        # -- 080225 4:40PM
         # Always need to call _render_frame from reset because we rely on the meshes
         # for the simulation.
         # if self.render_mode == "human":
@@ -129,7 +129,7 @@ class RenderWorld:
         return velocity
 
     """
-    TOC -- 073125 2:30PM
+    -- 073125 2:30PM
     Why is this not getting called from reset? I guess that makes sense. I haven't played with this rgb_array thing 
     yet. I should probably do that to record video of each run without having to actually visualize it.  
     """
@@ -173,7 +173,7 @@ class RenderWorld:
         ]
 
         """
-        TOC -- 080325
+        -- 080325
         This color should be configurable.
         """
 
@@ -204,14 +204,14 @@ class RenderWorld:
 
     def compute_distance_and_closest_points(self, splat_mesh, agents_loc):
         """
-        TOC -- 072325
+        -- 072325
         This should be done more intelligently.
         """
         if splat_mesh is None:
             return np.zeros(self.num_agents), np.zeros(self.num_agents)
 
         """
-        TOC -- 073125 
+        -- 073125 
         This Raycasting setup shouldn't be redone everytime we need to calculate distances. 
         """
         mesh_scene = open3d.t.geometry.TriangleMesh.from_legacy(splat_mesh)
@@ -223,7 +223,7 @@ class RenderWorld:
         query_points = open3d.core.Tensor(agents_loc, dtype=open3d.core.Dtype.Float32)
 
         """ 
-        TOC -- 073125 
+        -- 073125 
         Do we really need both signed and unsigned distances? Also, do we need to call
         both compute_distance() and compute_closest_points()?  
         """
@@ -243,13 +243,13 @@ class RenderWorld:
         # Reset to home position
         for i in range(self.num_agents):
             """
-            TOC -- 072625
+            -- 072625
             We have the acceleration in the BoidsAgent where it chooses actions. That is what we 
             need I think to compute the orientation of the agent meshes. Or not.
             """
 
             """
-            TOC -- 072525
+            -- 072525
             I believe this is necessary because the rotations are not relative. Oh, but if the rotations
             are not relative, then there is no need to keep track of the previous velocity. We can just 
             rotate to the new velocity from [0,0,1], which is apparently the default direction. So I don't
@@ -258,7 +258,7 @@ class RenderWorld:
             # self.mesh_arrow_agent[i].transform(np.eye(4))
 
             """
-            TOC -- 072725 -- 11:28AM
+            -- 072725 -- 11:28AM
             Rotations not working yet. Fix that in open3DTests project before incorporating
             """
             #
@@ -288,25 +288,25 @@ class RenderWorld:
         logger.debug(f"Center of mesh: {mesh_scene.get_center()}")
 
         """
-        TOC -- 072325 
+        -- 072325 
         Took this from the example code from Open3D but this wasn't necessary. 
         """
         # self.mesh_scene_for_distance = open3d.t.geometry.TriangleMesh.from_legacy(self.mesh_scene)
 
         """
-        TOC -- 072325 -- Test distance calculation to splat mesh. 
+        -- 072325 -- Test distance calculation to splat mesh. 
         """
         # self.compute_distance_to_splat_mesh(self.mesh_scene)
 
         """
-        TOC -- 073025 -- 8:21PM
+        -- 073025 -- 8:21PM
         Not sure why this is translating to this particular position -- needed that for first
         splat but I need to generalize. 
         Why am I scaling this centered at the target location instead of the center of the scene?
         This is a bug.  
         """
         #
-        # TOC -- 080325 1:19PM
+        # -- 080325 1:19PM
         # The new meshes seem to come in centered at about the origin once they are rotated 90
         # degrees, but the mesh ground is a little below the bottom of the box. We could
         # translate the box, but I sort of like having the box bottom and sides to be 0 -- though
@@ -318,7 +318,7 @@ class RenderWorld:
         # with the double translation I had in here.
 
         mesh_scene.translate(position)
-        # TOC -- 080225 8:30AM
+        # -- 080225 8:30AM
         # This scaling should be happening centered at the center of the mesh_scene
         # rather than the target location. Seems to work.
         #
@@ -326,14 +326,14 @@ class RenderWorld:
         mesh_scene.scale(scale=self.scene_scale, center=mesh_scene.get_center())
 
         """
-        TOC -- 072725 -- 11:37AM
+        -- 072725 -- 11:37AM
 
         This is specific to the first of Tommy's splats. This needs to be generalized to reorient 
         whatever scene mesh we are given to match the ground.  
         """
 
         """
-        TOC -- 073025 -- 7:45PM
+        -- 073025 -- 7:45PM
         Put all translation and rotation of the scene here
 
         Tommy's first mesh came in at an odd angle. The new meshes seem to be rotated 90 degrees.
@@ -348,7 +348,7 @@ class RenderWorld:
 
         # Apply the rotation
         """
-        TOC -- 073025
+        -- 073025
         Need to make sure this is the correct center for rotation. Seems like it should 
         be the center of the mesh scene after it has been translated. 
         """
@@ -363,10 +363,10 @@ class RenderWorld:
         Returns:
         """
         """ 
-        TOC -- 073125 
+        -- 073125 
         Is this the right way to visualize. Kind of think there may have been a newer way to do this.
 
-        TOC -- 080125 10:59PM
+        -- 080125 10:59PM
         Do we need to create the window if we aren't visualizing? Need to investigate
         our ability to compute things about the scene mesh separately from the 
         visualizer. The simulation seems to run when we don't create the window. Need 
@@ -383,7 +383,7 @@ class RenderWorld:
             #
             # Create VideoWriter object.
             #
-            # TOC -- 080325 12:13PM
+            # -- 080325 12:13PM
             # This file type should be configurable.
             #
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
@@ -397,7 +397,7 @@ class RenderWorld:
 
     def init_agent_meshes(self):
         #
-        # TOC -- 072325
+        # -- 072325
         # Move all agents to the closest point on the mesh
         #
 
@@ -416,7 +416,7 @@ class RenderWorld:
         self.mesh_agent = [None] * self.num_agents
         for i in range(self.num_agents):
             """
-            TOC -- 080225 1:57PM 
+            -- 080225 1:57PM 
             Have a config option to make this a sphere instead of a cone. 
             """
             if self.agent_shape == "SPHERE":
@@ -453,7 +453,7 @@ class RenderWorld:
         """
 
         """
-        TOC -- 080525
+        -- 080525
         Right now all targets will be created at the same time. This needs to be changed 
         to have configurable times for each target. 
         """
@@ -481,7 +481,7 @@ class RenderWorld:
             #     scale=self.target_scale, center=self.mesh_ground_target.get_center()
             # )
             """
-            TOC -- 072325 
+            -- 072325 
             If agents are walking, put the target on the mesh scene. Screws up the scale 
             somehow. It must not be drawn to the correct spot. Try not drawing it.   
             """
@@ -494,7 +494,7 @@ class RenderWorld:
                 self._target_location[i] = closest_points.numpy()[0]
 
             """
-            TOC -- 073125 -- 7:30AM 
+            -- 073125 -- 7:30AM 
             Need to decide on how we are dealing with ground and non-ground targets. The initial non-ground
             target was to keep boids away from the walls, but that doesn't make sense from a food source 
             point of view. Each of the targets is going to have to have some weight (possibly changing)
@@ -507,7 +507,7 @@ class RenderWorld:
 
     def init_meshes(self):
         """
-        TOC -- 073125
+        -- 073125
         Scene may need to be read in reset() since it is needed even if not rendering.
         """
         # self.mesh_scene = self
@@ -515,7 +515,7 @@ class RenderWorld:
         if self.scene_filename == "":
             self.mesh_scene = None
             """
-            TOC -- 080625 4:34PM
+            -- 080625 4:34PM
             This walking bit should be done in the environment, not the renderer.
             """
             if self.walking:
@@ -554,7 +554,7 @@ class RenderWorld:
         #     scale=self.target_scale, center=self.mesh_ground_target.get_center()
         # )
         # """
-        # TOC -- 072325
+        # -- 072325
         # If agents are walking, put the target on the mesh scene. Screws up the scale
         # somehow. It must not be drawn to the correct spot. Try not drawing it.
         # """
@@ -566,7 +566,7 @@ class RenderWorld:
         #     self._ground_target_location = closest_points.numpy()[0]
         #
         # """
-        # TOC -- 073125 -- 7:30AM
+        # -- 073125 -- 7:30AM
         # Need to decide on how we are dealing with ground and non-ground targets. The initial non-ground
         # target was to keep boids away from the walls, but that doesn't make sense from a food source
         # point of view. Each of the targets is going to have to have some weight (possibly changing)
@@ -578,7 +578,7 @@ class RenderWorld:
         # self.vis.update_geometry(self.mesh_ground_target)
 
         """
-        TOC -- 080225 2:56PM
+        -- 080225 2:56PM
         Some of these meshes are not used and need to be removed.
         """
         self.mesh_sphere_world1 = open3d.geometry.TriangleMesh.create_sphere(radius=0.1)
@@ -597,7 +597,7 @@ class RenderWorld:
         # self.mesh_sphere_start.translate(self._target_location + [2, 2, 2])
 
         """
-        TOC -- 073125 -- 7:22AM
+        -- 073125 -- 7:22AM
         Move all the add geometries into one spot. What is this top corner thing? (That 
         was for debugging the problem with all the boids going to the corner.)
         Do I want to put all of the adds for the agents in this spot too? That requires
@@ -619,13 +619,13 @@ class RenderWorld:
         """
 
         """
-        TOC -- 073125
+        -- 073125
         Since we depend on the scene mesh for calculating distances to agents in the simulation, the scene mesh at
         least needs to be initialized regardless of whether the render mode is human or not. So this code needs to 
         change. Perhaps the scene should be initialized in reset() or init() instead. reset() makes sense if the 
         scene could change based on some user defined configuration between trials. 
 
-        TOC -- 080225 8:35AM
+        -- 080225 8:35AM
         Lots of work needs to be done here to deal with render mode. We need to make sure we 
         can calculate the distances to the mesh when we are not using the viewer and that 
         everything gets initialized correctly. There is lots of garbage code in here. 
@@ -643,7 +643,7 @@ class RenderWorld:
         #     # self.mesh_sphere_agent[i].translate(np.array(self._agent_velocity[i]))
         #     # this has to be velocity because it moves by this amount not to this position apparently
         #     # logger.debug('render() velocity = ' + str(self._agent_velocity[i]))
-        #     ''' TOC -- 072325 -- 0813PM
+        #     ''' -- 072325 -- 0813PM
         #     This is a problem. render needs to translate the mesh for the agent but the movement
         #     should be controlled by the step function. I guess I should update the velocity to 0
         #     when I mess with the agents or calculate the distances between then new location at the
@@ -661,19 +661,19 @@ class RenderWorld:
         #     '''
         #     self.mesh_arrow_agent[i].translate(np.array(self._agent_velocity[i]))
         #     '''
-        #     TOC --
+        #     --
         #     Rotation nonsense that doesn't work.
         #     '''
 
         """
-        TOC -- 080225 2:14PM 
+        -- 080225 2:14PM 
         Why am I not translating the ground target by the ground target velocity?
         """
         if self.moving_targets:
             self.move_target_meshes()
         # self.mesh_target.translate(self._target_velocity)
 
-        # TOC -- 080525
+        # -- 080525
         # this is done in move_agent_meshes()
         # for i in range(self.num_agents):
         #     # self.vis.update_geometry(self.mesh_sphere_agent[i])
@@ -703,7 +703,7 @@ class RenderWorld:
         """ """
 
         """
-        TOC6 -- 080125 
+        -- 080125 
         Added this as part of Issue #13 to clean up the simulator. The 
         visualization window should close properly with this fix. 
         """

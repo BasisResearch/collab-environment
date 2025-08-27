@@ -2,26 +2,26 @@
 simulator:
   # one seed required for each episode
   seed: [837, 439, 642, 316, 202, 409, 627, 834, 977, 189, 401, 719, 810, 738, 655, 367, 36, 653, 753, 977, 716, 311, 112, 417, 599, 666, 721, 128, 456, 564, 178, 97, 764, 242, 257, 253, 4, 217, 171, 536, 122, 716, 933, 850, 271, 410, 195, 172, 958, 274]
-  walking: False
+  walking: True
   num_agents: 20
-  num_targets: 4 # for now this must be at least 1. This needs to be fixed.
-  num_ground_targets: 2
+  num_targets: 2 # for now this must be at least 1. This needs to be fixed.
+  num_ground_targets: 0
   submesh_target: True
   submesh_show_points: False # put spheres on at least some of the submesh vertices
   moving_targets: False
-  num_episodes: 1
-  num_frames: 2000
-  target_creation_time: [500, 600, 700, 800] # min is 1, which creates the target at the beginning of the episode.
+  num_episodes: 2
+  num_frames: 201
+  target_creation_time: [100, 5, 700, 800] # min is 1, which creates the target at the beginning of the episode.
   show_box: False
   # run_main_folder: "collab_env/sim/runs"
   run_main_folder: "sim-output"
   run_sub_folder_prefix: "boids_sim_run"
-  show_trajectories: True
+  show_trajectories: False
   trajectory_frame_limit: 2000
 
 
 visuals:
-  store_video: False
+  store_video: True
   show_visualizer: True
   width: 1920
   height: 1280
@@ -32,7 +32,7 @@ visuals:
   agent_color: [0.18995, 0.07176, 0.23217]
   agent_scale: 5.0
   target_scale: 10.0
-  target_mesh_init_color: [[1,0,1], [1,0,1]] # now this is a list, one for each submesh
+  target_mesh_init_color: [[1,0,1], [0,0,1]] # now this is a list, one for each submesh
   target_mesh_color: [[0,1,0], [0,1,1]] # now this is a list, one for each submesh
 
 tracks:
@@ -63,7 +63,7 @@ agent:
   alignment_weight: 1.0
   cohesion_weight: 0.5
   ground_weight: 0.0
-  target_weight: [0.002, 0.001, 0.5, 1.0] #[0.002]
+  target_weight: [0.002, -1.0, 0.0, 0.0] #[0.002]
   max_speed: 1.0
   min_speed: 0.1
   max_force: 0.1

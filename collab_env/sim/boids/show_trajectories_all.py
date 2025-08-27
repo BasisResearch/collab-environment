@@ -1,5 +1,5 @@
 """
-TOC
+--
 - 7/21/25 12:29 -- they seem to move together with all weights at 1. Need to bound them inside a cube and play with neighborhood sizes as some of
 them seem to stop -- not sure why that is happening.
 - 7/21/25 -- runs with 5 agents and a moving target but the agents scatter.
@@ -33,7 +33,7 @@ from collab_env.sim.boids.sim_utils import function_filter, plot_trajectories
 
 
 """
-TOC -- 080825 10:10AM
+-- 080825 10:10AM
 This needs to be done much more efficiently.  
 """
 
@@ -64,10 +64,10 @@ if __name__ == "__main__":
     else:
         render_mode = ""
 
-    # TOC -- 080225 9:15AM
+    # -- 080225 9:15AM
     # Create the output folder
     """
-    # TOC -- 080425 1:49PM
+    # -- 080425 1:49PM
     # Using the time in the folder name seems to be causing a problem for the pytest runs. Furthermore, we could have
     # multiple runs happening at the same time, so maybe try using the process and thread ids to distinguish.  
     """
@@ -79,7 +79,7 @@ if __name__ == "__main__":
     if not config["logging"]["logging"]:
         logger.disable("")
     else:
-        # TOC -- 080325 11:19AM
+        # -- 080325 11:19AM
         # Remove the existing handlers and add a new one attached to the
         # log file in the run folder and with the prefix specified in the config
         # file.
@@ -102,7 +102,7 @@ if __name__ == "__main__":
                 level=config["logging"]["log_level"],
             )
 
-    # TOC -- 080225 9:54AM
+    # -- 080225 9:54AM
     # Copy the config file into the run folder to record configuration for the run.
     # There may be a better way to do this to make sure we get all parameters stored
     # in case there are still hardcoded values in the code -- which should be removed
@@ -112,7 +112,7 @@ if __name__ == "__main__":
 
     target_creation_time = config["simulator"]["target_creation_time"]
     """ 
-    TOC -- 080825 7:15PM
+    -- 080825 7:15PM
     If no fixed target positions were specified, we should pass None to the environment
     """
     fixed_target_position = config["environment"]["target_position"]
@@ -170,7 +170,7 @@ if __name__ == "__main__":
     )
 
     """
-    TOC -- 080825
+    -- 080825
     plot the trajectories for the paper figures. Needs to be able to display the 
     agents in the visualizer without storing video and with the ability to snap 
     pictures based on keyboard presses so that users can adjust the camera view 
@@ -203,7 +203,7 @@ if __name__ == "__main__":
                 trajectory_folder_path,
             )
             """
-            TOC -- 081325 10:26AM
+            -- 081325 10:26AM
             TODO: Change this to read only the columns we need. 
             """
             df = pq.read_pandas(trajectory_path).to_pandas()

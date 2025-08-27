@@ -16,7 +16,7 @@ def function_filter(function_list):
 def add_obs_to_df(df: pd.DataFrame, obs, time_step=0):
     num_agents = len(obs["agent_loc"])
     num_targets = len(obs["target_loc"])
-
+    logger.debug(f"time step = {time_step}")
     # add agent rows
     agent_rows = []
     for i, location, velocity in zip(
@@ -70,7 +70,7 @@ def add_obs_to_df(df: pd.DataFrame, obs, time_step=0):
     # add environment rows
 
     # currently only one environmental object really -- not sure the scene really counts yet
-    # TOC -- 080525
+    #  -- 080525
     # added row for each target -- need a sim test for this
     #
     env_rows = [
@@ -86,7 +86,7 @@ def add_obs_to_df(df: pd.DataFrame, obs, time_step=0):
     ]
 
     """
-    TOC -- 081825 10:50PM
+     -- 081825 10:50PM
     Fix that annoying deprecated warning about concatenating an empty DataFrame
     """
     if df is None:
@@ -206,10 +206,10 @@ def plot_trajectories(df, env, frame_limit=None):
     for i in tqdm(range(num_agents)):
         trajectory = []
         """
-        TOC -- 080825 11:58 AM
+         -- 080825 11:58 AM
         Fix this. I stop at -1 because I am apparently missing a time step.
 
-        TOC -- 081125 2:30PM
+         -- 081125 2:30PM
         I think this got fixed.  
         """
         for t in range(num_time_steps):
@@ -222,7 +222,7 @@ def plot_trajectories(df, env, frame_limit=None):
     agent_trajectories = np.array(agent_trajectories)
 
     #
-    # TOC -- 080825 9:56AM
+    #  -- 080825 9:56AM
     # Call reset with options set to plot the trajectories. This is a horrible design
     # that needs to be changed. I am doing this now to get a figure for the paper.
     # Later we will separate the rendering from the Gymnasium environment and be able
@@ -241,7 +241,7 @@ def plot_trajectories(df, env, frame_limit=None):
         logger.debug(f"count={count}")
 
     """
-    TOC -- 081825 9:01PM
+     -- 081825 9:01PM
     Not sure this should be closed because we may need it 
     for additional episodes. 
     """
