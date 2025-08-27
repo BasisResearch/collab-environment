@@ -72,6 +72,8 @@ def main():
                        help='Number of rollout steps for visualization')
     parser.add_argument('--visualize-only', action='store_true',
                        help='Skip training and only visualize with existing model')
+    parser.add_argument('--val-seq-idx', type=int, default=0,
+                       help='Validation sequence index to use for visualization (default: 0, use -1 for random)')
     
     # Output arguments
     parser.add_argument('--model-dir', type=str, default='trained_models/nri_models',
@@ -156,36 +158,83 @@ def main():
         # Load existing model
         if model_path.exists():
             logger.info(f"Loading model from {model_path}")
+            
+            # First load checkpoint to get saved args
+            checkpoint = torch.load(model_path, map_location=device)
+            saved_args = checkpoint.get('args', None)
+            
+            if saved_args:
+                # Use saved training parameters for data loading to ensure compatibility
+                logger.info("Using saved training parameters for data compatibility")
+                positions, velocities, species = load_boids_dataset(
+                    args.data_path, 
+                    num_sequences=saved_args.num_sequences,  # Use saved parameter
+                    device=device
+                )
+                
             model, rel_rec, rel_send = load_model(model_path, device)
         else:
             logger.error(f"No model found at {model_path}. Train a model first.")
             return
+        
+        # For visualize-only mode, still split data to get validation sequences
+        logger.info("Preparing data split for validation sequences...")
+        
+        # Use saved training parameters for data preparation
+        seq_len = saved_args.seq_len if saved_args else args.seq_len
+        pred_len = saved_args.pred_len if saved_args else args.pred_len
+        batch_size = saved_args.batch_size if saved_args else args.batch_size
+        train_split = saved_args.train_split if saved_args else args.train_split
+        
+        _, _, val_data = prepare_data_loaders(
+            positions, velocities, species,
+            seq_len=seq_len,
+            pred_len=pred_len,
+            batch_size=batch_size,
+            train_split=train_split
+        )
     
     # Generate rollout and visualize
     logger.info("Generating rollout...")
     
     # Use validation sequence for visualization (ensures unseen data)
-    if not args.visualize_only:
-        val_positions, val_velocities, val_species = val_data
-        # Use first validation sequence
-        initial_positions = val_positions[0:1]
-        initial_velocities = val_velocities[0:1]
-        initial_species = val_species[0:1]
-        ground_truth_pos = val_positions[0]
-        logger.info("Using validation sequence for rollout visualization")
+    val_positions, val_velocities, val_species = val_data
+    
+    # Select which validation sequence to use
+    num_val_seqs = val_positions.shape[0]
+    if args.val_seq_idx == -1:
+        # Random selection
+        import random
+        seq_idx = random.randint(0, num_val_seqs - 1)
+        logger.info(f"Randomly selected validation sequence {seq_idx} out of {num_val_seqs}")
     else:
-        # For visualize-only mode, use first sequence from loaded data
-        initial_positions = positions[0:1]
-        initial_velocities = velocities[0:1]
-        initial_species = species[0:1]
-        ground_truth_pos = positions[0]
-        logger.info("Using first loaded sequence for rollout visualization")
+        # Use specified index
+        seq_idx = args.val_seq_idx
+        if seq_idx >= num_val_seqs:
+            logger.warning(f"Requested sequence {seq_idx} >= {num_val_seqs} available, using sequence 0")
+            seq_idx = 0
+        else:
+            logger.info(f"Using validation sequence {seq_idx} out of {num_val_seqs}")
+    
+    initial_positions = val_positions[seq_idx:seq_idx+1]
+    initial_velocities = val_velocities[seq_idx:seq_idx+1]
+    initial_species = val_species[seq_idx:seq_idx+1]
+    ground_truth_pos = val_positions[seq_idx]
+    
+    
+    logger.info(f"Selected validation sequence {seq_idx} for rollout visualization")
+    
+    # Use correct context length for rollout
+    if not args.visualize_only:
+        context_len = args.seq_len  # Use current args during training
+    else:
+        context_len = seq_len  # Use saved seq_len during visualization
     
     rollout_positions, rollout_velocities, edge_probs = generate_rollout(
         model, rel_rec, rel_send,
         initial_positions, initial_velocities, initial_species,
         rollout_steps=args.rollout_steps,
-        context_len=args.seq_len,
+        context_len=context_len,
         device=device
     )
     

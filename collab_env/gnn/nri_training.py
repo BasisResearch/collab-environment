@@ -455,6 +455,27 @@ def load_model(path, device='cpu'):
         device=device
     )
     
+    # Initialize dynamic layers by doing a dummy forward pass
+    # This ensures the model architecture matches what was saved
+    try:
+        # Get the correct sequence length from saved args
+        seq_len = getattr(args, 'seq_len', 10)
+        print(f"Initializing model with seq_len={seq_len}")
+        
+        # Create dummy data with correct dimensions
+        dummy_positions = torch.randn(1, n_agents, seq_len, 2, device=device)
+        dummy_velocities = torch.randn(1, n_agents, seq_len, 2, device=device)  
+        dummy_species = torch.zeros(1, n_agents, dtype=torch.long, device=device)
+        
+        # Prepare dummy data
+        dummy_data = model.prepare_boids_data(dummy_positions, dummy_velocities, dummy_species)
+        
+        # Forward pass to initialize layers
+        with torch.no_grad():
+            _ = model(dummy_data, rel_rec, rel_send)
+    except Exception as e:
+        print(f"Warning: Could not initialize dynamic layers: {e}")
+    
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
     

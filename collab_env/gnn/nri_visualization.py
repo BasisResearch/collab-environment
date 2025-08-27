@@ -76,10 +76,26 @@ def generate_rollout(model, rel_rec, rel_send, initial_positions, initial_veloci
             rollout_positions.append(next_pos[0, :, 0])
             rollout_velocities.append(next_vel[0, :, 0])
     
-    rollout_positions = torch.stack(rollout_positions, dim=1)
-    rollout_velocities = torch.stack(rollout_velocities, dim=1)
+    # Stack predicted positions and velocities
+    predicted_positions = torch.stack(rollout_positions, dim=1)  # [agents, rollout_steps]
+    predicted_velocities = torch.stack(rollout_velocities, dim=1)
     
-    return rollout_positions, rollout_velocities, edge_probs
+    # Use the first frame of initial positions as it matches ground truth frame 0
+    original_initial_pos = initial_positions[0, :, 0, :2]  # First frame matches ground truth frame 0
+    original_initial_vel = initial_velocities[0, :, 0, :2]
+    
+    # Concatenate: [initial_frame, predicted_frames]
+    full_rollout_pos = torch.cat([
+        original_initial_pos.unsqueeze(1),  # [agents, 1, 2]
+        predicted_positions  # [agents, rollout_steps, 2]
+    ], dim=1)  # [agents, rollout_steps+1, 2]
+    
+    full_rollout_vel = torch.cat([
+        original_initial_vel.unsqueeze(1),  # [agents, 1, 2]
+        predicted_velocities  # [agents, rollout_steps, 2]
+    ], dim=1)  # [agents, rollout_steps+1, 2]
+    
+    return full_rollout_pos, full_rollout_vel, edge_probs
 
 
 def plot_trajectories_and_interactions(ground_truth_pos, predicted_pos, edge_probs=None,
@@ -106,8 +122,8 @@ def plot_trajectories_and_interactions(ground_truth_pos, predicted_pos, edge_pro
         ax.plot(traj[:, 0], traj[:, 1], c=colors[i], alpha=0.7, linewidth=1.5)
         ax.scatter(traj[0, 0], traj[0, 1], c=[colors[i]], s=50, marker='o', edgecolor='black')
     ax.set_title('Ground Truth Trajectories')
-    ax.set_xlim(-1.2, 1.2)
-    ax.set_ylim(-1.2, 1.2)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
     ax.set_aspect('equal')
     ax.grid(True, alpha=0.3)
     ax.set_xlabel('X')
@@ -120,8 +136,8 @@ def plot_trajectories_and_interactions(ground_truth_pos, predicted_pos, edge_pro
         ax.plot(traj[:, 0], traj[:, 1], c=colors[i], alpha=0.7, linewidth=1.5)
         ax.scatter(traj[0, 0], traj[0, 1], c=[colors[i]], s=50, marker='o', edgecolor='black')
     ax.set_title('NRI Predicted Trajectories')
-    ax.set_xlim(-1.2, 1.2)
-    ax.set_ylim(-1.2, 1.2)
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
     ax.set_aspect('equal')
     ax.grid(True, alpha=0.3)
     ax.set_xlabel('X')
@@ -190,16 +206,16 @@ def create_animation(ground_truth_pos, predicted_pos, save_path='nri_rollout.mp4
     
     # Setup plots
     ax1.set_title('Ground Truth')
-    ax1.set_xlim(-1.2, 1.2)
-    ax1.set_ylim(-1.2, 1.2)
+    ax1.set_xlim(0, 1)
+    ax1.set_ylim(0, 1)
     ax1.set_aspect('equal')
     ax1.grid(True, alpha=0.3)
     ax1.set_xlabel('X')
     ax1.set_ylabel('Y')
     
     ax2.set_title('NRI Prediction')
-    ax2.set_xlim(-1.2, 1.2)
-    ax2.set_ylim(-1.2, 1.2)
+    ax2.set_xlim(0, 1)
+    ax2.set_ylim(0, 1)
     ax2.set_aspect('equal')
     ax2.grid(True, alpha=0.3)
     ax2.set_xlabel('X')
