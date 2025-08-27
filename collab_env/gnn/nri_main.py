@@ -66,6 +66,10 @@ def main():
                        help='Weight for KL divergence loss')
     parser.add_argument('--alpha', type=float, default=0.1,
                        help='Weight for sparsity regularization')
+    parser.add_argument('--gradient-clipping', action='store_true',
+                       help='Enable gradient clipping (default: disabled)')
+    parser.add_argument('--clip-max-norm', type=float, default=1.0,
+                       help='Maximum gradient norm for clipping')
     
     # Rollout arguments
     parser.add_argument('--rollout-steps', type=int, default=100,
@@ -150,7 +154,10 @@ def main():
             device=device,
             use_rollout_validation=False,
             rollout_start=5,
-            rollout_steps=min(50, args.rollout_steps)
+            rollout_steps=min(50, args.rollout_steps),
+            gradient_clipping=args.gradient_clipping,
+            clip_max_norm=args.clip_max_norm,
+            save_best_model_path=model_path  # Save best model at each improvement
         )
         
         # Save model

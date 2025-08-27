@@ -212,7 +212,7 @@ def prepare_data_loaders(positions, velocities, species, seq_len=10, pred_len=1,
     return train_loader, val_loader, (val_positions, val_velocities, val_species)
 
 
-def train_epoch(model, dataloader, optimizer, rel_rec, rel_send, device, beta=1.0, alpha=0.1):
+def train_epoch(model, dataloader, optimizer, rel_rec, rel_send, device, beta=1.0, alpha=0.1, gradient_clipping=False, clip_max_norm=1.0):
     """Train NRI model for one epoch."""
     model.train()
     total_loss = 0
@@ -249,15 +249,21 @@ def train_epoch(model, dataloader, optimizer, rel_rec, rel_send, device, beta=1.
             output, targets, prob, logits, beta=beta, alpha=alpha
         )
         
-        # Backward pass - no gradient clipping, let's find the real issue
+        # Backward pass
         loss.backward()
         
-        # Apply very aggressive gradient clipping to prevent exploding gradients
-        total_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-        logger.debug(f"Batch {batch_idx} - Gradient norm: {total_norm:.6f}")
+        # Calculate gradient norm
+        grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=float('inf'))
+        
+        # Optionally apply gradient clipping
+        if gradient_clipping and grad_norm > clip_max_norm:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=clip_max_norm)
+            logger.debug(f"Batch {batch_idx} - Gradient norm: {grad_norm:.4f} (clipped to {clip_max_norm})")
+        else:
+            logger.debug(f"Batch {batch_idx} - Gradient norm: {grad_norm:.4f}")
         
         # Check if gradients are NaN and reset if needed
-        if torch.isnan(total_norm):
+        if torch.isnan(grad_norm):
             logger.warning(f"NaN gradient detected at batch {batch_idx}! Resetting gradients.")
             optimizer.zero_grad()
             return total_loss, total_nll, total_kl  # Exit early
@@ -364,7 +370,8 @@ def validate(model, dataloader, rel_rec, rel_send, device, beta=1.0, alpha=0.1):
 
 def train_model(model, train_loader, val_loader, val_data, rel_rec, rel_send,
                 epochs=10, lr=1e-3, beta=1.0, alpha=0.1, device='cpu', 
-                use_rollout_validation=False, rollout_start=5, rollout_steps=50):
+                use_rollout_validation=False, rollout_start=5, rollout_steps=50,
+                gradient_clipping=False, clip_max_norm=1.0, save_best_model_path=None):
     """Train NRI model with rollout-based validation like existing GNN."""
     optimizer = optim.Adam(model.parameters(), lr=lr)
     best_val_metric = float('inf')
@@ -375,7 +382,8 @@ def train_model(model, train_loader, val_loader, val_data, rel_rec, rel_send,
     for epoch in range(epochs):
         # Train
         train_loss, train_nll, train_kl = train_epoch(
-            model, train_loader, optimizer, rel_rec, rel_send, device, beta, alpha
+            model, train_loader, optimizer, rel_rec, rel_send, device, beta, alpha,
+            gradient_clipping, clip_max_norm
         )
         
         if use_rollout_validation and epoch % 5 == 0 and epoch > 0:  # Rollout validation every 5 epochs, skip first
@@ -407,6 +415,31 @@ def train_model(model, train_loader, val_loader, val_data, rel_rec, rel_send,
             best_val_metric = val_metric
             best_model_state = model.state_dict()
             logger.info(f"  New best model (val {val_type.lower()}: {val_metric:.6f})")
+            
+            # Save to disk if path provided
+            if save_best_model_path:
+                # Get model configuration - extract from encoder/decoder dimensions
+                model_config = {
+                    'n_edge_types': model.n_edge_types,
+                    'use_species_features': getattr(model, 'use_species_features', True),
+                    'n_species': getattr(model, 'n_species', 1),
+                    # Extract dimensions from actual layers
+                    'encoder_in_dim': model.encoder.encoder.fc1.in_features,
+                    'encoder_hidden_dim': model.encoder.encoder.fc1.out_features,
+                    'encoder_out_dim': model.encoder.encoder.fc_out.out_features,
+                    'decoder_hidden_dim': model.decoder.decoder.msg_fc1.out_features,
+                }
+                
+                torch.save({
+                    'model_state_dict': model.state_dict(),
+                    'model_config': model_config,
+                    'rel_rec': rel_rec,
+                    'rel_send': rel_send,
+                    'epoch': epoch,
+                    'best_val_metric': best_val_metric,
+                    'val_type': val_type
+                }, save_best_model_path)
+                logger.info(f"  Saved best model to {save_best_model_path}")
     
     # Load best model
     if best_model_state is not None:
@@ -417,8 +450,21 @@ def train_model(model, train_loader, val_loader, val_data, rel_rec, rel_send,
 
 def save_model(model, rel_rec, rel_send, path, args=None):
     """Save NRI model and matrices."""
+    # Get model configuration - extract from encoder/decoder dimensions
+    model_config = {
+        'n_edge_types': model.n_edge_types,
+        'use_species_features': getattr(model, 'use_species_features', True),
+        'n_species': getattr(model, 'n_species', 1),
+        # Extract dimensions from actual layers
+        'encoder_in_dim': model.encoder.encoder.fc1.in_features,
+        'encoder_hidden_dim': model.encoder.encoder.fc1.out_features,
+        'encoder_out_dim': model.encoder.encoder.fc_out.out_features,
+        'decoder_hidden_dim': model.decoder.decoder.msg_fc1.out_features,
+    }
+    
     torch.save({
         'model_state_dict': model.state_dict(),
+        'model_config': model_config,
         'rel_rec': rel_rec,
         'rel_send': rel_send,
         'args': args
@@ -429,44 +475,85 @@ def load_model(path, device='cpu'):
     """Load NRI model from checkpoint."""
     checkpoint = torch.load(path, map_location=device)
     
-    # Extract dimensions from relation matrices
+    # Extract matrices
     rel_rec = checkpoint['rel_rec']
     rel_send = checkpoint['rel_send']
-    n_agents = rel_rec.shape[1]
     
-    # Create model (you may need to adjust parameters based on saved args)
-    from collab_env.gnn.nri_model import create_nri_model_for_boids
-    
-    args = checkpoint.get('args', {})
-    model, _, _ = create_nri_model_for_boids(
-        num_boids=n_agents,
-        n_species=1,  # Default, adjust if needed
-        n_edge_types=getattr(args, 'n_edge_types', 2),
-        hidden_dim=getattr(args, 'hidden_dim', 128),
-        dropout=getattr(args, 'dropout', 0.1),
-        device=device
-    )
-    
-    # Initialize dynamic layers by doing a dummy forward pass
-    # This ensures the model architecture matches what was saved
-    try:
-        # Get the correct sequence length from saved args
+    # Try to get model configuration from checkpoint
+    if 'model_config' in checkpoint:
+        # New format - use saved model configuration
+        model_config = checkpoint['model_config']
+        n_agents = rel_rec.shape[1]
+        
+        from collab_env.gnn.nri_model import create_nri_model_for_boids
+        
+        model, _, _ = create_nri_model_for_boids(
+            num_boids=n_agents,
+            n_species=model_config['n_species'],
+            n_edge_types=model_config['n_edge_types'],
+            hidden_dim=model_config['encoder_hidden_dim'],
+            dropout=0.1,  # Default
+            device=device
+        )
+        
+        print(f"Loading model with saved configuration:")
+        print(f"  Encoder input dim: {model_config['encoder_in_dim']}")
+        print(f"  Edge types: {model_config['n_edge_types']}")
+        print(f"  Agents: {n_agents}")
+        
+        # Initialize the model to match saved architecture by computing seq_len
+        # encoder_in_dim = base_features * seq_len, where base_features = 4 + n_species (if using species)
+        base_features = 4  # pos_x, pos_y, vel_x, vel_y
+        if model_config['use_species_features']:
+            base_features += model_config['n_species']
+        
+        seq_len = model_config['encoder_in_dim'] // base_features
+        print(f"  Inferred seq_len: {seq_len}")
+        
+        # Initialize dynamic layers with dummy forward pass
+        try:
+            dummy_positions = torch.randn(1, n_agents, seq_len, 2, device=device)
+            dummy_velocities = torch.randn(1, n_agents, seq_len, 2, device=device)  
+            dummy_species = torch.zeros(1, n_agents, dtype=torch.long, device=device)
+            
+            dummy_data = model.prepare_boids_data(dummy_positions, dummy_velocities, dummy_species)
+            
+            with torch.no_grad():
+                _ = model(dummy_data, rel_rec, rel_send)
+        except Exception as e:
+            print(f"Warning: Could not initialize dynamic layers: {e}")
+        
+    else:
+        # Legacy format - try to infer from saved args and relation matrices
+        n_agents = rel_rec.shape[1]
+        args = checkpoint.get('args', {})
+        
+        from collab_env.gnn.nri_model import create_nri_model_for_boids
+        
+        model, _, _ = create_nri_model_for_boids(
+            num_boids=n_agents,
+            n_species=1,
+            n_edge_types=getattr(args, 'n_edge_types', 2),
+            hidden_dim=getattr(args, 'hidden_dim', 128),
+            dropout=getattr(args, 'dropout', 0.1),
+            device=device
+        )
+        
+        # Initialize dynamic layers
         seq_len = getattr(args, 'seq_len', 10)
-        print(f"Initializing model with seq_len={seq_len}")
+        print(f"Initializing legacy model with seq_len={seq_len}")
         
-        # Create dummy data with correct dimensions
-        dummy_positions = torch.randn(1, n_agents, seq_len, 2, device=device)
-        dummy_velocities = torch.randn(1, n_agents, seq_len, 2, device=device)  
-        dummy_species = torch.zeros(1, n_agents, dtype=torch.long, device=device)
-        
-        # Prepare dummy data
-        dummy_data = model.prepare_boids_data(dummy_positions, dummy_velocities, dummy_species)
-        
-        # Forward pass to initialize layers
-        with torch.no_grad():
-            _ = model(dummy_data, rel_rec, rel_send)
-    except Exception as e:
-        print(f"Warning: Could not initialize dynamic layers: {e}")
+        try:
+            dummy_positions = torch.randn(1, n_agents, seq_len, 2, device=device)
+            dummy_velocities = torch.randn(1, n_agents, seq_len, 2, device=device)  
+            dummy_species = torch.zeros(1, n_agents, dtype=torch.long, device=device)
+            
+            dummy_data = model.prepare_boids_data(dummy_positions, dummy_velocities, dummy_species)
+            
+            with torch.no_grad():
+                _ = model(dummy_data, rel_rec, rel_send)
+        except Exception as e:
+            print(f"Warning: Could not initialize dynamic layers: {e}")
     
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
