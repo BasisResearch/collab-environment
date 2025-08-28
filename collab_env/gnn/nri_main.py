@@ -133,6 +133,9 @@ def main():
     dataset_name = Path(args.data_path).stem
     model_path = Path(args.model_dir) / f'{dataset_name}_nri_model.pt'
     
+    # Initialize config for parameter access
+    config = None
+    
     if not args.visualize_only:
         # Prepare data loaders
         logger.info("Preparing data loaders...")
@@ -159,7 +162,8 @@ def main():
             rollout_steps=min(50, args.rollout_steps),
             gradient_clipping=args.gradient_clipping,
             clip_max_norm=args.clip_max_norm,
-            save_best_model_path=model_path  # Save best model at each improvement
+            save_best_model_path=model_path,  # Save best model at each improvement
+            training_args=args  # Pass args for config saving
         )
         
         # Save model
@@ -170,18 +174,17 @@ def main():
         if model_path.exists():
             logger.info(f"Loading model from {model_path}")
             
-            # First load checkpoint to get saved args
+            # Load checkpoint to get saved config
             checkpoint = torch.load(model_path, map_location=device)
-            saved_args = checkpoint.get('args', None)
+            config = checkpoint['config']
             
-            if saved_args:
-                # Use saved training parameters for data loading to ensure compatibility
-                logger.info("Using saved training parameters for data compatibility")
-                positions, velocities, species = load_boids_dataset(
-                    args.data_path, 
-                    num_sequences=saved_args.num_sequences,  # Use saved parameter
-                    device=device
-                )
+            # Use saved training parameters for data loading to ensure compatibility
+            logger.info("Using saved model configuration for data compatibility")
+            positions, velocities, species = load_boids_dataset(
+                args.data_path, 
+                num_sequences=config['num_sequences'],
+                device=device
+            )
                 
             model, rel_rec, rel_send = load_model(model_path, device)
         else:
@@ -191,11 +194,11 @@ def main():
         # For visualize-only mode, still split data to get validation sequences
         logger.info("Preparing data split for validation sequences...")
         
-        # Use saved training parameters for data preparation
-        seq_len = saved_args.seq_len if saved_args else args.seq_len
-        pred_len = saved_args.pred_len if saved_args else args.pred_len
-        batch_size = saved_args.batch_size if saved_args else args.batch_size
-        train_split = saved_args.train_split if saved_args else args.train_split
+        # Use saved model configuration for data preparation
+        seq_len = config['seq_len']
+        pred_len = config['pred_len']
+        batch_size = config['batch_size']
+        train_split = config['train_split']
         
         _, _, val_data = prepare_data_loaders(
             positions, velocities, species,
@@ -239,7 +242,7 @@ def main():
     if not args.visualize_only:
         context_len = args.seq_len  # Use current args during training
     else:
-        context_len = seq_len  # Use saved seq_len during visualization
+        context_len = config['seq_len']  # Use saved seq_len during visualization
     
     # Store context_len for visualization (gt_frames is now 0)
     gt_frames_used = 0

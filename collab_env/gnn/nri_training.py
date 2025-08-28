@@ -371,7 +371,8 @@ def validate(model, dataloader, rel_rec, rel_send, device, beta=1.0, alpha=0.1):
 def train_model(model, train_loader, val_loader, val_data, rel_rec, rel_send,
                 epochs=10, lr=1e-3, beta=1.0, alpha=0.1, device='cpu', 
                 use_rollout_validation=False, rollout_start=5, rollout_steps=50,
-                gradient_clipping=False, clip_max_norm=1.0, save_best_model_path=None):
+                gradient_clipping=False, clip_max_norm=1.0, save_best_model_path=None,
+                training_args=None):
     """Train NRI model with rollout-based validation like existing GNN."""
     optimizer = optim.Adam(model.parameters(), lr=lr)
     best_val_metric = float('inf')
@@ -430,14 +431,34 @@ def train_model(model, train_loader, val_loader, val_data, rel_rec, rel_send,
                     'decoder_hidden_dim': model.decoder.decoder.msg_fc1.out_features,
                 }
                 
+                # Create training config
+                if training_args:
+                    config = {
+                        'num_sequences': training_args.num_sequences,
+                        'seq_len': training_args.seq_len,
+                        'pred_len': training_args.pred_len,
+                        'batch_size': training_args.batch_size,
+                        'train_split': training_args.train_split,
+                        'hidden_dim': training_args.hidden_dim,
+                        'n_edge_types': training_args.n_edge_types,
+                        'dropout': training_args.dropout,
+                        'lr': training_args.lr,
+                        'beta': training_args.beta,
+                        'alpha': training_args.alpha,
+                    }
+                else:
+                    config = {}
+                
                 torch.save({
                     'model_state_dict': model.state_dict(),
                     'model_config': model_config,
+                    'config': config,  # Add training config
                     'rel_rec': rel_rec,
                     'rel_send': rel_send,
                     'epoch': epoch,
                     'best_val_metric': best_val_metric,
-                    'val_type': val_type
+                    'val_type': val_type,
+                    'args': training_args  # Keep for compatibility
                 }, save_best_model_path)
                 logger.info(f"  Saved best model to {save_best_model_path}")
     
@@ -462,12 +483,31 @@ def save_model(model, rel_rec, rel_send, path, args=None):
         'decoder_hidden_dim': model.decoder.decoder.msg_fc1.out_features,
     }
     
+    # Create training config if args provided
+    if args:
+        config = {
+            'num_sequences': args.num_sequences,
+            'seq_len': args.seq_len,
+            'pred_len': args.pred_len,
+            'batch_size': args.batch_size,
+            'train_split': args.train_split,
+            'hidden_dim': args.hidden_dim,
+            'n_edge_types': args.n_edge_types,
+            'dropout': args.dropout,
+            'lr': args.lr,
+            'beta': args.beta,
+            'alpha': args.alpha,
+        }
+    else:
+        config = {}
+    
     torch.save({
         'model_state_dict': model.state_dict(),
         'model_config': model_config,
+        'config': config,  # Add training config
         'rel_rec': rel_rec,
         'rel_send': rel_send,
-        'args': args
+        'args': args  # Keep for compatibility
     }, path)
 
 
