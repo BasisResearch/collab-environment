@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, TypeAlias
+from typing import Optional, Tuple, TypeAlias, Union
 from dataclasses import dataclass
 import numpy as np
 import open3d as o3d
@@ -178,7 +178,7 @@ class Camera:
     set of transformations that relate the world points to the image.
     """
 
-    def __init__(self, K: torch.Tensor, c2w: torch.Tensor, width: int, height: int):
+    def __init__(self, K: Union[torch.Tensor, np.array], c2w: Union[torch.Tensor, np.array], width: int, height: int):
         # Ensure everything is torch tensor
         self.K: torch.Tensor = torch.as_tensor(K, dtype=torch.float32)
         self.c2w: torch.Tensor = torch.as_tensor(c2w, dtype=torch.float32)
@@ -480,9 +480,9 @@ class MeshEnvironment:
         renderer.scene.add_geometry("mesh", self.mesh, material)
 
         # Set up camera --> convert from torch to numpy for Open3D
-        attrs = ['K', 'w2c', 'width', 'height']
-        params = [np.asarray(getattr(camera, attr)) for attr in attrs] 
-        renderer.setup_camera(*params)
+        attrs = ['K', 'w2c']
+        K, w2c = [np.asarray(getattr(camera, attr)) for attr in attrs] 
+        renderer.setup_camera(K, w2c, camera.width, camera.height)
 
         # Render
         image = renderer.render_to_image()
