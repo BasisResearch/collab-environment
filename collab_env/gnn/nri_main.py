@@ -275,8 +275,9 @@ def main():
     plot_trajectories_and_interactions(
         ground_truth_pos=gt_predictions_period,
         predicted_pos=nri_predictions,
-        edge_probs=edge_probs,
+        edge_probs=None, # disable adjacency matrix plot, this is not very informative currently
         save_path=static_path,
+        title=f"NRI rollout for {dataset_name}",
         xlim=xlim,
         ylim=ylim,
         skip_frames=0
@@ -288,6 +289,7 @@ def main():
         ground_truth_pos=gt_predictions_period,
         predicted_pos=nri_predictions,
         save_path=animation_path,
+        title=f"NRI rollout for {dataset_name}",
         xlim=xlim,
         ylim=ylim
     )

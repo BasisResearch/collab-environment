@@ -116,6 +116,7 @@ def generate_rollout(model, rel_rec, rel_send, initial_positions, initial_veloci
 
 
 def plot_trajectories_and_interactions(ground_truth_pos, predicted_pos, edge_probs=None,
+                                       title='NRI rollout',
                                        save_path='nri_visualization.png',
                                        xlim=(0, 1), ylim=(0, 1), skip_frames=0):
     """
@@ -133,8 +134,13 @@ def plot_trajectories_and_interactions(ground_truth_pos, predicted_pos, edge_pro
     n_agents = ground_truth_pos.shape[0]
     colors = plt.cm.tab20(np.linspace(0, 1, n_agents))
     
-    n_cols = 3 if edge_probs is not None else 2
-    fig, axes = plt.subplots(1, n_cols, figsize=(6*n_cols, 5))
+    # Determine number of subplots based on edge types
+    if edge_probs is not None:
+        n_edge_types = edge_probs.shape[1]
+        n_cols = 2 + n_edge_types  # GT, Pred, and one plot per edge type
+    else:
+        n_cols = 2
+    fig, axes = plt.subplots(1, n_cols, figsize=(5*n_cols, 5))
     
     # Plot ground truth trajectories
     ax = axes[0]
@@ -168,52 +174,60 @@ def plot_trajectories_and_interactions(ground_truth_pos, predicted_pos, edge_pro
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     
-    # Plot interaction matrix if available
+    # Plot interaction matrices for all edge types if available
     if edge_probs is not None:
-        ax = axes[2]
+        # Convert edge probabilities to adjacency matrices
+        adj_matrices = edge_probs_to_adjacency(edge_probs, n_agents)
         
-        # Convert edge probabilities to adjacency matrix
-        adj_matrix = edge_probs_to_adjacency(edge_probs, n_agents)
-        
-        im = ax.imshow(adj_matrix, cmap='viridis', vmin=0, vmax=1)
-        ax.set_title('Inferred Interaction Matrix')
-        ax.set_xlabel('Agent ID')
-        ax.set_ylabel('Agent ID')
-        
-        # Add colorbar
-        plt.colorbar(im, ax=ax, label='Interaction Probability')
-        
-        # Add grid
-        ax.set_xticks(np.arange(n_agents))
-        ax.set_yticks(np.arange(n_agents))
-        ax.grid(True, alpha=0.3, linewidth=0.5)
+        # Plot each edge type
+        for edge_type, adj_matrix in enumerate(adj_matrices):
+            ax = axes[2 + edge_type]
+            
+            im = ax.imshow(adj_matrix, cmap='viridis', vmin=0, vmax=1)
+            ax.set_title(f'Edge Type {edge_type} Probability')
+            ax.set_xlabel('Agent ID')
+            ax.set_ylabel('Agent ID')
+            
+            # Add colorbar
+            plt.colorbar(im, ax=ax, label='Probability')
+            
+            # Add grid
+            ax.set_xticks(np.arange(n_agents))
+            ax.set_yticks(np.arange(n_agents))
+            ax.grid(True, alpha=0.3, linewidth=0.5)
     
     plt.tight_layout()
+    
+    plt.suptitle(title)
+    
     plt.savefig(save_path, dpi=150, bbox_inches='tight')
     logger.info(f"Saved visualization to {save_path}")
     plt.close()
 
 
 def edge_probs_to_adjacency(edge_probs, n_agents):
-    """Convert edge probabilities to adjacency matrix."""
-    adj_matrix = np.zeros((n_agents, n_agents))
+    """Convert edge probabilities to adjacency matrices for all edge types."""
+    n_edge_types = edge_probs.shape[1]
+    adj_matrices = []
     
-    edge_idx = 0
-    for i in range(n_agents):
-        for j in range(n_agents):
-            if i != j:
-                # Use interaction probability (typically edge type 1)
-                if edge_probs.shape[1] > 1:
-                    prob = edge_probs[edge_idx, 1].item() if hasattr(edge_probs, 'item') else edge_probs[edge_idx, 1]
-                else:
-                    prob = edge_probs[edge_idx, 0].item() if hasattr(edge_probs, 'item') else edge_probs[edge_idx, 0]
-                adj_matrix[i, j] = prob
-                edge_idx += 1
+    for edge_type in range(n_edge_types):
+        adj_matrix = np.zeros((n_agents, n_agents))
+        edge_idx = 0
+        
+        for i in range(n_agents):
+            for j in range(n_agents):
+                if i != j:
+                    prob = edge_probs[edge_idx, edge_type].item() if hasattr(edge_probs[edge_idx, edge_type], 'item') else edge_probs[edge_idx, edge_type]
+                    adj_matrix[i, j] = prob
+                    edge_idx += 1
+        
+        adj_matrices.append(adj_matrix)
     
-    return adj_matrix
+    return adj_matrices
 
 
 def create_animation(ground_truth_pos, predicted_pos, save_path='nri_rollout.mp4', fps=20, 
+                    title='NRI rollout',
                     xlim=(0, 1), ylim=(0, 1)):
     """
     Create animation comparing ground truth and predicted trajectories.
@@ -248,6 +262,8 @@ def create_animation(ground_truth_pos, predicted_pos, save_path='nri_rollout.mp4
     ax2.grid(True, alpha=0.3)
     ax2.set_xlabel('X')
     ax2.set_ylabel('Y')
+    
+    plt.suptitle(title)
     
     # Initialize scatter plots with dummy data
     dummy_pos = np.zeros((n_agents, 2))
