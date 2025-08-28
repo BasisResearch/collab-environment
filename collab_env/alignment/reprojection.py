@@ -1,153 +1,266 @@
-import numpy as np
-import torch
-from torch.func import vmap
 from typing import Optional, Tuple, TypeAlias
 from dataclasses import dataclass
+import numpy as np
 import open3d as o3d
 from scipy.spatial import cKDTree
+from tqdm import trange, tqdm
 
-from collab_env.utils.utils import array_nan_equal
+import torch
+from torch.nn import functional as F
+from torch.func import vmap
+
+# Pyro distributions
+import pyro
+import pyro.distributions as dist
+
+# Utils
+from collab_env.utils.utils import array_nan_equal, get_backend
 
 #########################################################
 ####### TLB CLEAN UP THESE BUT PUT HERE FOR NOW #########
 #########################################################
 
-
-def filter_coords(df_tracks, coord_cols=["u", "v"], window=3, std_threshold=3):
+def bbox_to_coords(bbox, method="bottom_center"):
     """
-    Filter outlier coordinates based on rolling statistics for a single track
+    Converts a bounding box (x1, y1, x2, y2) to image coordinates (u, v)
+    using the method specified.
 
     Args:
-        track_data: DataFrame containing a single trajectory
-        coord_cols: List of coordinate column names to filter
-        window: Size of rolling window for statistics
-        std_threshold: Number of standard deviations for outlier detection
+        bbox: (N, 4) array of (x1, y1, x2, y2)
+        method: "bottom_center" or "center"
 
     Returns:
-        DataFrame with outliers replaced by rolling mean
+        uv: (N, 2) array of (u, v)
     """
+    x1, y1, x2, y2 = bbox.astype(int).T
 
-    # Copy as to not modify the original dataframe
-    df_tracks = df_tracks.copy()
+    u = (x1 + x2) // 2
+    v = y2 - 1 if method == "bottom_center" else (y1 + y2) // 2
+    uv = np.stack([u, v], axis=1)
+    return uv
 
-    # Calculate rolling statistics
-    rolling_mean = (
-        df_tracks[coord_cols].rolling(window=window, min_periods=1, center=True).mean()
-    )
-
-    rolling_std = (
-        df_tracks[coord_cols].rolling(window=window, min_periods=1, center=True).std()
-    )
-
-    # Identify outliers
-    z_scores = np.abs((df_tracks[coord_cols] - rolling_mean) / rolling_std)
-    outliers = z_scores > std_threshold
-
-    # Replace outliers with rolling mean
-    for col in coord_cols:
-        df_tracks.loc[outliers[col], col] = rolling_mean.loc[outliers[col], col]
-
-    return df_tracks[coord_cols]
-
-
-def smooth_coords(df_tracks, coord_cols=["u", "v"], window=3):
+def filter_coords(coords, window=3, std_threshold=3):
     """
-    Smooth coordinates over time using a rolling average for a single track
+    Filter outlier coordinates in a trajectory using rolling statistics.
 
     Args:
-        track_data: DataFrame containing a single trajectory
-        coord_cols: List of coordinate column names to smooth
-        window: Size of rolling window for smoothing
+        coords (ndarray or Tensor): shape (N, 2), with columns (u, v).
+        window (int): Size of rolling window.
+        std_threshold (float): Std deviation threshold.
 
     Returns:
-        DataFrame with smoothed coordinates
+        ndarray or Tensor: Filtered coordinates (same type as input).
     """
-    # Apply smoothing
-    smoothed = (
-        df_tracks[coord_cols].rolling(window=window, min_periods=1, center=True).mean()
+    xp = get_backend(coords)
+    coords = coords.clone() if xp is torch else coords.copy()
+    n = coords.shape[0]
+
+    pad = window // 2
+    pad_mode = "replicate" if xp is torch else "edge"
+    padded = (
+        xp.nn.functional.pad(coords[None], (0,0,pad,pad), mode=pad_mode)[0]
+        if xp is torch else xp.pad(coords, ((pad, pad), (0, 0)), mode=pad_mode)
     )
 
-    return smoothed
+    for i in range(n):
+        window_slice = padded[i:i+window]
+        mean = window_slice.mean(dim=0) if xp is torch else window_slice.mean(axis=0)
+        std  = window_slice.std(dim=0, unbiased=False) if xp is torch else window_slice.std(axis=0)
 
+        std = xp.where(std==0, xp.full_like(std, 1e-6), std) if xp is torch else np.where(std==0, 1e-6, std)
 
-### TLB putting here for now but likely a better place or could refactor
-def get_depths_on_mesh(camera, mesh, radius=0.01, smooth=True):
-    # Grab the mesh points and create a KDTree
-    mesh_points = np.asarray(mesh.vertices)
-    tree = cKDTree(mesh_points)
+        diff = (coords[i] - mean) / std
+        if xp.any(xp.abs(diff) > std_threshold):
+            coords[i] = mean
 
-    # Get indices of image
-    image_indices = np.argwhere(camera.depth)
-    image_indices = image_indices[:, [1, 0]]
+    return coords
 
-    # Project image indices to world --> then project back to 2d
-    world_points = camera.project_to_world(image_indices)
-    _, depths = camera.project_to_camera(world_points)
+def smooth_coords(coords, window=3):
+    """
+    Smooth coordinates using rolling mean.
 
-    # Reshape the points to the bounding box shape
-    height, width = camera.depth.shape
-    depth_patch = depths.reshape(height, width)
+    Args:
+        coords (ndarray or Tensor): shape (N, 2), with columns (u, v).
+        window (int): Rolling window size.
 
-    # Check if the depths are the same
-    same_depths = array_nan_equal(camera.depth, depth_patch)
+    Returns:
+        ndarray or Tensor: Smoothed coordinates (same type as input).
+    """
+    xp = get_backend(coords)
+    coords = coords.clone() if xp is torch else coords.copy()
+    n = coords.shape[0]
 
-    print("Correctly mapped depths: ", same_depths)
+    pad = window // 2
+    pad_mode = "replicate" if xp is torch else "edge"
+    padded = (
+        xp.nn.functional.pad(coords[None], (0,0,pad,pad), mode=pad_mode)[0]
+        if xp is torch else xp.pad(coords, ((pad, pad), (0, 0)), mode=pad_mode)
+    )
 
-    # Grab the world points that were found
-    true_indices = np.where(~np.isnan(world_points).any(1))[0]
-    true_points = world_points[true_indices]
-    true_depths = depths[true_indices]  # Trim depths to those found
+    out = []
+    for i in range(n):
+        window_slice = padded[i:i+window]
+        mean = xp.nanmean(window_slice, dim=0) if xp is torch else np.nanmean(window_slice, axis=0)
+        out.append(mean)
 
-    # Find the nearest mesh point for each true point
-    _, indices = tree.query(true_points, k=1)
+    return xp.stack(out, dim=0) if xp is torch else np.stack(out, axis=0)
 
-    sums = np.bincount(indices, weights=true_depths, minlength=len(mesh_points))
-    counts = np.bincount(indices, minlength=len(mesh_points))
-    mesh_depths = sums / np.maximum(counts, 1)  # avoid division by zero
-    mesh_depths[counts == 0] = np.nan  # keep NaN for no matches
+################################
+########### Agent ##############
+################################
 
-    if smooth:
-        # Find neighbors within the radius for all mesh points
-        neighbors_list = tree.query_ball_point(mesh_points, r=radius)
-
-        # Preallocate smoothed array
-        smoothed_depths = np.full_like(mesh_depths, np.nan)
-
-        # Average over neighbors (ignore NaNs)
-        for i, neighbors in enumerate(neighbors_list):
-            smoothed_depths[i] = np.nanmean(mesh_depths[neighbors])
-
-        mesh_depths = smoothed_depths
-
-    return mesh_depths
-
-
-#########################################################
-################## Environment ##########################
-#########################################################
 """
-Camera represents a view within the environment. It contains a
-set of transformations that relate the world points to the image
+Agent is an object that moves within the environment. It
+starts from an initial position.
 """
+
+State = Tuple[torch.Tensor, torch.Tensor]
+ObservedState = Tuple[torch.Tensor, torch.Tensor]
+StateTrajectory = Tuple[torch.Tensor, torch.Tensor]
+
+# @dataclass
+# class State:
+#     position: torch.Tensor
+#     size: torch.Tensor
+
+# @dataclass
+# class ObservedState:
+#     projected_centroid: torch.Tensor
+#     projected_area: torch.Tensor
+
+# @dataclass
+# class StateTrajectory:
+#     state: State
 
 
 @dataclass
+class Agent:
+    def __init__(self, position: torch.Tensor, size: torch.Tensor):
+
+        # Ensure that the position and size are tensors
+        self.position = torch.tensor(position)
+        self.size = torch.tensor(size)
+
+    @property
+    def area(self):
+        return np.prod(self.size)
+
+    @property
+    def state(self) -> State:
+        return self.position, self.area
+
+    @state.setter
+    def state(self, state: State):
+        self.position, self.size = state
+
+    def project_area(self, fx: float) -> torch.Tensor:
+        """
+        Project the area of the agent to the camera.
+        """
+
+        fx = torch.tensor(fx)
+
+        # Get the radius of the agent
+        radius = self.size[0]
+        x_3d = self.position[0]
+        eps = 1e-8
+        safe_x = torch.sign(x_3d) * torch.maximum(torch.abs(x_3d), torch.tensor(eps))
+        area = torch.pi * radius**2 * (fx / torch.abs(safe_x))**2
+        return area
+
+#########################################################
+################## Camera ##############################
+#########################################################
+@dataclass
 class Camera:
-    # A camera is a set of transformations that relates the world points to the camera
-    def __init__(self, K: np.ndarray, c2w: np.ndarray, width: int, height: int):
-        self.K: np.ndarray = K
-        self.c2w: np.ndarray = c2w
+    """
+    Camera represents a view within the environment. It contains a
+    set of transformations that relate the world points to the image.
+    """
+
+    def __init__(self, K: torch.Tensor, c2w: torch.Tensor, width: int, height: int):
+        # Ensure everything is torch tensor
+        self.K: torch.Tensor = torch.as_tensor(K, dtype=torch.float32)
+        self.c2w: torch.Tensor = torch.as_tensor(c2w, dtype=torch.float32)
         self.width: int = width
         self.height: int = height
-        self.image: Optional[np.ndarray] = None
-        self.depth: Optional[np.ndarray] = None
 
-    def set_view(self, image: np.ndarray, depth: np.ndarray) -> None:
-        self.image = image
-        self.depth = depth
+        # Image / Depth of the mesh
+        self.image: Optional[torch.Tensor] = None   # (H, W, C) or (H, W)
+        self.depth: Optional[torch.Tensor] = None   # (H, W)
 
-    def get_view(self) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        # Point distribution of camera viewing mesh
+        self.dist: Optional[pyro.distributions.Distribution] = None
+
+    def set_view(self, image, depth) -> None:
+        self.image = torch.as_tensor(image, dtype=torch.float32)
+        self.depth = torch.as_tensor(depth, dtype=torch.float32)
+
+    def get_view(self) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
         return self.image, self.depth
+
+    @property
+    def valid_pixels(self) -> torch.Tensor:
+        """
+        Get valid pixels in the camera view as integer indices (u, v).
+        """
+        assert self.depth is not None, "Depth is not set"
+        mask = ~torch.isinf(self.depth)
+        coords = mask.nonzero(as_tuple=False)  # (N, 2) with (v, u)
+        return coords[:, [1, 0]]  # swap to (u, v)
+
+    #########################################################
+    #################### Distributions ######################
+    #########################################################
+
+    def set_distribution(self, method: str = "weighted") -> pyro.distributions.Distribution:
+        """
+        Set the distributions of world points for the camera.
+        """
+        _, depth_map = self.get_view()
+        assert depth_map is not None, "Depth is not set"
+
+        # Extract depth at valid pixels
+        depth_values = depth_map[self.valid_pixels[:, 1], self.valid_pixels[:, 0]]
+
+        if method == "weighted":
+            weights = depth_values ** 2
+        else:
+            weights = torch.ones_like(depth_values, dtype=torch.float32)
+
+        # Normalize weights
+        weights = weights.clamp(min=1e-6)
+        weights = weights / weights.sum()
+
+        # Define categorical distribution
+        self.dist = dist.Categorical(probs=weights)
+        return self.dist
+
+    def sample_pixels(self, n_points: int = 1) -> torch.Tensor:
+        """
+        Sample a set of pixels from the camera view.
+        """
+        assert self.dist is not None, "Distribution is not set"
+
+        pixel_idxs = pyro.sample("pixels", self.dist.expand([n_points]))
+        pixels = self.valid_pixels[pixel_idxs]
+
+        if pixels.ndim == 1:
+            pixels = pixels.unsqueeze(0)
+
+        return pixels
+
+    def sample_world_points(self, n_points: int = 1) -> torch.Tensor:
+        """
+        Sample world points from the distribution.
+        """
+        assert self.dist is not None, "Distribution is not set"
+        pixels = self.sample_pixels(n_points)
+        return self.project_to_world(pixels)
+
+    #########################################################
+    #################### Camera properties ##################
+    #########################################################
 
     @property
     def fx(self):
@@ -167,87 +280,87 @@ class Camera:
 
     @property
     def w2c(self):
-        return np.linalg.inv(self.c2w)
+        return torch.linalg.inv(self.c2w)
 
     #########################################################
-    ################# Camera projections ####################
+    #################### Projections #######################
     #########################################################
 
-    def project_to_camera(self, points3d):
+    def project_to_camera(self, points3d: torch.Tensor):
         """
-        Project a 3D point (x,y,z) in the world frame to
-        a 2D point (u,v) in the camera frame.
-
-        Args:
-            points3d: 3D points in the world frame (N, 3)
-
-        Returns:
-            points2d: 2D points in the camera frame (N, 2)
+        Project 3D points (N, 3) in world frame to 2D camera frame.
         """
+        assert points3d.ndim == 2 and points3d.shape[1] == 3
 
-        # Convert to homogeneous coordinates (N, 4) --> enables matrix multiplication
-        points_world_homogenous = np.concatenate(
-            [points3d, np.ones((points3d.shape[0], 1))], axis=1
-        )
+        N = points3d.shape[0]
+        points_world_h = torch.cat([points3d, torch.ones((N, 1), dtype=torch.float32)], dim=1)
 
-        # Step 2: Project to camera space
-        points_cam = self.w2c @ points_world_homogenous.T  # (4,4) @ (4,N) = (4,N)
+        # World to camera
+        points_cam = (self.w2c @ points_world_h.T).T  # (N, 4)
 
-        # Step 3: Perspective division (to normalize by z)
-        x, y, z, _ = points_cam
-
-        # Avoid division by zero
-        z = np.clip(z, 1e-6, None)
+        x, y, z, _ = points_cam.T
+        z = torch.clamp(z, min=1e-6)
 
         # Normalize by depth
         x_norm = x / z
         y_norm = y / z
 
-        # Step 4: Apply camera intrinsics (assuming self.K is a 3x3 intrinsic matrix)
+        # Apply intrinsics
         u = self.fx * x_norm + self.cx
         v = self.fy * y_norm + self.cy
 
-        # Step 5: Stack 2D points
-        points2d = np.stack([u, v], axis=1)  # (N, 2)
-
-        # Return 2D points and associated depths
+        points2d = torch.stack([u, v], dim=1)
         return points2d, z
 
-    def project_to_world(self, points2d):
+    def project_to_world(self, points2d: torch.Tensor) -> torch.Tensor:
         """
-        Project 2D pixel coordinates (u, v) into 3D world points using stored depth.
-
-        Args:
-            points2d: (N, 2) array of (u, v) pixel coordinates where
-                    u = column (horizontal),
-                    v = row (vertical)
-
-        Returns:
-            points3d_world: (N, 3) array of 3D points in world coordinates
+        Backproject 2D pixel coordinates (u, v) into 3D world points using depth.
         """
-        points2d = np.asarray(points2d).astype(int)
-        u = np.clip(points2d[:, 0], 0, self.depth.shape[1] - 1)  # col index (width)
-        v = np.clip(points2d[:, 1], 0, self.depth.shape[0] - 1)  # row index (height)
+        assert self.depth is not None, "Depth not set"
 
-        depth = self.depth[v, u].reshape(
-            -1, 1
-        )  # note depth indexed by [row, col] = [v, u]
+        points2d = points2d.to(torch.int64)
+        u = torch.clamp(points2d[:, 0], 0, self.depth.shape[1] - 1)
+        v = torch.clamp(points2d[:, 1], 0, self.depth.shape[0] - 1)
 
-        valid_mask = depth.squeeze() > 0
-        if not np.any(valid_mask):
-            return np.zeros((0, 3))  # or raise exception / return NaNs
+        depth = self.depth[v, u].unsqueeze(-1)
+
+        valid_mask = depth.squeeze(-1) > 0
+        if not valid_mask.any():
+            return torch.zeros((0, 3), dtype=torch.float32)
 
         # Backproject to camera space
-        x = (u - self.cx)[:, None] * depth / self.fx
-        y = (v - self.cy)[:, None] * depth / self.fy
+        x = (u - self.cx).unsqueeze(-1) * depth / self.fx
+        y = (v - self.cy).unsqueeze(-1) * depth / self.fy
         z = depth
 
-        points_cam = np.concatenate([x, y, z, np.ones_like(z)], axis=1)
-        points_world_hom = (self.c2w @ points_cam.T).T
-        points_world = points_world_hom[:, :3] / points_world_hom[:, 3:4]
+        points_cam = torch.cat([x, y, z, torch.ones_like(z)], dim=1)
+        points_world_h = (self.c2w @ points_cam.T).T
+        points_world = points_world_h[:, :3] / points_world_h[:, 3:4]
 
         return points_world
 
+    #########################################################
+    #################### Observe Agent ######################
+    #########################################################
+
+    def observe_agent(self, agent: Agent) -> ObservedState:
+        """
+        Observe the agent from the camera. Returns the observed position and area.
+        """
+
+        uv, _ = self.project_to_camera(agent.position[None, ...])
+        area = agent.project_area(self.fx)
+
+        return uv, area
+
+    # def observe_batch(self, batch: State) -> ObservedState:
+        
+    #     shp = state_batch[0].shape[:-1]
+    #     # create the tuple of tensors
+    #     # obs_tuple = (torch.zeros(shp + (2,)), torch.zeros(shp + (1,)))
+    #     vmap_project_2d = vmap(self.__observe_shape__, in_dims = 0)(*tuple(t.view(-1, t.shape[-1]) for t in state_batch))
+        
+    #     return tuple(s.view(*shp, -1) for s in vmap_project_2d)
 
 #########################################################
 ################## Environment ##########################
@@ -276,17 +389,74 @@ class MeshEnvironment:
         min_bound = aabb.get_min_bound()  # numpy array of shape (3,)
         max_bound = aabb.get_max_bound()  # numpy array of shape (3,)
 
-        return torch.tensor(min_bound), torch.tensor(max_bound)
+        return torch.as_tensor(min_bound), torch.as_tensor(max_bound)
 
-    def constraint(self, state):
-        pos, size = state
+    # def constraint(self, state):
+    #     """
+    #     Constrain the state to the mesh. A state is a tuple of (position, size). 
+    #     The position is a 3D point viewed originally from the 2D camera. 
+        
+    #     The constraint is therefore a factor of the source camera.
 
-        # Grab the bounds and move to device before clamping
-        min_bound = self.min_bound.to(pos.device)
-        max_bound = self.max_bound.to(pos.device)
-        pos = torch.clamp(pos, min_bound, max_bound)
+    #     Args:
+    #         camera: Camera object
+    #         state: State object
+    #     """
+    #     pos, size = state
 
-        return pos, size
+    #     # Grab the bounds and move to device before clamping
+    #     min_bound = self.min_bound.to(pos.device)
+    #     max_bound = self.max_bound.to(pos.device)
+    #     pos = torch.clamp(pos, min_bound, max_bound)
+
+    #     return pos, size
+
+    def distance_to_mesh(self, camera: Camera, radius=0.01, smooth=True):
+        """
+        Get the distance from the camera to the mesh.
+
+        Args:
+            camera: Camera object
+            radius: Radius of the sphere to project the camera to the mesh
+            smooth: Whether to smooth the depths
+
+        Returns:
+            mesh_depths: Depth values of the mesh
+        """
+
+        # Create a KDTree for the mesh
+        mesh_points = np.asarray(self.mesh.vertices)
+        tree = cKDTree(mesh_points)
+
+        # Project depth indices to world space and back
+        image_indices = torch.argwhere(camera.depth)[:, [1, 0]]
+        world_points = camera.project_to_world(image_indices)
+        _, depths = camera.project_to_camera(world_points)
+
+        # Check if the depth is mapped correctly
+        h, w = camera.depth.shape
+        depth_patch = depths.reshape(h, w)
+        assert array_nan_equal(camera.depth, depth_patch), "Depth mapping is incorrect"
+
+        # Keep only valid world points
+        mask = ~torch.isnan(world_points).any(dim=1)
+        true_points, true_depths = world_points[mask], depths[mask]
+
+        # Map depths to nearest mesh vertex
+        _, indices = tree.query(true_points, k=1)
+        sums = np.bincount(indices, weights=true_depths, minlength=len(mesh_points))
+        counts = np.bincount(indices, minlength=len(mesh_points))
+        mesh_depths = sums / np.maximum(counts, 1)
+        mesh_depths[counts == 0] = np.nan
+
+        if smooth:
+            # Average neighbor depths (vectorized with list comprehension)
+            neighbors = tree.query_ball_point(mesh_points, r=radius)
+            mesh_depths = np.array(
+                [np.nanmean(mesh_depths[n]) if n else np.nan for n in neighbors]
+            )
+
+        return mesh_depths
 
     def render_camera(self, camera: Camera) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -309,8 +479,10 @@ class MeshEnvironment:
         # Add mesh with material
         renderer.scene.add_geometry("mesh", self.mesh, material)
 
-        # Set up camera
-        renderer.setup_camera(camera.K, camera.w2c, camera.width, camera.height)
+        # Set up camera --> convert from torch to numpy for Open3D
+        attrs = ['K', 'w2c', 'width', 'height']
+        params = [np.asarray(getattr(camera, attr)) for attr in attrs] 
+        renderer.setup_camera(*params)
 
         # Render
         image = renderer.render_to_image()
@@ -329,95 +501,43 @@ class MeshEnvironment:
         return image, depth
 
 
-################################
-########### Observer ###########
-################################
-"""
-
-"""
-
-State: TypeAlias = Tuple[torch.Tensor, torch.Tensor]  # positions, sizes
-ObservedState: TypeAlias = Tuple[
-    torch.Tensor, torch.Tensor
-]  # projected centroids, projected areas
-StateTrajectory: TypeAlias = State  # each tensor has extra dimension
+# ################################
+# ########### Observer ###########
+# ################################
 
 
-@dataclass
-class Observer:
-    def __init__(
-        self, mesh: MeshEnvironment, camera: Camera, observe_fx: Optional[str] = None
-    ):
-        """
-        Observer is a class that uses a camera projection to observe movement
-        on a mesh environment.
-        """
+# @dataclass
+# class Observer:
+#     def __init__(
+#         self, mesh: MeshEnvironment, camera: Camera, observe_fx: Optional[str] = None
+#     ):
+#         """
+#         Observer is a class that uses a camera projection to observe movement
+#         on a mesh environment.
+#         """
 
-        self.mesh = mesh
-        self.camera = camera
-        self.observe_fx = observe_fx
+#         self.mesh = mesh
+#         self.camera = camera
+#         self.observe_fx = observe_fx
 
-    def __observe__(self, *args) -> ObservedState:
-        """
-        Observe from the camera frame.
-        """
-        if self.observe_fx is None:
-            return self.camera.project_to_world(args)
-        else:
-            return getattr(self.camera, self.observe_fx)(args)
-
-    def observe(self, batch: State) -> ObservedState:
-        agent = batch[0].shape[:-1]
-        # create the tuple of tensors
-        # obs_tuple = (torch.zeros(shp + (2,)), torch.zeros(shp + (1,)))
-        vmap_observe = vmap(self.__observe__, in_dims=0)(
-            *tuple(item.view(-1, item.shape[-1]) for item in batch)
-        )
-
-        return tuple(state.view(*agent, -1) for state in vmap_observe)
-
-
-################################
-########### Agent ##############
-################################
-
-"""
-Agent is an object that moves within the environment. It
-starts from an initial position.
-"""
-
-
-@dataclass
-class Agent:
-    def __init__(self, position: torch.Tensor, size: torch.Tensor):
-        self.position = position
-        self.size = size
-
-    @property
-    def area(self):
-        return np.prod(self.size)
-
-    @property
-    def state(self) -> State:
-        return self.position, self.area
-
-    @state.setter
-    def state(self, state: State):
-        self.position, self.size = state
-
+#     def __observe__(self, *args) -> ObservedState:
+#         """
+#         Observe from the camera frame.
+#         """
+#         if self.observe_fx is None:
+#             return self.camera.project_to_world(args)
+#         else:
+#             return getattr(self.camera, self.observe_fx)(args)
 
 #     def observe(self, batch: State) -> ObservedState:
-#         return self.camera.project_to_world(batch)
+#         agent = batch[0].shape[:-1]
+#         # create the tuple of tensors
+#         # obs_tuple = (torch.zeros(shp + (2,)), torch.zeros(shp + (1,)))
+#         vmap_observe = vmap(self.__observe__, in_dims=0)(
+#             *tuple(item.view(-1, item.shape[-1]) for item in batch)
+#         )
 
-
-def bbox_to_coords(bbox, method="bottom_center"):
-    x1, y1, x2, y2 = map(int, bbox)
-
-    u = (x1 + x2) // 2
-    v = y2 - 1 if method == "bottom_center" else (y1 + y2) // 2
-    uv = np.stack([u, v])
-    return uv
-
+#         return tuple(state.view(*agent, -1) for state in vmap_observe)
 
 #########################################################
 ################# Movement generator ####################
@@ -425,51 +545,137 @@ def bbox_to_coords(bbox, method="bottom_center"):
 
 
 @dataclass
-class DynamicMovementGenerator:
-    def __init__(self, mesh: MeshEnvironment, spatial_increment: torch.Tensor):
+class MovementGenerator:
+    """
+    MovementGenerator is a class that generates movement for a specified number 
+    of agents. More or less generates a random walk
+    """
+    def __init__(
+        self, 
+        mesh: MeshEnvironment, 
+        spatial_increment_params: dict = {
+            "loc": torch.tensor([0., 0., 0.]),
+            "scale": 0.02
+        },
+        size_params: dict = {
+            "low": torch.tensor([0.1]), 
+            "high": torch.tensor([10.0])
+        }
+    ):
+        """
+        MovementGenerator is a class that generates movement for a set of agents.
+        """
+
         self.mesh = mesh
-        assert spatial_increment.shape[-1] == 2, (
-            f"Spatial increment parameters must have shape (..., 2), but got {spatial_increment.shape}"
+
+        assert isinstance(spatial_increment_params, dict), "Spatial increment parameters must be a dictionary"
+        assert isinstance(size_params, dict), "Size parameters must be a dictionary"
+
+        # Check that the spatial increment parameters have the correct shape
+        n_dims = [2, 3] # 2D or 3D
+        assert spatial_increment_params["loc"].shape[-1] in n_dims, (
+            f"Spatial increment parameters must have shape (..., {n_dims}), but got {spatial_increment_params['loc'].shape}"
         )
-        self.spatial_increment = spatial_increment
 
+        # Set the spatial increment and size range
+        self.spatial_increment_params = spatial_increment_params
+        self.size_params = size_params
 
-#     def next_state(self, state: State, ind: int) -> State:
-#         # extract components
-#         position, size = state
-#         x_3d, y_3d, z_3d = position[..., 0], position[..., 1], position[..., 2]
+    #########################################################
+    #################### Distributions ######################
+    #########################################################
 
-#         state_constrained = self.mesh.constraint(state)
-#         assert torch.allclose(state[0], state_constrained[0]), \
-#             f"Environment constraints violated: state={state}, state_constrained={state_constrained}"
+    @property
+    def size_dist(self) -> pyro.distributions.Distribution:
+        """
+        Size distribution.
+        """
+        return dist.Uniform(**self.size_params) #.to_event(1)
 
-#         # sample independent increments in x and z
-#         # Sample independent increments for each agent (dim=-2)
-#         batch_shape = pos.shape[:-1]  # Get all dimensions except the last one
-#         pos_increment = self.spatial_increment_parameters * pyro.sample(
-#             f"pos_increment_{ind}",
-#             dist.Normal(0, 1).expand(batch_shape + self.spatial_increment_parameters.shape).to_event(2)
-#         )
-#         x_3d_new = x_3d + pos_increment[..., 0]
-#         z_3d_new = z_3d + pos_increment[..., 1]
-#         y_3d_new = y_3d.reshape(x_3d_new.shape)
+    @property
+    def spatial_increment_dist(self) -> pyro.distributions.Distribution:
+        """
+        Spatial increment distribution.
+        """
 
-#         pos_new = torch.stack([x_3d_new, y_3d_new, z_3d_new], dim=-1)
+        # Parameters for the multivariate distribution --> to_event(1) treats the col dimension as a single "multivariate event"
+        # Therefore each sample will by a vector of size 2
+        return dist.Normal(**self.spatial_increment_params).to_event(1)
 
-#         # sample independent increments in angles
-#         # Sample independent increments for each agent (dim=-2)
-#         angle_increment = self.angle_increment_parameters * pyro.sample(
-#             f"angle_increment_{ind}",
-#             dist.Normal(0, 1).expand(batch_shape + self.angle_increment_parameters.shape).to_event(2)
-#         )
-#         angle_new = angle + angle_increment
-#         return self.env.constrain((pos_new, size, angle_new))
+    #########################################################
+    #################### Sampling ###########################
+    #########################################################
 
-#     def generate_trajectory(self, init_state: State, n_steps: int) -> StateTrajectory:
-#         state = init_state
-#         # trajectory = [state]
-#         trajectory = []
-#         for ind in range(n_steps):
-#             state = self.next_state(state, ind)
-#             trajectory.append(state)
-#         return tuple(torch.stack(t, dim=0) for t in zip(*trajectory))
+    def sample_sizes(self, name: str, n_agents: int = 1) -> torch.Tensor:
+        """
+        Sample sizes for the agents.
+        """
+        # Create n_agents independent samples
+        return pyro.sample(name, self.size_dist.expand([n_agents]))
+
+    def sample_spatial_increment(self, name: str, n_agents: int = 1) -> torch.Tensor:
+        """
+        Sample spatial increments for the agents.
+        """
+        # Create n_agents independent samples
+        return pyro.sample(name, self.spatial_increment_dist.expand([n_agents]))
+
+    #########################################################
+    #################### Initialization #####################
+    #########################################################
+
+    def init_states(self, camera: Camera, n_agents: int) -> State:
+        """
+        Initialize the positions of the agents in the mesh.
+        """
+
+        # Sample initial sizes with reasonable priors
+        with pyro.plate("agents", n_agents):
+            
+            # Sample from world point distribution, which is restricted to points viewed from the camera
+            positions = camera.sample_world_points(n_points=n_agents)
+
+            # Sample sizes with provided prior
+            sizes = self.sample_sizes(
+                name=f"init_size", 
+                n_agents=n_agents
+            )
+
+            # # Sample spatial increments with provided prior
+            # spatial_increments = self.sample_spatial_increment(n_agents=n_agents)
+        
+        return positions, sizes
+
+    def next_state(self, state: State, step: int) -> State:
+        """
+        Generate the next state of the agent.
+        """
+
+        # Extract components
+        position, size = state
+        n_agents = position.shape[0]
+
+        # Sample spatial increment (independent for each agent) and update position
+        spatial_increment = self.sample_spatial_increment(
+            name=f"spatial_step_{step}", 
+            n_agents=n_agents
+        )
+
+        position = position + spatial_increment
+
+        return position, size
+
+    def generate_trajectory(self, init_state: State, n_steps: int): # -> StateTrajectory:
+        """
+        Generate a trajectory of states.
+        """
+        state = init_state
+        trajectory = [state]
+
+        for step in tqdm(range(n_steps), desc="Generating trajectory"):
+            state = self.next_state(state, step)
+            trajectory.append(state)
+
+        # Unpack and convert to tensors
+        positions, sizes = map(torch.stack, zip(*trajectory))
+        return positions, sizes

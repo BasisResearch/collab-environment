@@ -23,7 +23,6 @@ VIZ_KWARGS = {
     "view_up": (0, 0, 1),
     "azimuth": 235,
     "elevation": 15,
-    "zoom": 0.9,
     "lighting": [
         {"position": (10, 10, 10), "intensity": 0.8},
         {"position": (-10, -10, 10), "intensity": 0.4},
@@ -371,6 +370,7 @@ def add_tracks_to_mesh(
     plotter: pv.Plotter,
     colors: Optional[dict] = None,
     line_kwargs: dict = {},
+    plot_points: bool = False,
 ):
     """
     Add tracks as connected line segments to a PyVista plotter.
@@ -407,15 +407,17 @@ def add_tracks_to_mesh(
         if len(track_points) < 2:
             continue
 
-        # Polyline connectivity
-        n_pts = len(track_points)
-        cells = np.concatenate(([n_pts], np.arange(n_pts)))
-
-        line = pv.PolyData()
-        line.points = track_points
-        line.lines = cells
-
-        # Add to plotter with kwargs
-        plotter.add_mesh(line, color=colors[track_id], **line_kwargs)
-
+        if plot_points:
+            # Plot points
+            mesh = pv.PolyData(track_points)
+            plotter.add_mesh(mesh, color=colors[track_id], **line_kwargs)
+        else:
+            # Plot as connected line
+            n_pts = len(track_points)
+            cells = np.concatenate(([n_pts], np.arange(n_pts)))
+            line = pv.PolyData()
+            line.points = track_points
+            line.lines = cells
+            plotter.add_mesh(line, color=colors[track_id], **line_kwargs)
+    
     return plotter
