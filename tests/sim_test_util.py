@@ -12,12 +12,15 @@ from collab_env.data.file_utils import get_project_root, expand_path
 def remove_run_folder(sim_runs_path=None):
     if sim_runs_path is not None:
         if os.path.isdir(sim_runs_path):
-            logger.info(f"removing path {sim_runs_path}")
+            logger.info(f"removing path:{sim_runs_path}:")
             shutil.rmtree(sim_runs_path)
+        else:
+            logger.info(f"{sim_runs_path} not found")
 
 
 def create_run_folder(sim_runs_path=None):
     if sim_runs_path is not None:
+        sim_runs_path = expand_path(sim_runs_path, get_project_root())
         logger.info(f"making directory {sim_runs_path}")
         os.mkdir(f"{sim_runs_path}")
 
@@ -178,6 +181,7 @@ def check_parquet_file(
 def sim_check_files(
     config_file=None,
     sim_runs_path=None,
+    prefix=None,
     num_episodes=3,
     video=True,
     num_log_files=1,
@@ -207,11 +211,15 @@ def sim_check_files(
         sim_runs_path = expand_path("sim-output/tests-sim-runs-1", get_project_root())
 
     remote_test = "CI" in os.environ
-    if not remote_test:
-        # Clear the sim-runs folder from previous tests -- a little dicey
-        # If this is a remote test, these files shouldn't be here, so don't bother. They
-        # get cleaned up at the end
-        remove_run_folder(sim_runs_path)
+    #if not remote_test:
+    '''
+    --- 082825 3:07PM 
+    Do this regardless in case the folder is left over from a previous failed run. 
+    '''
+    # Clear the sim-runs folder from previous tests -- a little dicey
+    # If this is a remote test, these files shouldn't be here, so don't bother. They
+    # get cleaned up at the end
+    remove_run_folder(sim_runs_path)
 
     create_run_folder(sim_runs_path)
 
@@ -229,8 +237,12 @@ def sim_check_files(
     assert result == 0, f"failed -- python {program_path} -cf {config_file}"
 
     # Test to see that output folder was created. There should be exactly 1 of these.
-    folder_list = glob(f"{sim_runs_path}/boids_sim_run_1*")
-    assert len(folder_list) == 1, f"folder list = {folder_list}"
+    if prefix is None:
+        prefix = "boids_sim_run_1"
+    folder_list = glob(f"{sim_runs_path}/{prefix}*")
+    assert len(folder_list) == 1, (
+        f"folder list = {folder_list} for {sim_runs_path}/{prefix}*"
+    )
 
     # Test to see the proper number of episodes were recorded. Should be 3 episodes.
     parquet_file_list = glob(f"{folder_list[0]}/*.parquet")
@@ -241,8 +253,9 @@ def sim_check_files(
     # Test to see that a video is stored in the run folder for each episode
     video_file_list = glob(f"{folder_list[0]}/*.mp4")
     print(f"video file list = {video_file_list}")
-    assert len(video_file_list) == num_episodes if video else 0, (
-        f"video file list {video_file_list}"
+    num_videos = num_episodes if video else 0
+    assert len(video_file_list) == num_videos, (
+        f"video file list {video_file_list}, num videos expected {num_videos}"
     )
 
     # Check to see that the log file was created correctly
