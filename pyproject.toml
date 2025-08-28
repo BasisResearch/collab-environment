@@ -78,6 +78,7 @@ dev = [
   "pytest-xdist",
   "pytest-benchmark",
   "mypy",
+  "mypy-extensions",
   "ruff",
   "nbval",
   "nbqa",
