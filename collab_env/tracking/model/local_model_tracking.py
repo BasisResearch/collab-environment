@@ -67,7 +67,7 @@ def track_objects(csv_path: Path) -> dict:
         all_frames.append(detections)
 
     # Initialize ByteTracker
-    tracker = BYTETracker()
+    tracker = BYTETracker(None)
     track_history: dict[str, list[tuple[int, tuple[int, int]]]] = {}
 
     # Perform tracking
