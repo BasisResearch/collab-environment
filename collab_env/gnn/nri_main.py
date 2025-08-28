@@ -129,7 +129,9 @@ def main():
         device=device
     )
     
-    model_path = Path(args.model_dir) / 'nri_model.pt'
+    # Extract dataset name for file prefixes
+    dataset_name = Path(args.data_path).stem
+    model_path = Path(args.model_dir) / f'{dataset_name}_nri_model.pt'
     
     if not args.visualize_only:
         # Prepare data loaders
@@ -257,19 +259,19 @@ def main():
     xlim = (args.vis_limits[0], args.vis_limits[1])
     ylim = (args.vis_limits[2], args.vis_limits[3])
     
-    # Static plot - show context + predictions vs corresponding ground truth
-    # Include context frames for both GT and predictions to see the full trajectory
+    # Static plot - show only rollout predictions vs corresponding ground truth
+    # Start directly from first predicted frame, exclude context
     
-    # Ground truth: same period as rollout (context_len + rollout_steps frames)
-    gt_full_period = ground_truth_pos[:, :rollout_positions.shape[1]]
+    # Extract only the predicted frames (skip context frames)
+    nri_predictions = rollout_positions[:, context_len:]  # Skip context frames
     
-    # NRI: full rollout (already includes context + predictions)  
-    nri_full_trajectory = rollout_positions
+    # Ground truth for the same period (start from where predictions begin)  
+    gt_predictions_period = ground_truth_pos[:, context_len:context_len + nri_predictions.shape[1]]
     
-    static_path = Path(args.output_dir) / 'nri_trajectories.png'
+    static_path = Path(args.output_dir) / f'{dataset_name}_nri_trajectories.png'
     plot_trajectories_and_interactions(
-        ground_truth_pos=gt_full_period,
-        predicted_pos=nri_full_trajectory,
+        ground_truth_pos=gt_predictions_period,
+        predicted_pos=nri_predictions,
         edge_probs=edge_probs,
         save_path=static_path,
         xlim=xlim,
@@ -277,11 +279,11 @@ def main():
         skip_frames=0
     )
     
-    # Animation - also show context + predictions
-    animation_path = Path(args.output_dir) / 'nri_rollout.mp4'
+    # Animation - also show only predictions (no context)
+    animation_path = Path(args.output_dir) / f'{dataset_name}_nri_rollout.mp4'
     create_animation(
-        ground_truth_pos=gt_full_period,
-        predicted_pos=nri_full_trajectory,
+        ground_truth_pos=gt_predictions_period,
+        predicted_pos=nri_predictions,
         save_path=animation_path,
         xlim=xlim,
         ylim=ylim
