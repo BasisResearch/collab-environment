@@ -63,14 +63,26 @@ def generate_rollout(model, rel_rec, rel_send, initial_positions, initial_veloci
             
             # Extract predictions [batch, agents, 1, 4]
             pred = output[:, :, 0, :]
-            next_pos = pred[:, :, :2].unsqueeze(2)
-            next_vel = pred[:, :, 2:4].unsqueeze(2)
             
-            # Check if predictions are accelerations (very small values)
-            if torch.abs(next_pos).mean() < 0.01:
-                # Integrate accelerations
-                next_vel = vel[:, :, -1:] + next_pos * 0.01
-                next_pos = pos[:, :, -1:] + next_vel * 0.01
+            # For first prediction after context, enforce physical consistency
+            # to avoid position jumps
+            if step == 0:
+                # Use predicted velocity but integrate for position
+                next_vel = pred[:, :, 2:4].unsqueeze(2)
+                dt = 1.0  # Assuming unit timestep scaled by 0.01
+                next_pos = pos[:, :, -1:] + next_vel * dt
+            else:
+                # Use model's full predictions for subsequent steps
+                next_pos = pred[:, :, :2].unsqueeze(2)
+                next_vel = pred[:, :, 2:4].unsqueeze(2)
+
+                # THIS IS WRONG!                
+                # # Check if predictions are accelerations (very small values)
+                # if torch.abs(next_pos).mean() < 0.01:
+                #     # Integrate accelerations
+                #     dt = 0.01
+                #     next_vel = vel[:, :, -1:] + next_pos * dt
+                #     next_pos = pos[:, :, -1:] + next_vel * dt
             
             # Append to sequences for next prediction
             pos = torch.cat([pos, next_pos], dim=2)
