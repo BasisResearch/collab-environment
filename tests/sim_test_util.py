@@ -211,11 +211,11 @@ def sim_check_files(
         sim_runs_path = expand_path("sim-output/tests-sim-runs-1", get_project_root())
 
     remote_test = "CI" in os.environ
-    #if not remote_test:
-    '''
+    # if not remote_test:
+    """
     --- 082825 3:07PM 
     Do this regardless in case the folder is left over from a previous failed run. 
-    '''
+    """
     # Clear the sim-runs folder from previous tests -- a little dicey
     # If this is a remote test, these files shouldn't be here, so don't bother. They
     # get cleaned up at the end
