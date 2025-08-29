@@ -445,7 +445,7 @@ def visualize_attribution_statistics(frame_attributions, save_path=None, data_na
     # Use log scale only if the dynamic range is very large (>1000x)
     all_values = np.concatenate(group_distributions)
     value_range = np.max(np.abs(all_values)) / (np.min(np.abs(all_values[all_values > 0])) + 1e-12)
-    if value_range > 1e12:
+    if value_range > 1e4:
         axes[1, 0].set_yscale('log')
     
     # Output sensitivity by agent and dimension
