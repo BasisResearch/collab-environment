@@ -1,4 +1,4 @@
-from typing import Optional, Tuple, TypeAlias, Union
+from typing import Optional, Tuple, TypeAlias, Union, List
 from dataclasses import dataclass
 import numpy as np
 import open3d as o3d
@@ -116,57 +116,134 @@ starts from an initial position.
 
 State = Tuple[torch.Tensor, torch.Tensor]
 ObservedState = Tuple[torch.Tensor, torch.Tensor]
-StateTrajectory = Tuple[torch.Tensor, torch.Tensor]
-
-# @dataclass
-# class State:
-#     position: torch.Tensor
-#     size: torch.Tensor
-
-# @dataclass
-# class ObservedState:
-#     projected_centroid: torch.Tensor
-#     projected_area: torch.Tensor
-
-# @dataclass
-# class StateTrajectory:
-#     state: State
+# StateTrajectory = Tuple[torch.Tensor, torch.Tensor]
 
 
 @dataclass
-class Agent:
-    def __init__(self, position: torch.Tensor, size: torch.Tensor):
+class StateTrajectory:
+    """
+    Stores trajectory of an agent in a batched tensor format.
+    positions: (T, 3)
+    sizes: (T, D) or (T,)
+    """
+    positions: torch.Tensor
+    sizes: torch.Tensor
 
-        # Ensure that the position and size are tensors
-        self.position = torch.tensor(position)
-        self.size = torch.tensor(size)
+    def __post_init__(self):
+        # Ensure tensors
+        self.positions = torch.as_tensor(self.positions, dtype=torch.float32)
+        self.sizes = torch.as_tensor(self.sizes, dtype=torch.float32)
+        # Ensure matching first dimension
+        assert self.positions.shape[0] == self.sizes.shape[0], "Positions and sizes must have same timesteps"
 
     @property
-    def area(self):
-        return np.prod(self.size)
+    def length(self) -> int:
+        return self.positions.shape[0]
+
+    def get_state(self, t: int) -> State:
+        return self.positions[t], self.sizes[t]
+    
+    def append(self, state: State):
+        """Append new state along time dimension."""
+        pos, size = state
+        pos = torch.as_tensor(pos, dtype=torch.float32).view(1, -1)
+        size = torch.as_tensor(size, dtype=torch.float32).view(1, -1)
+        self.positions = torch.cat([self.positions, pos], dim=0)
+        self.sizes = torch.cat([self.sizes, size], dim=0)
+
+    def __len__(self) -> int:
+        return self.positions.shape[0]
+
+@dataclass
+class Agent:
+    """
+    Agent is an object that moves within the environment. It has
+    an identifier and a trajectory of states.
+    """
+    id: str
+    trajectory: StateTrajectory  # reference to the trajectory
+    t: int = 0  # current timestep
+
+    def __post_init__(self):
+        # Ensure trajectory has at least one state
+        if self.trajectory.length == 0:
+            raise ValueError("Trajectory must contain at least one state")
+
+    #########################################################
+    #################### Properties #########################
+    #########################################################
+
+    @property
+    def position(self) -> torch.Tensor:
+        """Current position from trajectory"""
+        return self.trajectory.positions[self.t]
+
+    @property
+    def size(self) -> torch.Tensor:
+        """Current size from trajectory"""
+        return self.trajectory.sizes[self.t]
+
+    @property
+    def area(self) -> torch.Tensor:
+        """Geometric area (prod of size dimensions)"""
+        return torch.prod(self.size)
 
     @property
     def state(self) -> State:
-        return self.position, self.area
+        return self.position, self.size
 
     @state.setter
     def state(self, state: State):
-        self.position, self.size = state
+        pos, sz = state
+        # Optionally, update current timestep in trajectory
+        self.trajectory.positions[self.t] = torch.as_tensor(pos, dtype=torch.float32)
+        self.trajectory.sizes[self.t] = torch.as_tensor(sz, dtype=torch.float32)
 
-    def project_area(self, fx: float) -> torch.Tensor:
+    def project_area(self, state: State, fx: float) -> torch.Tensor:
         """
         Project the area of the agent to the camera.
+        state can be either a single (position, size) tuple,
+        or batched: (positions: (T,3), sizes: (T,) or (T,1))
+        Returns:
+            area: (T,)
         """
+        positions, sizes = state  # positions: (T,3), sizes: (T,) or (T,1)
+        fx = torch.as_tensor(fx, dtype=torch.float32)
 
-        fx = torch.tensor(fx)
+        # ensure positions are batched
+        if positions.ndim == 1:
+            positions = positions[None, :]
 
-        # Get the radius of the agent
-        radius = self.size[0]
-        x_3d = self.position[0]
+        # reshape sizes to (T,1)
+        sizes = sizes.view(-1, 1)
+
+        # compute safe x to avoid division by zero
+        x_3d = positions[:, 0].view(-1, 1)  # shape (T,1)
         eps = 1e-8
         safe_x = torch.sign(x_3d) * torch.maximum(torch.abs(x_3d), torch.tensor(eps))
-        area = torch.pi * radius**2 * (fx / torch.abs(safe_x))**2
+
+        # compute projected area
+        area = torch.pi * sizes**2 * (fx / torch.abs(safe_x))**2  # shape (T,1)
+
         return area
+
+    #########################################################
+    #################### Navigation ##########################
+    #########################################################
+
+    def step(self, dt: int = 1):
+        """Advance along trajectory"""
+        self.t = min(self.t + dt, self.trajectory.length - 1)
+
+    def reset(self):
+        """Reset to start of trajectory"""
+        self.t = 0
+
+    def jump_to(self, t: int):
+        """Jump to a specific timestep"""
+        if t < 0 or t >= self.trajectory.length:
+            raise IndexError(f"Timestep {t} out of bounds for trajectory length {self.trajectory.length}")
+        self.t = t
 
 #########################################################
 ################## Camera ##############################
@@ -213,7 +290,7 @@ class Camera:
     #################### Distributions ######################
     #########################################################
 
-    def set_distribution(self, method: str = "weighted") -> pyro.distributions.Distribution:
+    def set_distribution(self, method: str = "weighted", n_agents: int = 1) -> pyro.distributions.Distribution:
         """
         Set the distributions of world points for the camera.
         """
@@ -233,16 +310,20 @@ class Camera:
         weights = weights / weights.sum()
 
         # Define categorical distribution
-        self.dist = dist.Categorical(probs=weights)
-        return self.dist
-
-    def sample_pixels(self, n_points: int = 1) -> torch.Tensor:
+        self.dist = dist.Categorical(probs=weights).expand([n_agents])
+    
+    def sample_pixels(self, n_points: Optional[int] = None) -> torch.Tensor:
         """
         Sample a set of pixels from the camera view.
         """
         assert self.dist is not None, "Distribution is not set"
 
-        pixel_idxs = pyro.sample("pixels", self.dist.expand([n_points]))
+        pixel_idxs = pyro.sample(
+            name="pixels",
+            fn=self.dist,
+            sample_shape=[] if n_points is None else [n_points]
+        )
+        
         pixels = self.valid_pixels[pixel_idxs]
 
         if pixels.ndim == 1:
@@ -250,9 +331,11 @@ class Camera:
 
         return pixels
 
-    def sample_world_points(self, n_points: int = 1) -> torch.Tensor:
+    def sample_world_points(self, n_points: Optional[int] = None) -> torch.Tensor:
         """
         Sample world points from the distribution.
+
+        CURRENTLY WILL BREAK IF N_POINTS IS PROVIDED --> need to include batching dimension
         """
         assert self.dist is not None, "Distribution is not set"
         pixels = self.sample_pixels(n_points)
@@ -345,22 +428,25 @@ class Camera:
 
     def observe_agent(self, agent: Agent) -> ObservedState:
         """
-        Observe the agent from the camera. Returns the observed position and area.
+        Observe the agent at a given timestep (default current) or entire trajectory.
+        Returns:
+            uv: (2,) for single step or (T,2) for full trajectory
+            area: scalar or (T,)
         """
-
-        uv, _ = self.project_to_camera(agent.position[None, ...])
-        area = agent.project_area(self.fx)
+        
+        pos = agent.trajectory.positions  # (T,3)
+        size = agent.trajectory.sizes    # (T,)
+        uv, _ = self.project_to_camera(pos)   # vectorized over T
+        area = agent.project_area((pos, size), self.fx)
 
         return uv, area
-
-    # def observe_batch(self, batch: State) -> ObservedState:
-        
-    #     shp = state_batch[0].shape[:-1]
-    #     # create the tuple of tensors
-    #     # obs_tuple = (torch.zeros(shp + (2,)), torch.zeros(shp + (1,)))
-    #     vmap_project_2d = vmap(self.__observe_shape__, in_dims = 0)(*tuple(t.view(-1, t.shape[-1]) for t in state_batch))
-        
-    #     return tuple(s.view(*shp, -1) for s in vmap_project_2d)
+    
+    def observe_batch(self, batch: List[Agent]) -> ObservedState:
+        """
+        Observe a batch of agents.
+        """
+        uvs, areas = zip(*(self.observe_agent(agent) for agent in batch))
+        return torch.stack(uvs), torch.stack(areas)
 
 #########################################################
 ################## Environment ##########################
@@ -590,7 +676,7 @@ class MovementGenerator:
         """
         Size distribution.
         """
-        return dist.Uniform(**self.size_params) #.to_event(1)
+        return dist.Uniform(**self.size_params).to_event(1)
 
     @property
     def spatial_increment_dist(self) -> pyro.distributions.Distribution:
@@ -624,25 +710,19 @@ class MovementGenerator:
     #################### Initialization #####################
     #########################################################
 
-    def init_states(self, camera: Camera, n_agents: int) -> State:
+    def init_states(self, camera: Camera, n_agents: int = 1) -> State:
         """
         Initialize the positions of the agents in the mesh.
         """
 
-        # Sample initial sizes with reasonable priors
-        with pyro.plate("agents", n_agents):
-            
-            # Sample from world point distribution, which is restricted to points viewed from the camera
-            positions = camera.sample_world_points(n_points=n_agents)
+        # Sample from world point distribution, which is restricted to points viewed from the camera
+        positions = camera.sample_world_points()
 
-            # Sample sizes with provided prior
-            sizes = self.sample_sizes(
-                name=f"init_size", 
-                n_agents=n_agents
-            )
-
-            # # Sample spatial increments with provided prior
-            # spatial_increments = self.sample_spatial_increment(n_agents=n_agents)
+        # Sample sizes with provided prior
+        sizes = self.sample_sizes(
+            name=f"init_size", 
+            n_agents=n_agents
+        )
         
         return positions, sizes
 
@@ -670,8 +750,10 @@ class MovementGenerator:
         Generate a trajectory of states.
         """
         state = init_state
-        trajectory = [state]
+        # trajectory = [state]
+        trajectory = []
 
+        # We count the initial state as one of the steps (TLB CHECK IF THIS IS RIGHT)
         for step in tqdm(range(n_steps), desc="Generating trajectory"):
             state = self.next_state(state, step)
             trajectory.append(state)
