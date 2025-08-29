@@ -1,10 +1,10 @@
 #! /bin/bash
 
-MAX_FRAMES=10
-N_STEPS=10
+MAX_FRAMES=100
+N_STEPS=250
 METHOD=integrated_gradients
 RUNCMD="python collab_env/gnn/explain_gnn_integrated_gradients.py"
-OPTS="--method $METHOD --max-frames $MAX_FRAMES --n-steps $N_STEPS --save-data --file-id -1"
+OPTS="--method $METHOD --max-frames $MAX_FRAMES --n-steps $N_STEPS --save-data --file-id 10"
 
 $RUNCMD $OPTS \
     --model-path trained_models/boid_single_species_basic/trained_models/boid_single_species_basic_vpluspplus_a_n0.005_h1_vr0.5_s0 \
