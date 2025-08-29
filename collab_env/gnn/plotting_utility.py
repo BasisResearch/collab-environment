@@ -11,8 +11,9 @@ import torch
 import pickle
 from collab_env.data.file_utils import expand_path, get_project_root
 from collab_env.gnn.utility import dataset2testloader
-
+import os
 import io
+from loguru import logger
 
 class DeviceUnpickler(pickle.Unpickler):
     def __init__(self, file, device='cpu'):
@@ -72,6 +73,15 @@ def load_rollout(model_name,
             f"{root_path}/{file_name}_rollout_{rollout_starting_frame}_frames_{rollout_frames}.pkl",
             get_project_root()
     )
+    if not os.path.exists(rollout_path):
+        logger.warning(f"Rollout file not found: {rollout_path}, trying alternative path")
+        # try the alternative path
+        rollout_path = expand_path(
+            f"{root_path}/{file_name}_rollout{rollout_starting_frame}.pkl",
+            get_project_root()
+        )
+        if not os.path.exists(rollout_path):
+            raise FileNotFoundError(f"Rollout file not found: {rollout_path}")
 
     with open(rollout_path, "rb") as f: # 'wb' for write binary
         rollout_result = DeviceUnpickler(f, device='cpu').load()
