@@ -1,6 +1,7 @@
 import os
 import shutil
 from glob import glob
+import sys
 
 import numpy as np
 import pyarrow.parquet as pq
@@ -238,8 +239,11 @@ def sim_check_files(
     )
 
     # Test to see that the run_boids_simulator runs successfully with test config file
-    result = os.system(f"python {program_path} -cf {config_file}")
-    assert result == 0, f"failed({result}) -- python {program_path} -cf {config_file}"
+    python_executable = sys.executable
+    result = os.system(f"{python_executable} {program_path} -cf {config_file}")
+    assert result == 0, (
+        f"failed({result}) -- {python_executable} {program_path} -cf {config_file}"
+    )
 
     # Test to see that output folder was created. There should be exactly 1 of these.
     if prefix is None:

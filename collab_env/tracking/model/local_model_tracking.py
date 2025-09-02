@@ -67,7 +67,7 @@ def track_objects(csv_path: Path) -> dict:
         all_frames.append(detections)
 
     # Initialize ByteTracker
-    tracker = BYTETracker()
+    tracker = BYTETracker(None)
     track_history: dict[str, list[tuple[int, tuple[int, int]]]] = {}
 
     # Perform tracking
@@ -203,7 +203,7 @@ def overlay_tracks_on_video(
 
     # Get frame size
     sample_frame = cv2.imread(str(frame_paths[0]))
-    h, w = sample_frame.shape[:2]  # type: ignore
+    h, w = sample_frame.shape[:2]
     writer = cv2.VideoWriter(
         str(output_video),
         cv2.VideoWriter_fourcc(*"mp4v"),
