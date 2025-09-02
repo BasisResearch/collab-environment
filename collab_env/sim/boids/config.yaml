@@ -2,16 +2,16 @@
 simulator:
   # one seed required for each episode
   seed: [837, 439, 642, 316, 202, 409, 627, 834, 977, 189, 401, 719, 810, 738, 655, 367, 36, 653, 753, 977, 716, 311, 112, 417, 599, 666, 721, 128, 456, 564, 178, 97, 764, 242, 257, 253, 4, 217, 171, 536, 122, 716, 933, 850, 271, 410, 195, 172, 958, 274]
-  walking: True
+  walking: False
   num_agents: 20
-  num_targets: 2 # for now this must be at least 1. This needs to be fixed.
+  num_targets: 1 # for now this must be at least 1. This needs to be fixed.
   num_ground_targets: 0
   submesh_target: True
   submesh_show_points: False # put spheres on at least some of the submesh vertices
   moving_targets: False
-  num_episodes: 2
-  num_frames: 201
-  target_creation_time: [100, 5, 700, 800] # min is 1, which creates the target at the beginning of the episode.
+  num_episodes: 50
+  num_frames: 2000
+  target_creation_time: [500] # min is 1, which creates the target at the beginning of the episode.
   show_box: False
   # run_main_folder: "collab_env/sim/runs"
   run_main_folder: "sim-output"
@@ -22,9 +22,9 @@ simulator:
 
 visuals:
   store_video: True
-  show_visualizer: True
-  width: 1920
-  height: 1280
+  show_visualizer: False
+  width: 1080
+  height: 720
   video_codec: '*mpv4'
   video_fps: 30
   video_file_extension: 'mp4'
@@ -90,7 +90,7 @@ meshes:
     #scene_angle: [0.0, 0.0, 0.0]
     #mesh_scene: 'meshes/example_mesh.ply'
     #scene_angle: [-10.0, 0.0, -115.0]
-    sub_mesh_target: ['meshes/labeled_meshes/query-tree_top-cluster.ply', 'meshes/labeled_meshes/query-tree_top-cluster.ply'] # list, one for each submesh
+    sub_mesh_target: ['meshes/labeled_meshes/query-tree_top-cluster.ply'] #'meshes/labeled_meshes/query-tree_top-cluster.ply'] # list, one for each submesh
     # sub_mesh_angle: [0.0, 0.0, 0.0]
 
 files:

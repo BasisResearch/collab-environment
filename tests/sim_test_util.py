@@ -18,11 +18,16 @@ def remove_run_folder(sim_runs_path=None):
             logger.info(f"{sim_runs_path} not found")
 
 
-def create_run_folder(sim_runs_path=None):
+def create_run_folder(sim_runs_path=None, sim_output_main_folder="sim-output"):
+    if not os.path.isdir(sim_output_main_folder):
+        logger.info(f"making directory {sim_output_main_folder}")
+        os.mkdir(f"{sim_output_main_folder}")
+
     if sim_runs_path is not None:
         sim_runs_path = expand_path(sim_runs_path, get_project_root())
-        logger.info(f"making directory {sim_runs_path}")
-        os.mkdir(f"{sim_runs_path}")
+        if not os.path.isdir(sim_runs_path):
+            logger.info(f"making directory {sim_runs_path}")
+            os.mkdir(f"{sim_runs_path}")
 
 
 def check_parquet_file(

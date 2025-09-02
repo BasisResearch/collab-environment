@@ -24,8 +24,8 @@ def test_sim_files_no_video_no_vis():
 
         # clear the sim-runs folder from previous tests -- a little dicey
         sim_runs_path = expand_path("sim-output/tests-sim-runs-2", get_project_root())
-        remove_run_folder(sim_runs_path)
-        create_run_folder(sim_runs_path)
+        remove_run_folder(sim_runs_path=sim_runs_path)
+        create_run_folder(sim_runs_path=sim_runs_path)
 
         program_path = expand_path(
             "collab_env/sim/boids/run_boids_simulator.py", get_project_root()
