@@ -228,7 +228,7 @@ def sim_check_files(
 
     create_run_folder(sim_runs_path)
 
-    print(f"\nsim runs path {sim_runs_path}\n")
+    logger.info(f"\nsim runs path {sim_runs_path}\n")
 
     if config_file is None:
         config_file = "tests/sim_test_1_config.yaml"
@@ -239,7 +239,7 @@ def sim_check_files(
 
     # Test to see that the run_boids_simulator runs successfully with test config file
     result = os.system(f"python {program_path} -cf {config_file}")
-    assert result == 0, f"failed -- python {program_path} -cf {config_file}"
+    assert result == 0, f"failed({result}) -- python {program_path} -cf {config_file}"
 
     # Test to see that output folder was created. There should be exactly 1 of these.
     if prefix is None:
