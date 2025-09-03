@@ -252,6 +252,9 @@ def normalize_by_col(N, batch_num, edge_index, return_matrix=False):
     return weight
 
 def identify_frames(pos, vel):
+    """
+    To do: more robust filtering
+    """
     # construct lazy model prediction error
     actual = pos[:,1:]
     predicted = pos[:,:-1] + vel[:,:-1]
