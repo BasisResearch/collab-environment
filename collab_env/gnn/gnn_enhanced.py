@@ -1,19 +1,18 @@
 """
-Simple GAT model with rich edge features for direct pairwise rule extraction.
+Enhanced GNN with rich edge features for improved learning.
 
 This module provides:
 - Enhanced edge feature construction (9D relative features)
-- Simple GAT model for direct pairwise interactions (a_i = Σ_j α_ij * f(rel_features))
-- Training functions optimized for rule extraction
+- Enhanced GNN model using original architecture with rich edge features
 - PyG batch construction with rich edge features
 
-The Simple GAT approach is optimal for extracting interpretable local rules similar to boids.
+The Enhanced GNN maintains the proven architecture while using richer edge features.
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GATConv
+from torch_geometric.nn import GATv2Conv, GCNConv
 from torch_geometric.data import Data, Batch
 import numpy as np
 from pathlib import Path
@@ -28,8 +27,7 @@ sys.path.insert(0, str(project_root))
 def build_relative_edge_features(
     positions: torch.Tensor, 
     velocities: torch.Tensor,
-    edge_index: torch.Tensor,
-    normalize: bool = True
+    edge_index: torch.Tensor
 ) -> torch.Tensor:
     """
     Build comprehensive edge features including relative positions and velocities.
@@ -43,7 +41,6 @@ def build_relative_edge_features(
         positions: [N, 2] positions of nodes
         velocities: [N, 2] velocities of nodes
         edge_index: [2, E] edge connectivity
-        normalize: Whether to normalize features
         
     Returns:
         edge_features: [E, 9] where features include:
@@ -89,94 +86,11 @@ def build_relative_edge_features(
         speed_diff      # Speed difference (1D)
     ], dim=-1)  # Total: 9D edge features
     
-    if normalize:
-        # Normalize each feature type separately using std for stability
-        if edge_features.shape[0] > 1:  # Need at least 2 samples for std
-            edge_features[:, :2] /= (torch.std(edge_features[:, :2]) + 1e-6)  # rel_pos
-            edge_features[:, 2:4] /= (torch.std(edge_features[:, 2:4]) + 1e-6)  # rel_vel
-            # distances already in [0, visual_range]
-            # unit_dir already normalized
-            edge_features[:, 7:8] /= (torch.std(edge_features[:, 7:8]) + 1e-6)  # alignment
-            edge_features[:, 8:9] /= (torch.std(edge_features[:, 8:9]) + 1e-6)  # speed_diff
+    # No normalization - let the model learn appropriate scaling
+    # This avoids instability from batch-wise statistics and computational overhead
     
     return edge_features
 
-
-
-class SimpleGATModel(nn.Module):
-    """
-    Simplified GNN using only GAT layer for direct pairwise interaction learning.
-    This is much closer to the boid rule formulation: a_i = Σ_j f(relative_features_ij)
-    """
-    
-    def __init__(
-        self,
-        in_node_dim: int,
-        edge_dim: int = 9,  # Our enhanced edge features
-        output_dim: int = 2,  # Direct acceleration prediction
-        heads: int = 4,
-        dropout: float = 0.0
-    ):
-        super().__init__()
-        
-        # Single GAT layer that outputs accelerations directly
-        self.gat = GATConv(
-            in_node_dim,
-            output_dim,  # Direct to acceleration space!
-            edge_dim=edge_dim,
-            heads=heads,
-            concat=False,  # Average across heads instead of concatenating
-            dropout=dropout,
-            add_self_loops=False
-        )
-    
-    def forward(self, x, edge_index, edge_attr):
-        """
-        x: [N, in_node_dim] node features
-        edge_index: [2, E] edges  
-        edge_attr: [E, edge_dim] relative edge features
-        
-        Returns: [N, 2] accelerations, attention weights
-        """
-        # Direct GAT to acceleration space
-        acc, (edge_idx, att_weights) = self.gat(
-            x, edge_index, 
-            edge_attr=edge_attr,
-            return_attention_weights=True
-        )
-        
-        return acc, (edge_idx, att_weights)
-
-
-class SimpleGATModelWithCompatibility(SimpleGATModel):
-    """
-    Simple GAT model with compatibility attributes for existing training code.
-    """
-    
-    def __init__(
-        self,
-        model_name: str,
-        in_node_dim: int,
-        node_feature_function: str,
-        node_prediction: str,
-        edge_dim: int = 9,
-        heads: int = 4,
-        **kwargs
-    ):
-        super().__init__(
-            in_node_dim=in_node_dim,
-            edge_dim=edge_dim,
-            output_dim=2,
-            heads=heads
-        )
-        
-        # Compatibility attributes
-        self.name = model_name
-        self.node_feature_function = node_feature_function
-        self.node_prediction = node_prediction
-        self.input_differentiation = kwargs.get('input_differentiation', 'finite')
-        self.prediction_integration = kwargs.get('prediction_integration', 'Euler')
-        self.start_frame = kwargs.get('start_frame', 3)
 
 
 class EnhancedGNN(nn.Module):
@@ -196,6 +110,7 @@ class EnhancedGNN(nn.Module):
         start_frame=0,
         heads=1,
         hidden_dim=128,
+        gat_only=False,
         output_dim=2,
         edge_dim=9  # Rich edge features
     ):
@@ -208,24 +123,33 @@ class EnhancedGNN(nn.Module):
         self.input_differentiation = input_differentiation
         self.prediction_integration = prediction_integration
         self.start_frame = start_frame
-        
+        self.gat_only = gat_only
         # Use same architecture as original but with edge_dim=9
-        from torch_geometric.nn import GCNConv, GATConv
-        import torch.nn.functional as F
-        
-        self.gcn1 = GCNConv(in_node_dim, hidden_dim, add_self_loops=False)
-        self.gatn = GATConv(
-            in_node_dim, hidden_dim, edge_dim=edge_dim, heads=heads, add_self_loops=False
-        )
-        self.gcn2 = GCNConv(hidden_dim * heads, hidden_dim, add_self_loops=False)
-        self.out = nn.Linear(hidden_dim, output_dim)
+        # self.gcn1 = GCNConv(in_node_dim, hidden_dim, add_self_loops=False)
+        # GATv2 is supposedly better: Asigma(HW) instead of sigma(AHW)
+        if self.gat_only:
+            # Output per head, then learn weighted combination
+            self.gatn = GATv2Conv(
+                    in_node_dim, output_dim, edge_dim=edge_dim, heads=heads, 
+                    concat=True, add_self_loops=False
+                )
+            # Learnable weights for combining heads
+            self.head_weights = nn.Parameter(torch.ones(heads) / heads)
+            self.heads = heads
+            self.output_dim = output_dim
+        else:
+            # For hidden layer, concatenate heads (default behavior)
+            self.gatn = GATv2Conv(
+                in_node_dim, hidden_dim, edge_dim=edge_dim, heads=heads, 
+                concat=True, add_self_loops=False
+            )
+            self.gcn2 = GCNConv(hidden_dim * heads, hidden_dim, add_self_loops=False)
+            self.out = nn.Linear(hidden_dim, output_dim)
     
     def forward(self, x, edge_index, edge_attr):
         """
         Forward pass using original architecture but with rich edge features.
         """
-        import torch.nn.functional as F
-        
         # GAT layer with enhanced edge features
         h1, (edge_idx, att_weights) = self.gatn(
             x, edge_index, 
@@ -233,11 +157,22 @@ class EnhancedGNN(nn.Module):
             return_attention_weights=True
         )
         
-        # GCN layer (same as original)
-        h2 = F.relu(self.gcn2(h1, edge_index))
-        
-        # Linear output layer (same as original)
-        out = self.out(h2)
+        # Process through additional layers
+        if not self.gat_only:
+            # Original architecture: GAT -> GCN -> Linear
+            h2 = F.relu(self.gcn2(h1, edge_index))
+            out = self.out(h2)
+        else:
+            # GAT-only: Weighted combination of heads
+            # h1 shape: [N, heads * output_dim]
+            # Reshape to [N, heads, output_dim]
+            h1_reshaped = h1.view(-1, self.heads, self.output_dim)
+            
+            # Apply softmax to head weights for normalized combination
+            normalized_weights = F.softmax(self.head_weights, dim=0)
+            
+            # Weighted sum across heads: [N, heads, output_dim] -> [N, output_dim]
+            out = torch.einsum('nhd,h->nd', h1_reshaped, normalized_weights)
         
         return out, (edge_idx, att_weights)
 
@@ -267,7 +202,7 @@ def build_pyg_batch_enhanced(past_p, past_v, past_a, species_idx, species_dim, v
         # Build enhanced edge features
         if edge_index.shape[1] > 0:
             edge_features = build_relative_edge_features(
-                current_pos, current_vel, edge_index, normalize=False
+                current_pos, current_vel, edge_index
             )
         else:
             # No edges - create empty edge features with correct device
@@ -287,40 +222,6 @@ def build_pyg_batch_enhanced(past_p, past_v, past_a, species_idx, species_dim, v
     return Batch.from_data_list(data_list)
 
 
-def forward_enhanced(model, pyg_batch, device):
-    """Forward pass for enhanced model with relative edge features."""
-    pyg_batch = pyg_batch.to(device)
-    
-    # Forward pass - enhanced model expects rich edge features
-    pred, W = model(pyg_batch.x, pyg_batch.edge_index, pyg_batch.edge_attr)
-    
-    pred = pred.to(device)
-    
-    # Reconstruct batch dimensions from PyG batch
-    B = pyg_batch.batch.max().item() + 1 if pyg_batch.batch.numel() > 0 else 1
-    N = pyg_batch.x.shape[0] // B
-    
-    # Reshape prediction back to [B, N, output_dim]
-    pred_reshaped = pred.view(B, N, -1)
-    
-    return pred_reshaped, W
-
-
-def get_node_feature_function(model):
-    """Get the appropriate node feature function based on model configuration"""
-    from collab_env.gnn.gnn import node_feature_vel, node_feature_vel_pos, node_feature_vel_pos_plus, node_feature_vel_plus_pos_plus
-    
-    node_feature_function_name = model.node_feature_function
-    if node_feature_function_name == "vel":
-        return node_feature_vel
-    elif node_feature_function_name == "vel_pos":
-        return node_feature_vel_pos
-    elif node_feature_function_name == "vel_pos_plus":
-        return node_feature_vel_pos_plus
-    elif node_feature_function_name == "vel_plus_pos_plus":
-        return node_feature_vel_plus_pos_plus
-    else:
-        raise ValueError(f"Unknown node feature function: {node_feature_function_name}")
 
 
 

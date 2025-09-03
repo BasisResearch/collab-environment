@@ -202,8 +202,9 @@ def train_single_config(params):
                 "input_differentiation": "finite",
                 "start_frame": 3,
                 "heads": heads,
-                "hidden_dim": 32,
-                "edge_dim": 9
+                "hidden_dim": 256,
+                "edge_dim": 9,
+                "gat_only": False
             }
             model = EnhancedGNN(**model_spec)
             lr = 1e-4
@@ -494,12 +495,12 @@ def main():
     # Define hyperparameter grid
     if args.test:
         model_names = ["vpluspplus_a"]
-        noise_levels = [0.0]
-        heads = [3]
+        noise_levels = [0.005]
+        heads = [1]
         visual_ranges = [0.5]
         seeds = range(max_workers)
     else:
-        #model_names = ["vpluspplus_a", "lazy"]
+        #model_names = ["vplupplus_a", "lazy"]
         model_names = ["vpluspplus_a"]
         noise_levels = [0, 0.005] #[0, 0.005]
         heads = [1, 2, 3] #[1 2 3]
