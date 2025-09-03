@@ -1,5 +1,4 @@
 # GNN Training and Rollouts
-.. index-inclusion-marker
 
 ## Files
 
@@ -10,14 +9,18 @@
 - `requirements_gnn.txt` - Dependencies
 
 ## Quick Start
-# Quick test
+### Quick test
+```
 python collab_env/gnn/train.py --test
+```
 
-# Full training on single dataset
+### Full training on single dataset
+```
 python collab_env/gnn/train.py \
     --dataset boid_single_species_basic \
     --workers-per-gpu 3 \
     --seeds 5
+```
 
 ## Key Features
 - **Automatic GPU distribution** - Jobs automatically assigned to least loaded GPU
@@ -33,11 +36,11 @@ Training explores these hyperparameters:
 - **Visual ranges**: 0.1, 0.5
 
 ## Details: run the GNNs
-==================
 
 All GNN scripts are in the folder:
 
-```collab_env/gnn
+```
+collab_env/gnn
 ```
 
 ### Setup
@@ -97,9 +100,9 @@ The training code will save 3 files for each model under the folder trained_mode
 
    If we would like to rollout starting from the 5th frame and do a total of 100 frames of roll-out:
 
-   .. code:: sh
-
-      collab_env/gnn/train.py --dataset boid_food_basic --batch-size 50 --rollout 5 --total_rollout 100
+   ```
+   collab_env/gnn/train.py --dataset boid_food_basic --batch-size 50 --rollout 5 --total_rollout 100
+   ```
 
 ## Available Datasets
 
