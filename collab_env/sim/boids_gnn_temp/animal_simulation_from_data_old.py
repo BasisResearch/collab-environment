@@ -286,7 +286,7 @@ def static_visualize_2sets(p, v, p2, v2,
     # Create the figure and axes
     fig, ax = plt.subplots(figsize=(6,5)) if fig is None else (fig, ax)
     divider = make_axes_locatable(ax)
-    #cax = divider.append_axes('right', size='5%', pad=0.1)
+    # cax = divider.append_axes('right', size='5%', pad=0.1)
     cax2 = divider.append_axes('right', size='5%', pad=0.2)
 
     # Set plot limits
@@ -304,8 +304,8 @@ def static_visualize_2sets(p, v, p2, v2,
     norm = mpl.colors.Normalize(vmin=rollout_starting_frame, vmax=ending_frame, clip=True)
     for i in range(rollout_starting_frame, ending_frame):
 
-        #ax.scatter(p[i,:,0],p[i,:,1], color = cmap1(norm(i)))
-        ax.scatter(p[i,:,0],p[i,:,1], color = [0.9, 0.9, 0.9], alpha = 0.5, s = 1)
+        ax.scatter(p[i,:,0],p[i,:,1], color = cmap1(norm(i)))
+        # ax.scatter(p[i,:,0],p[i,:,1], color = [0.9, 0.9, 0.9], alpha = 0.5, s = 1)
         ax.scatter(p2[i,:,0],p2[i,:,1], color = cmap2(norm(i)), s = 2)
         #if v is not None:
         ax.quiver(p[i,:,0], p[i,:,1], v[i+1,:,0], v[i+1,:,1],
@@ -319,8 +319,8 @@ def static_visualize_2sets(p, v, p2, v2,
 
     for i in range(starting_frame, rollout_starting_frame):
 
-        #ax.scatter(p[i,:,0],p[i,:,1], color = "0.5", alpha = 0.5)
-        ax.scatter(p[i,:,0],p[i,:,1], color = "0.5", alpha = 0.5, s = 1)
+        ax.scatter(p[i,:,0],p[i,:,1], color = "0.5", alpha = 0.5)
+        # ax.scatter(p[i,:,0],p[i,:,1], color = "0.5", alpha = 0.5, s = 1)
         ax.scatter(p2[i,:,0],p2[i,:,1], color = "0.5", alpha = 0.5, s = 1)
         if v is not None:
             ax.quiver(p[i,:,0], p[i,:,1], v[i+1,:,0], v[i+1,:,1],
@@ -330,9 +330,9 @@ def static_visualize_2sets(p, v, p2, v2,
                         color = "0.5", alpha = 0.5,
                         scale_units='xy', scale=quiver_scale)
 
-    #sm = plt.cm.ScalarMappable(cmap=cmap1, norm=norm)
+    # sm = plt.cm.ScalarMappable(cmap=cmap1, norm=norm)
     sm2 = plt.cm.ScalarMappable(cmap=cmap2, norm=norm)
-    #fig.colorbar(sm, cax=cax, orientation='vertical',label='frames (true)')
+    # fig.colorbar(sm, cax=cax, orientation='vertical',label='frames (true)')
     fig.colorbar(sm2, cax=cax2, orientation='vertical',label='frames (rollout)')
 
     #plt.show()
