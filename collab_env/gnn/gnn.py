@@ -9,6 +9,7 @@ from collab_env.gnn.gnn_definition import GNN, Lazy
 from collab_env.data.file_utils import expand_path, get_project_root
 from loguru import logger
 from torch_geometric.data import Data, Batch
+from collab_env.gnn.gnn_enhanced import EnhancedGNN
 
 
 
@@ -990,8 +991,12 @@ def load_model(name, file_name, root_path = "trained_models"):
         gnn_model = Lazy(**model_spec)
         logger.debug("Loaded lazy model.")
         return gnn_model, model_spec, train_spec
-    
-    gnn_model = GNN(**model_spec)
+    elif "enhanced" in name:
+        gnn_model = EnhancedGNN(**model_spec)
+        logger.debug("Loaded enhanced model.")
+    else:
+        gnn_model = GNN(**model_spec)
+        logger.debug("Loaded original model.")
     
     # load model
     # Load the state dictionary
