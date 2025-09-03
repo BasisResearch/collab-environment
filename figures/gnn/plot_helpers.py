@@ -6,32 +6,45 @@ from collab_env.data.file_utils import expand_path, get_project_root
 from collab_env.gnn.gnn import debug_result2prediction
 from collab_env.gnn.utility import handle_discrete_data
 
-bird_num = 20
+BIRD_NUM = 20
 
 def rollout_to_pos_vel_acc(rollout_debug_result, starting_frame = 0, ending_frame = 50, subsample = 10):
     """given rollout result of positions, produce discrete velocity, acceleration"""
+    pos_all_files_gnn = []
+    vel_all_files_gnn = []
+    acc_all_files_gnn = []
     pos_all_files = []
     vel_all_files = []
     acc_all_files = []
 
+
     # infer total file sizes
     file_num = np.sum([rollout_debug_result[0][b]['predicted'][0].shape[0] for b in rollout_debug_result[0].keys()])
-    print(file_num)
+    print(f"processing {file_num} files")
     
     for file_id in range(file_num):
         pos, vel, acc, pos_gnn, vel_gnn, acc_gnn, frame_sets = debug_result2prediction(
                             rollout_debug_result,
                             file_id = file_id, epoch_num = 0)
         
-        pos_all_files.append(pos_gnn[0,starting_frame:ending_frame:subsample,:bird_num])
-        vel_all_files.append(vel_gnn[0,starting_frame:ending_frame:subsample,:bird_num])
-        acc_all_files.append(acc_gnn[0,starting_frame:ending_frame:subsample,:bird_num])
+        pos_all_files_gnn.append(pos_gnn[0,starting_frame:ending_frame:subsample,:BIRD_NUM])
+        vel_all_files_gnn.append(vel_gnn[0,starting_frame:ending_frame:subsample,:BIRD_NUM])
+        acc_all_files_gnn.append(acc_gnn[0,starting_frame:ending_frame:subsample,:BIRD_NUM])
+
+        pos_all_files.append(pos[0,starting_frame:ending_frame:subsample,:BIRD_NUM])
+        vel_all_files.append(vel[0,starting_frame:ending_frame:subsample,:BIRD_NUM])
+        acc_all_files.append(acc[0,starting_frame:ending_frame:subsample,:BIRD_NUM])
         
     pos_concatenated = torch.concatenate(pos_all_files)
     vel_concatenated = torch.concatenate(vel_all_files)
     acc_concatenated = torch.concatenate(acc_all_files)
 
-    return pos_concatenated, vel_concatenated, acc_concatenated
+    pos_concatenated_gnn = torch.concatenate(pos_all_files_gnn)
+    vel_concatenated_gnn = torch.concatenate(vel_all_files_gnn)
+    acc_concatenated_gnn = torch.concatenate(acc_all_files_gnn)
+
+
+    return pos_concatenated, vel_concatenated, acc_concatenated, pos_concatenated_gnn, vel_concatenated_gnn, acc_concatenated_gnn
 
 def data_to_pos_vel_acc(loader, starting_frame = 0, ending_frame = 50, subsample = 10):
     """given a loader of Pytorch dataset, produce discrete velocity, acceleration"""
@@ -44,9 +57,9 @@ def data_to_pos_vel_acc(loader, starting_frame = 0, ending_frame = 50, subsample
         
         pos, vel, acc, v_function = handle_discrete_data(position_gt, "Euler")
         
-        pos_all_files.append(pos[0,starting_frame:ending_frame:subsample,:bird_num])
-        vel_all_files.append(vel[0,starting_frame:ending_frame:subsample,:bird_num])
-        acc_all_files.append(acc[0,starting_frame:ending_frame:subsample,:bird_num])
+        pos_all_files.append(pos[0,starting_frame:ending_frame:subsample,:BIRD_NUM])
+        vel_all_files.append(vel[0,starting_frame:ending_frame:subsample,:BIRD_NUM])
+        acc_all_files.append(acc[0,starting_frame:ending_frame:subsample,:BIRD_NUM])
     
     pos_concatenated = torch.concatenate(pos_all_files)
     vel_concatenated = torch.concatenate(vel_all_files)
@@ -181,14 +194,14 @@ def return_deltav_acc_singleton(pos, vel, acc, threshold = 0.2):
     return del_v, acc_
 
 def figure_data_B(test_loader, rollout_debug_result, model = False, starting_frame = 5, ending_frame = 50,
-        threshold = 0.1, version = "singleton"):
+        threshold = 0.1, subsample = 1, version = "singleton"):
 
     if model:
         (pos_concatenated, vel_concatenated, acc_concatenated) = rollout_to_pos_vel_acc(
-            rollout_debug_result, starting_frame, ending_frame)
+            rollout_debug_result, starting_frame, ending_frame, subsample = subsample)
     else:
         (pos_concatenated, vel_concatenated, acc_concatenated) = data_to_pos_vel_acc(
-            test_loader, starting_frame, ending_frame)
+            test_loader, starting_frame, ending_frame, subsample = subsample)
 
     if "singleton" in version:
         del_v, acc_ = return_deltav_acc_singleton(pos_concatenated,
@@ -199,6 +212,29 @@ def figure_data_B(test_loader, rollout_debug_result, model = False, starting_fra
                                                 vel_concatenated,
                                                 acc_concatenated, threshold = threshold)
     return del_v, acc_
+
+def figure_data_B_new(rollout_debug_result, starting_frame = 5, ending_frame = 50,
+        threshold = 0.1, subsample = 1, version = "singleton"):
+
+    (pos, vel, acc, pos_gnn, vel_gnn, acc_gnn) = rollout_to_pos_vel_acc(
+            rollout_debug_result, starting_frame, ending_frame, subsample = subsample)
+
+
+    if "singleton" in version:
+        del_v, acc_out = return_deltav_acc_singleton(pos,
+                                                vel,
+                                                acc, threshold = threshold)
+        del_v_gnn, acc_out_gnn = return_deltav_acc_singleton(pos_gnn,
+                                                vel_gnn,
+                                                acc_gnn, threshold = threshold)
+    else:
+        del_v, acc_out = return_deltav_acc_flock(pos,
+                                                vel,
+                                                acc, threshold = threshold)
+        del_v_gnn, acc_out_gnn = return_deltav_acc_flock(pos_gnn,
+                                                vel_gnn,
+                                                acc_gnn, threshold = threshold)
+    return del_v, acc_out, del_v_gnn, acc_out_gnn
 
 def mean_trace_B(del_v, acc_):
     #bins = np.linspace(0,0.05,10) # Bin edge

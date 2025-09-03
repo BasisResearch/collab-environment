@@ -35,9 +35,9 @@ def load_various_data(data_names, batch_size, device = 'cpu',return_dict = True)
         config_name = f'{data_name}_config.pt'
         
         dataset = torch.load(expand_path(
-                "simulated_data/" + file_name, get_project_root()), weights_only = False)
+                "simulated_data/runpod/" + file_name, get_project_root()), weights_only = False)
         species_configs = torch.load(expand_path(
-                "simulated_data/" + config_name, get_project_root()), weights_only = False)
+                "simulated_data/runpod/" + config_name, get_project_root()), weights_only = False)
 
         test_loader = dataset2testloader(
             dataset, batch_size=batch_size, device=device, train_size=TRAIN_SIZE
@@ -63,15 +63,46 @@ def load_rollout(model_name,
                 data_name = None,
                 noise = 0,
                 head = 1,
-                visual_range = 0.1, seed = 0, rollout_starting_frame = 5):
+                visual_range = 0.1,
+                seed = 0,
+                ablate = False,
+                rollout_starting_frame = 5, old_format = False,
+                ):
     save_name_postfix = f"n{noise}_h{head}_vr{visual_range}_s{seed}"
     file_name = f"{data_name}_{model_name}_{save_name_postfix}"
+    if ablate == 1:
+        file_name = file_name + "_ablate"
+    elif ablate == 2:
+        file_name = file_name + "_perm"
+    elif ablate == 3:
+        file_name = file_name + "_zero"
 
-    rollout_path = expand_path(
-            f"trained_models/{file_name}_rollout_{rollout_starting_frame}.pkl",
+    if old_format:
+        rollout_path = expand_path(
+            #f"trained_models/{file_name}_rollout{rollout_starting_frame}.pkl",
+            f"trained_models/runpod/{data_name}/rollouts/{file_name}_rollout{rollout_starting_frame}.pkl",
             get_project_root()
-    )
+        )
+        rollout_path2 = rollout_path
+        print(rollout_path2)
+    else:
 
-    with open(rollout_path, "rb") as f: # 'wb' for write binary
-        rollout_result = DeviceUnpickler(f, device='cpu').load()
+        rollout_path = expand_path(
+                #f"trained_models/{file_name}_rollout{rollout_starting_frame}.pkl",
+                f"trained_models/runpod/{data_name}/rollouts/{file_name}_rollout_{rollout_starting_frame}_frames_300.pkl",
+                get_project_root()
+        )
+
+        rollout_path2 = expand_path(
+                #f"trained_models/{file_name}_rollout{rollout_starting_frame}.pkl",
+                f"trained_models/runpod/{data_name}/rollouts/{file_name}_rollout_{rollout_starting_frame}.pkl",
+                get_project_root()
+        )
+
+    try:
+        with open(rollout_path, "rb") as f: # 'wb' for write binary
+            rollout_result = DeviceUnpickler(f, device='cpu').load()
+    except:
+        with open(rollout_path2, "rb") as f: # 'wb' for write binary
+            rollout_result = DeviceUnpickler(f, device='cpu').load()
     return rollout_result

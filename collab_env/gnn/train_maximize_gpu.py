@@ -33,7 +33,7 @@ def worker_wrapper(params):
     import torch
     
     try:
-        data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction, no_validation, early_stopping_patience, min_delta, train_size, rollout, total_rollout = params
+        data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction, no_validation, early_stopping_patience, min_delta, train_size, rollout, total_rollout, ablate = params
         
         # Set CUDA_VISIBLE_DEVICES in this process before CUDA is initialized
         if gpu_count > 0:
@@ -73,7 +73,7 @@ def train_single_config(params):
     (data_name, model_name, noise, heads, visual_range, seed,
         gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction,
         no_validation, early_stopping_patience, min_delta, train_size,
-        rollout, total_rollout) = params
+        rollout, total_rollout, ablate) = params
     
     # Determine device and worker label
     if gpu_count > 0:
@@ -134,8 +134,8 @@ def train_single_config(params):
         worker_logger.debug(f"Using CPU device, gpu_count={gpu_count}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
     try:
         # Load dataset
-        file_name = f'{data_name}.pt'
-        config_name = f'{data_name}_config.pt'
+        file_name = f'runpod/{data_name}.pt'
+        config_name = f'runpod/{data_name}_config.pt'
         
         worker_logger.debug(f"Loading dataset {file_name}")
         dataset = torch.load(
@@ -198,12 +198,22 @@ def train_single_config(params):
             loader = test_loader
             no_validation = True
             file_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
+            folder = f'trained_models/runpod/{data_name}/trained_models/'
             model_path = expand_path(
-                f"trained_models/{file_name}.pt",
+                f"{folder}/{file_name}.pt",
                 get_project_root(),
             )
             model.load_state_dict(torch.load(model_path,map_location='cuda:0'))
-            collect_debug = True,  # Disable debug to avoid CPU transfers
+            collect_debug = True  # Disable debug to avoid CPU transfers
+            if ablate == 1:
+                print("ablating attention layer")
+                model.ablate_attention()
+            elif ablate == 2:
+                print("ablating attention layer by permuting")
+                model.permute_attention()
+            elif ablate == 3:
+                print("ablating attention layer by zeroing")
+                model.uni_attention()
  
         else:
             loader = train_loader
@@ -264,12 +274,28 @@ def train_single_config(params):
         # Save model
         #model_spec = {"model_name": model_name, "heads": heads}
         train_spec = {"visual_range": visual_range, "sigma": noise, "epochs": epochs}
-        save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout{rollout}"
+        if rollout > 0:
+            if ablate == 0:
+                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout{rollout}"
+            elif ablate == 1:
+                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_ablate_rollout{rollout}"
+            elif ablate == 2:
+                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_perm_rollout{rollout}"
+            elif ablate == 3:
+                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_zero_rollout{rollout}"
+        else:
+            save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
         if rollout:
+            folder = f'trained_models/runpod/{data_name}/rollouts/'
             rollout_path = expand_path(
-                f"trained_models/{save_name}.pkl",
-                get_project_root()
+                f"{folder}/{save_name}.pkl",
+                get_project_root(),
             )
+
+            #rollout_path = expand_path(
+            #    f"trained_models/{save_name}.pkl",
+            #    get_project_root()
+            #)
  
             with open(rollout_path, "wb") as f: # 'wb' for write binary
                 pickle.dump(debug_result, f)
@@ -370,6 +396,8 @@ def main():
                        help="Do rollout starting at which frame")
     parser.add_argument("--total_rollout", type=int, default=100,
                        help="Total number of rollout")
+    parser.add_argument("--ablate", type=int, default=0,
+                       help="ablate attention layer")
 
     
     args = parser.parse_args()
@@ -466,7 +494,7 @@ def main():
         #model_names = ["vpluspplus_a", "lazy"]
         model_names = ["vpluspplus_a"]
         noise_levels = [0.005] #[0, 0.005]
-        heads = [1,2,3] #[1 2 3]
+        heads = [3] #[1 2 3] 
         visual_ranges = [0.5] #[0.1, 0.5]
         seeds = range(args.seeds)
     
@@ -481,7 +509,9 @@ def main():
                         all_params.append(
                             (args.dataset, model, noise, head, vr, seed, gpu_count, worker_id, 
                              args.batch_size, args.epochs, args.compile, args.memory_fraction,
-                             args.no_validation, args.early_stopping_patience, args.min_delta, args.train_size, args.rollout, args.total_rollout)
+                             args.no_validation, args.early_stopping_patience, args.min_delta,
+                             args.train_size, args.rollout, args.total_rollout,
+                             args.ablate)
                         )
                         worker_id += 1
     
@@ -492,7 +522,7 @@ def main():
     if gpu_count > 0:
         logger.info("GPU Assignment Plan:")
         for i in range(min(8, len(all_params))):  # Show first 8 assignments
-            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout, total_rollout = all_params[i]
+            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout, total_rollout, ablate = all_params[i]
             assigned_gpu = wid % gpu_count
             logger.info(f"Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs}), rollout = {rollout}  ")
         if len(all_params) > 8:
@@ -500,7 +530,7 @@ def main():
     else:
         logger.info("CPU Training Plan:")
         for i in range(min(8, len(all_params))):  # Show first 8 assignments
-            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout, total_rollout = all_params[i]
+            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout, total_rollout, ablate = all_params[i]
             logger.info(f"  Config {wid:02d} -> CPU: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs}), rollout = {rollout}  ")
         if len(all_params) > 8:
             logger.info(f"  ... and {len(all_params) - 8} more configurations")
