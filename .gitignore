@@ -94,4 +94,5 @@ out
 data
 config-local/
 *preview*.htm*
-docs/scratch.ipynb
+/sim-output/
+/good-runs/

@@ -1,0 +1,105 @@
+
+simulator:
+  # one seed required for each episode
+  seed: [837, 439, 642, 316, 202, 409, 627, 834, 977, 189, 401, 719, 810, 738, 655, 367, 36, 653, 753, 977, 716, 311, 112, 417, 599, 666, 721, 128, 456, 564, 178, 97, 764, 242, 257, 253, 4, 217, 171, 536, 122, 716, 933, 850, 271, 410, 195, 172, 958, 274]
+  walking: False
+  num_agents: 20
+  num_targets: 1 # for now this must be at least 1. This needs to be fixed.
+  num_ground_targets: 0
+  submesh_target: True
+  submesh_show_points: False # put spheres on at least some of the submesh vertices
+  moving_targets: False
+  num_episodes: 1
+  num_frames: 200
+  target_creation_time: [500] # min is 1, which creates the target at the beginning of the episode.
+  show_box: False
+  # run_main_folder: "collab_env/sim/runs"
+  run_main_folder: "sim-output"
+  run_sub_folder_prefix: "boids_sim_run"
+  show_trajectories: False
+  trajectory_frame_limit: 2000
+
+
+visuals:
+  store_video: True
+  show_visualizer: False
+  width: 1080
+  height: 720
+  video_codec: '*mpv4'
+  video_fps: 30
+  video_file_extension: 'mp4'
+  agent_shape: 'sphere'
+  agent_color: [0.18995, 0.07176, 0.23217]
+  agent_scale: 5.0
+  target_scale: 10.0
+  target_mesh_init_color: [[1,0,1], [0,0,1]] # now this is a list, one for each submesh
+  target_mesh_color: [[0,1,0], [0,1,1]] # now this is a list, one for each submesh
+
+tracks:
+  color_by_time: True
+  number_of_color_groups: 1000 # this should divide the number of frames evenly to get full colors
+  track_color_rate: 1 # this is ignored now I think.
+
+
+environment:
+  max_dist_from_center: 3
+  box_size: 1500
+  scene_scale: 300.0
+  scene_position: [750, 20, 750]
+  target_speed: 0.0
+  init_range_low: 0.4
+  init_range_high: 0.6
+  height_init_max: 450
+  target_position: [[750, 500, 750], [500, 100, 100], [300, 100, 750], [800,800,200]]
+
+agent:
+  min_ground_separation: 7.5
+  ground_avoidance_mean: 1.0
+  ground_avoidance_variance: 0.01
+  ground_avoidance_max_speed: 0.1
+  min_separation: 20.0
+  neighborhood_dist: 80.0
+  separation_weight: 15.0
+  alignment_weight: 1.0
+  cohesion_weight: 0.5
+  ground_weight: 0.0
+  target_weight: [0.002, -1.0, 0.0, 0.0] #[0.002]
+  max_speed: 1.0
+  min_speed: 0.1
+  max_force: 0.1
+  mean_init_velocity: 0.0
+  variance_init_velocity: 0.5
+  init_range_low: 0.4
+  init_range_high: 0.6
+  height_range_low: 0.0
+  height_range_high: 1.0
+  height_init_min: 100
+  height_init_max: 200
+  random_walk: False
+
+meshes:
+    # mesh_scene: ''
+    # scene_angle: [0.0, 0.0, 0.0]
+    mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
+    scene_angle: [-90.0, 0.0, 0.0]
+    #mesh_scene: 'meshes/labeled_meshes/mesh.ply'
+    #mesh_scene: 'meshes/labeled_meshes/query-tree_top-cluster.ply'
+    #scene_angle: [0.0, 0.0, 0.0]
+    # mesh_scene: 'meshes/query-tree.ply'
+    # scene_angle: [-90.0, 0.0, 0.0]
+    #scene_angle: [0.0, 0.0, 0.0]
+    #mesh_scene: 'meshes/example_mesh.ply'
+    #scene_angle: [-10.0, 0.0, -115.0]
+    sub_mesh_target: ['meshes/labeled_meshes/query-tree_top-cluster.ply'] #'meshes/labeled_meshes/query-tree_top-cluster.ply'] # list, one for each submesh
+    # sub_mesh_angle: [0.0, 0.0, 0.0]
+
+files:
+    output_folder_prefix: 'boids_sim_runs' # which of these am I using?
+    trajectory_file: 'episode-0-completed-20250822-203226.parquet'
+    trajectory_folder: 'good-runs/sim_independent_tree_target_started_20250822_202708'
+
+logging:
+  logfile_prefix: 'logfile'
+  log_level: 'DEBUG'
+  logging: True
+  log_functions: ['__init__'] #['__main__', 'plot_trajectories', 'save_image_to_file', '_render_frame', 'reset']

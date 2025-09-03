@@ -41,6 +41,7 @@ dependencies = [
   "gymnasium",
   "torch_geometric",
   "ipympl",
+  "pyarrow",
   "pycolmap",
   "pyvista",
   "trame",
@@ -52,6 +53,7 @@ dependencies = [
   "param",
   "rich",
   "pyarrow",
+  "types-PyYAML",
 ]
 
 [tool.setuptools]                         # NEW
