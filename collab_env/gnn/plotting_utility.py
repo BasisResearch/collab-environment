@@ -62,17 +62,18 @@ def load_various_data(data_names, batch_size, device = 'cpu',return_dict = True)
 
 def load_rollout(model_name,
                 data_name = None,
+                model_type = None,
                 root_path = "trained_models",
                 noise = 0,
                 head = 1,
                 visual_range = 0.1, seed = 0, rollout_starting_frame = 5, rollout_frames = 300):
     save_name_postfix = f"n{noise}_h{head}_vr{visual_range}_s{seed}"
-    file_name = f"{data_name}_{model_name}_{save_name_postfix}"
-
+    file_name = f"{data_name}_{model_type}_{model_name}_{save_name_postfix}"
     rollout_path = expand_path(
             f"{root_path}/{file_name}_rollout_{rollout_starting_frame}_frames_{rollout_frames}.pkl",
             get_project_root()
     )
+    logger.debug(f"Loading rollout from {rollout_path}")
     if not os.path.exists(rollout_path):
         logger.warning(f"Rollout file not found: {rollout_path}, trying alternative path")
         # try the alternative path
@@ -85,4 +86,5 @@ def load_rollout(model_name,
 
     with open(rollout_path, "rb") as f: # 'wb' for write binary
         rollout_result = DeviceUnpickler(f, device='cpu').load()
+    logger.debug(f"Loaded rollout from {rollout_path}.")
     return rollout_result

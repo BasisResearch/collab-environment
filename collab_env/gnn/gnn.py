@@ -301,7 +301,13 @@ def run_gnn_frame_pyg(model, pyg_batch, v_minushalf, delta_t, device=None):
     prediction_integration = model.prediction_integration
     
     # Forward pass - PyG handles batching automatically!
-    pred, W = model(pyg_batch.x, pyg_batch.edge_index, pyg_batch.edge_attr.squeeze(-1))
+    # For Enhanced GNN models, use rich edge features; for original models, use squeezed scalar features
+    if hasattr(model, 'name') and 'enhanced' in model.name:
+        # Enhanced GNN expects rich 9D edge features
+        pred, W = model(pyg_batch.x, pyg_batch.edge_index, pyg_batch.edge_attr)
+    else:
+        # Original model expects 1D distance features
+        pred, W = model(pyg_batch.x, pyg_batch.edge_index, pyg_batch.edge_attr.squeeze(-1))
     
     pred = pred.to(device)
     
@@ -483,11 +489,20 @@ def run_gnn(model,
         target_acc = acc[:, frame_next]
         species_idx = species_idx.to(device)    # [S, N]
 
-        # build PyG batch - much simpler!
-        pyg_batch = build_pyg_batch(
-            past_p, past_v, past_a, species_idx, species_dim, 
-            visual_range, node_feature
-        )
+        # build PyG batch - detect if we need enhanced edge features
+        if hasattr(model, 'name') and 'enhanced' in model.name:
+            # Use enhanced edge features for Enhanced GNN models
+            from collab_env.gnn.gnn_enhanced import build_pyg_batch_enhanced
+            pyg_batch = build_pyg_batch_enhanced(
+                past_p, past_v, past_a, species_idx, species_dim, 
+                visual_range, node_feature
+            )
+        else:
+            # Use basic edge features for original models
+            pyg_batch = build_pyg_batch(
+                past_p, past_v, past_a, species_idx, species_dim, 
+                visual_range, node_feature
+            )
         
         if ablate_boid_interaction:
             # TODO: Implement for PyG batch if needed

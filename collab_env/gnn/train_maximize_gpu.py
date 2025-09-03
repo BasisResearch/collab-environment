@@ -25,6 +25,7 @@ from collab_env.gnn.gnn import train_rules_gnn, save_model
 from collab_env.gnn.gnn_definition import GNN, Lazy
 from collab_env.gnn.utility import dataset2testloader
 from collab_env.data.file_utils import expand_path, get_project_root
+from collab_env.gnn.gnn_enhanced import EnhancedGNN
 
 
 def worker_wrapper(params):
@@ -33,7 +34,7 @@ def worker_wrapper(params):
     import torch
     
     try:
-        data_name, model_name, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction, no_validation, early_stopping_patience, min_delta, train_size, rollout, rollout_frames = params
+        data_name, model_name, model_type, noise, heads, visual_range, seed, gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction, no_validation, early_stopping_patience, min_delta, train_size, rollout, rollout_frames = params
         
         # Set CUDA_VISIBLE_DEVICES in this process before CUDA is initialized
         if gpu_count > 0:
@@ -70,7 +71,7 @@ def worker_wrapper(params):
 
 def train_single_config(params):
     """Train a single configuration - runs on any available GPU"""
-    (data_name, model_name, noise, heads, visual_range, seed,
+    (data_name, model_name, model_type, noise, heads, visual_range, seed,
         gpu_count, worker_id, batch_size, epochs, compile_model, memory_fraction,
         no_validation, early_stopping_patience, min_delta, train_size,
         rollout, rollout_frames) = params
@@ -156,10 +157,10 @@ def train_single_config(params):
         worker_logger.debug(f"Test loader length: {len(test_loader)}, train loader length: {len(train_loader)}")
         worker_logger.debug(f"Rolling out or not: {rollout}")
         
-        # Create model
+        # Create model based on model_type
         in_node_dim = 20 if "food" in data_name else 19
         
-        worker_logger.debug(f"Creating model {model_name}")
+        worker_logger.debug(f"Creating model {model_name} with type {model_type}")
         
         if "lazy" in model_name:
             model_spec = {
@@ -173,7 +174,9 @@ def train_single_config(params):
             model = Lazy(**model_spec)
             lr = None
             training = False
-        else:
+            
+        elif model_type == "original":
+            # Original GNN with basic distance edge features
             model_spec = {
                 "model_name": "vpluspplus_a",
                 "node_feature_function": "vel_plus_pos_plus",
@@ -184,11 +187,30 @@ def train_single_config(params):
                 "start_frame": 3,
                 "heads": heads
             }
-            model = GNN(
-                **model_spec
-            )
+            model = GNN(**model_spec)
             lr = 1e-4
             training = True
+            
+        elif model_type == "enhanced_gnn":
+            # Enhanced GNN with original architecture but rich edge features
+            model_spec = {
+                "model_name": f"enhanced_{model_name}",
+                "in_node_dim": in_node_dim,
+                "node_feature_function": "vel_plus_pos_plus",
+                "node_prediction": "acc",
+                "prediction_integration": "Euler",
+                "input_differentiation": "finite",
+                "start_frame": 3,
+                "heads": heads,
+                "hidden_dim": 32,
+                "edge_dim": 9
+            }
+            model = EnhancedGNN(**model_spec)
+            lr = 1e-4
+            training = True
+            
+        else:
+            raise ValueError(f"Unknown model_type: {model_type}. Choose from: 'original', 'enhanced_gnn'")
 
         # need to overwrite for rolling out operation.
         if rollout > 0:
@@ -197,7 +219,7 @@ def train_single_config(params):
             epochs = 1
             loader = test_loader
             no_validation = True
-            file_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
+            file_name = f"{data_name}_{model_type}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
             model_path = expand_path(
                 f"trained_models/{file_name}.pt",
                 get_project_root(),
@@ -240,8 +262,9 @@ def train_single_config(params):
             except Exception as e:
                 worker_logger.warning(f"Model compilation failed: {e}, continuing without compilation")
         
-        worker_logger.debug("Training model with validation and early stopping")
-        # Train with validation and early stopping
+        worker_logger.debug(f"Training model with type {model_type}")
+        
+        # Use unified training function for full compatibility
         train_losses, trained_model, debug_result = train_rules_gnn(
             model,
             loader,
@@ -255,17 +278,17 @@ def train_single_config(params):
             rollout = rollout,
             rollout_frames = rollout_frames,
             train_logger=worker_logger,
-            collect_debug=collect_debug,  # Disable debug to avoid CPU transfers
-            val_dataloader=test_loader if not no_validation else None,  # Use test_loader for validation unless disabled
-            early_stopping_patience=early_stopping_patience,  # Early stopping patience from args
-            min_delta=min_delta  # Minimum improvement threshold from args
+            collect_debug=collect_debug,
+            val_dataloader=test_loader if not no_validation else None,
+            early_stopping_patience=early_stopping_patience,
+            min_delta=min_delta
         )
         
         # Save model
         #model_spec = {"model_name": model_name, "heads": heads}
         train_spec = {"visual_range": visual_range, "sigma": noise, "epochs": epochs}
         if rollout > 0:
-            save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout_{rollout}_frames_{rollout_frames}"
+            save_name = f"{data_name}_{model_type}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout_{rollout}_frames_{rollout_frames}"
             rollout_path = expand_path(
                 f"trained_models/{save_name}.pkl",
                 get_project_root()
@@ -274,7 +297,7 @@ def train_single_config(params):
             with open(rollout_path, "wb") as f: # 'wb' for write binary
                 pickle.dump(debug_result, f)
         else:
-            save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
+            save_name = f"{data_name}_{model_type}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
 
         worker_logger.debug(f"Saving model {save_name}...")
         model_output, model_spec_path, train_spec_path = save_model(trained_model, model_spec, train_spec, save_name)
@@ -299,6 +322,7 @@ def train_single_config(params):
             "train_spec_path": str(train_spec_path),
             "train_losses": str(train_losses),
             "model_name": model_name,
+            "model_type": model_type,
             "noise": noise,
             "heads": heads,
             "visual_range": visual_range,
@@ -311,10 +335,11 @@ def train_single_config(params):
         
     except Exception as e:
         import traceback
-        worker_logger.error(f"Failed: {data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed} | Error: {e}\n{traceback.format_exc()}")
+        worker_logger.error(f"Failed: {data_name}_{model_type}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed} | Error: {e}\n{traceback.format_exc()}")
         return {
             "data_name": data_name,
             "model_name": model_name,
+            "model_type": model_type,
             "noise": noise,
             "heads": heads,
             "visual_range": visual_range,
@@ -341,6 +366,9 @@ def main():
     parser = argparse.ArgumentParser(description="Maximize GPU utilization with concurrent training")
     parser.add_argument("--dataset", type=str, default="boid_single_species_basic",
                        help="Dataset to use (default: boid_single_species_basic)")
+    parser.add_argument("--model-type", type=str, default="original", 
+                       choices=["original", "enhanced_gnn"],
+                       help="Model type: 'original' (basic distance edge features), 'enhanced_gnn' (original architecture with rich edge features)")
     parser.add_argument("--workers-per-gpu", type=int, default=4,
                        help="Number of concurrent jobs per GPU (default: 4 - optimized for RTX 4090)")
     parser.add_argument("--max-workers", type=int, default=None,
@@ -429,6 +457,11 @@ def main():
         logger.info("GPU UTILIZATION MAXIMIZER")
     logger.info("="*60)
     logger.info(f"Dataset: {args.dataset}")
+    logger.info(f"Model type: {args.model_type}")
+    if args.model_type == "original":
+        logger.info("  → Original GNN with basic distance edge features")
+    elif args.model_type == "enhanced_gnn":
+        logger.info("  → Enhanced GNN with original architecture but rich edge features")
     logger.info(f"Batch size: {args.batch_size}")
     logger.info(f"Epochs: {args.epochs}")
     logger.info(f"GPUs available: {gpu_count}")
@@ -462,8 +495,8 @@ def main():
     if args.test:
         model_names = ["vpluspplus_a"]
         noise_levels = [0.0]
-        heads = [1]
-        visual_ranges = [0.25]
+        heads = [3]
+        visual_ranges = [0.5]
         seeds = range(max_workers)
     else:
         #model_names = ["vpluspplus_a", "lazy"]
@@ -482,7 +515,7 @@ def main():
                 for vr in visual_ranges:
                     for seed in seeds:
                         all_params.append(
-                            (args.dataset, model, noise, head, vr, seed, gpu_count, worker_id, 
+                            (args.dataset, model, args.model_type, noise, head, vr, seed, gpu_count, worker_id, 
                              args.batch_size, args.epochs, args.compile, args.memory_fraction,
                              args.no_validation, args.early_stopping_patience, args.min_delta, args.train_size, args.rollout, args.rollout_frames)
                         )
@@ -495,16 +528,16 @@ def main():
     if gpu_count > 0:
         logger.info("GPU Assignment Plan:")
         for i in range(min(8, len(all_params))):  # Show first 8 assignments
-            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout, rollout_frames = all_params[i]
+            _, model, model_type, model_type, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout, rollout_frames = all_params[i]
             assigned_gpu = wid % gpu_count
-            logger.info(f"Worker {wid:02d} -> GPU {assigned_gpu}: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs}), rollout = {rollout}, rollout_frames = {rollout_frames}  ")
+            logger.info(f"Worker {wid:02d} -> GPU {assigned_gpu}: {model_type}_{model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs}), rollout = {rollout}, rollout_frames = {rollout_frames}  ")
         if len(all_params) > 8:
             logger.info(f"  ... and {len(all_params) - 8} more configurations")
     else:
         logger.info("CPU Training Plan:")
         for i in range(min(8, len(all_params))):  # Show first 8 assignments
-            _, model, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout, rollout_frames = all_params[i]
-            logger.info(f"  Config {wid:02d} -> CPU: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs}), rollout = {rollout}, rollout_frames = {rollout_frames}  ")
+            _, model, model_type, noise, head, vr, seed, _, wid, batch_size, epochs, _, _, _, _, _, _, rollout, rollout_frames = all_params[i]
+            logger.info(f"  Config {wid:02d} -> CPU: {model_type}_{model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs}), rollout = {rollout}, rollout_frames = {rollout_frames}  ")
         if len(all_params) > 8:
             logger.info(f"  ... and {len(all_params) - 8} more configurations")
     logger.info("="*60)
@@ -573,6 +606,7 @@ def main():
         best = min(valid_results, key=lambda x: x["final_loss"])
         logger.success("Best configuration:")
         logger.success(f"  Model: {best['model_name']}")
+        logger.success(f"  Model type: {best['model_type']}")
         logger.success(f"  Noise: {best['noise']}")
         logger.success(f"  Heads: {best['heads']}")
         logger.success(f"  Visual Range: {best['visual_range']}")
