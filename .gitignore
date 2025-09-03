@@ -3,6 +3,7 @@
 *.ipynb_checkpoints
 trained_models/*.pkl
 trained_models/*.pt
+trained_models/*
 *.py[cod]
 .DS_Store
 # C extensions
