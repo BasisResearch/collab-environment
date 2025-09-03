@@ -418,7 +418,7 @@ def run_gnn(model,
     # frame roll out
     roll_out_flag = np.zeros(Frame)
     if rollout > 0:
-        roll_out_flag[rollout:rollout+rollout_frames] = 1
+        roll_out_flag[rollout:total_rollout] = 1
     if rollout_everyother > 0:
         roll_out_flag = np.ones(Frame)
         roll_out_flag[::rollout_everyother] = 0
