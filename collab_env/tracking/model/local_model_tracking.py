@@ -203,7 +203,7 @@ def overlay_tracks_on_video(
 
     # Get frame size
     sample_frame = cv2.imread(str(frame_paths[0]))
-    h, w = sample_frame.shape[:2]  # type: ignore
+    h, w = sample_frame.shape[:2]
     writer = cv2.VideoWriter(
         str(output_video),
         cv2.VideoWriter_fourcc(*"mp4v"),  # type: ignore
@@ -218,9 +218,9 @@ def overlay_tracks_on_video(
         frame_tracks = df[df["frame"] == frame_idx]
         for _, row in frame_tracks.iterrows():
             _, x, y = int(row["track_id"]), int(row["x"]), int(row["y"])
-            cv2.circle(frame, (x, y), 5, (255, 255, 0), -1)  # type: ignore
+            cv2.circle(frame, (x, y), 5, (255, 255, 0), -1)
 
-        writer.write(frame)  # type: ignore
+        writer.write(frame)
 
     writer.release()
     print(f"✅ Saved annotated video to: {output_video}")
