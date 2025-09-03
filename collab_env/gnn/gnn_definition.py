@@ -3,7 +3,8 @@
 import torch
 import torch.nn.functional as functional
 from torch_geometric.nn import GCNConv, GATConv
-
+from torch_geometric.nn.inits import glorot, zeros
+from torch.nn import Parameter
 
 class GNN(torch.nn.Module):
     def __init__(
@@ -69,6 +70,42 @@ class GNN(torch.nn.Module):
         # Note that we use the updated graph from the attention network
         h = functional.relu(self.gcn2(h, edge_index, torch.mean(edge_weight, 1)))
         return self.out(h), W
+
+    def ablate_attention(self):
+        """copy reset_parameters"""
+        print("self.gatn.att_src", self.gatn.att_src)
+        glorot(self.gatn.att_src)
+        print("self.gatn.att_src, post permute", self.gatn.att_src)
+        glorot(self.gatn.att_dst)
+        glorot(self.gatn.att_edge)
+    
+    def permute_attention(self):
+        """permute parameters"""
+        current_seed = torch.cuda.initial_seed()
+        print("self.gatn.att_src", self.gatn.att_src)
+        self.gatn.att_src = permute_second_dim(self.gatn.att_src)
+        print("self.gatn.att_src, post permute", self.gatn.att_src)
+
+        torch.cuda.manual_seed(current_seed + 1)
+        self.gatn.att_dst = permute_second_dim(self.gatn.att_dst)
+
+        torch.cuda.manual_seed(current_seed + 2)
+        self.gatn.att_edge = permute_second_dim(self.gatn.att_edge)
+    
+    def uni_attention(self):
+        """zero out att, due to softmax, output will be uniform"""
+        print("self.gatn.att_src", self.gatn.att_src)
+        zeros(self.gatn.att_src)
+        print("self.gatn.att_src, post permute", self.gatn.att_src)
+
+        zeros(self.gatn.att_dst)
+        zeros(self.gatn.att_edge)
+
+def permute_second_dim(t):
+    permuted_indices = torch.randperm(t.shape[2])
+    t_perm = t[:, :, permuted_indices]
+    t_perm = Parameter(t_perm)
+    return t_perm
 
 
 class Lazy(torch.nn.Module):

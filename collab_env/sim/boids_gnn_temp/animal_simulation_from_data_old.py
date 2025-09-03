@@ -216,6 +216,7 @@ def visualize_graph_2sets(p, v, p2, v2,
     # Set plot limits
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
+    quiver_scale = 10
 
     # Initialization function: plot the background of each frame
     def init():
@@ -224,12 +225,12 @@ def visualize_graph_2sets(p, v, p2, v2,
 
         if v is not None:
             ax.quiver(p0[:,0], p0[:,1],
-                    v[starting_frame,:,0] * 10, v[starting_frame,:,1] * 10,
-                    color = "C0", scale_units='xy', scale=1, alpha = 0.5)
+                    v[starting_frame,:,0] * quiver_scale, v[starting_frame,:,1] * quiver_scale,
+                    color = "C0", scale_units='xy', scale=quiver_scale)
 
             ax.quiver(p0_2[:,0], p0_2[:,1],
-                    v2[starting_frame,:,0] * 10, v2[starting_frame,:,1] * 10,
-                    color = "C1", scale_units='xy', scale=1, alpha = 0.5)
+                    v2[starting_frame,:,0] * quiver_scale, v2[starting_frame,:,1] * quiver_scale,
+                    color = "C1", scale_units='xy', scale=quiver_scale)
  
         #ax.plot([pos[0]+vel[0],pos[0]+vel[0]],[pos[0]+vel[0],pos[0]+vel[0]])
 
@@ -240,12 +241,12 @@ def visualize_graph_2sets(p, v, p2, v2,
         ax.scatter(p[i,:,0],p[i,:,1], color = "C0")
         ax.scatter(p2[i,:,0],p2[i,:,1], color = "C1", alpha = 0.5)
         if v is not None:
-            ax.quiver(p[i,:,0], p[i,:,1], v[i+1,:,0] * 10, v[i+1,:,1] * 10,
+            ax.quiver(p[i,:,0], p[i,:,1], v[i+1,:,0] * quiver_scale, v[i+1,:,1] * quiver_scale,
                         color = 'C0', alpha = 0.5,
-                        scale_units='xy', scale=1)
-            ax.quiver(p2[i,:,0], p2[i,:,1], v2[i+1,:,0] * 10, v2[i+1,:,1] * 10,
+                        scale_units='xy', scale=quiver_scale)
+            ax.quiver(p2[i,:,0], p2[i,:,1], v2[i+1,:,0] * quiver_scale, v2[i+1,:,1] * quiver_scale,
                         color = 'C1', alpha = 0.5,
-                        scale_units='xy', scale=1)
+                        scale_units='xy', scale=quiver_scale)
         ax.set_title("Frame" + str(i))
         
     if ending_frame is None:
@@ -261,6 +262,7 @@ def visualize_graph_2sets(p, v, p2, v2,
 
 
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+import matplotlib.patches as patches
 
 def static_visualize_2sets(p, v, p2, v2,
                     starting_frame = 0,
@@ -284,53 +286,56 @@ def static_visualize_2sets(p, v, p2, v2,
     # Create the figure and axes
     fig, ax = plt.subplots(figsize=(6,5)) if ax is None else (None, ax)
     divider = make_axes_locatable(ax)
-    cax = divider.append_axes('right', size='5%', pad=0.1)
-    cax2 = divider.append_axes('right', size='5%', pad=0.5)
+    #cax = divider.append_axes('right', size='5%', pad=0.1)
+    cax2 = divider.append_axes('right', size='5%', pad=0.2)
 
     # Set plot limits
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
+    ax.set_xlim(-0.1, 1.1)
+    ax.set_ylim(-0.1, 1.1)
+    rect = patches.Rectangle((0, 0), 1, 1, linewidth=1, edgecolor='k', facecolor = [0.9, 0.9, 0.9], alpha = 0.1)
+    ax.add_patch(rect)
     ax.set_xticks([])
     ax.set_xticklabels([])
     ax.set_yticks([])
     ax.set_yticklabels([])
 
+    quiver_scale = 0.6
 
     norm = mpl.colors.Normalize(vmin=rollout_starting_frame, vmax=ending_frame, clip=True)
-    for i in range(rollout_starting_frame, ending_frame + 1):
+    for i in range(rollout_starting_frame, ending_frame):
 
-        ax.scatter(p[i,:,0],p[i,:,1], color = cmap1(norm(i)))
-        ax.scatter(p2[i,:,0],p2[i,:,1], color = cmap2(norm(i)))
-        if v is not None:
-            ax.quiver(p[i,:,0], p[i,:,1], v[i+1,:,0], v[i+1,:,1],
-                        color = cmap1(norm(i)), alpha = 0.5,
-                        scale_units='xy', scale=1)
-            ax.quiver(p2[i,:,0], p2[i,:,1], v2[i+1,:,0], v2[i+1,:,1],
-                        color = cmap2(norm(i)), alpha = 0.5,
-                        scale_units='xy', scale=1)
+        #ax.scatter(p[i,:,0],p[i,:,1], color = cmap1(norm(i)))
+        ax.scatter(p[i,:,0],p[i,:,1], color = [0.9, 0.9, 0.9], alpha = 0.5, s = 1)
+        ax.scatter(p2[i,:,0],p2[i,:,1], color = cmap2(norm(i)), s = 2)
+        #if v is not None:
+        ax.quiver(p[i,:,0], p[i,:,1], v[i+1,:,0], v[i+1,:,1],
+                        color = [0.9, 0.9, 0.9], alpha = 0.9,
+                        scale_units='xy', scale=quiver_scale)
+        ax.quiver(p2[i,:,0], p2[i,:,1], v2[i+1,:,0], v2[i+1,:,1],
+                        color = cmap2(norm(i)), alpha = 0.9,
+                        scale_units='xy', scale=quiver_scale)
 
     
 
     for i in range(starting_frame, rollout_starting_frame):
 
-        ax.scatter(p[i,:,0],p[i,:,1], color = "0.5", alpha = 0.5)
-        ax.scatter(p2[i,:,0],p2[i,:,1], color = "0.5", alpha = 0.5)
+        #ax.scatter(p[i,:,0],p[i,:,1], color = "0.5", alpha = 0.5)
+        ax.scatter(p[i,:,0],p[i,:,1], color = "0.5", alpha = 0.5, s = 1)
+        ax.scatter(p2[i,:,0],p2[i,:,1], color = "0.5", alpha = 0.5, s = 1)
         if v is not None:
             ax.quiver(p[i,:,0], p[i,:,1], v[i+1,:,0], v[i+1,:,1],
                         color = "0.5", alpha = 0.5,
-                        scale_units='xy', scale=1)
+                        scale_units='xy', scale= quiver_scale)
             ax.quiver(p2[i,:,0], p2[i,:,1], v2[i+1,:,0], v2[i+1,:,1],
                         color = "0.5", alpha = 0.5,
-                        scale_units='xy', scale=1)
+                        scale_units='xy', scale=quiver_scale)
 
-    sm = plt.cm.ScalarMappable(cmap=cmap1, norm=norm)
+    #sm = plt.cm.ScalarMappable(cmap=cmap1, norm=norm)
     sm2 = plt.cm.ScalarMappable(cmap=cmap2, norm=norm)
-    if fig is not None:
-        fig.colorbar(sm, cax=cax, orientation='vertical',label='frames (true)')
-        fig.colorbar(sm2, cax=cax2, orientation='vertical',label='frames (rollout)')
+    #fig.colorbar(sm, cax=cax, orientation='vertical',label='frames (true)')
+    fig.colorbar(sm2, cax=cax2, orientation='vertical',label='frames (rollout)')
 
-        plt.show()
-    
+    #plt.show()
     return ax
 
 

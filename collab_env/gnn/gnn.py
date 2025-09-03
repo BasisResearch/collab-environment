@@ -367,7 +367,7 @@ def run_gnn(model,
             debug_result = None,
             full_frames = False,
             rollout = -1,
-            rollout_frames = 300,
+            total_rollout = 60,
             rollout_everyother = -1,
             ablate_boid_interaction = False,
             collect_debug = True,
@@ -441,8 +441,10 @@ def run_gnn(model,
     frames = identify_frames(pos, vel)     
     if full_frames:
         frames = np.arange(Frame-1)
-    if rollout > 0:
-        frames = frames[:rollout+rollout_frames]
+    
+    if total_rollout > 0:
+        frames = frames[:total_rollout]
+    
     for frame_ind in range(len(frames)-1): #range(Frame-1): #since we are predicting frame + 1, we have to stop 1 frame earlier
         frame = frames[frame_ind]
         if frame_ind == 0:
@@ -585,6 +587,7 @@ def train_rules_gnn(
     rollout = -1,
     rollout_frames = 300,
     rollout_everyother = -1,
+    total_rollout = 100,
     ablate_boid_interaction = False,
     train_logger = None,
     collect_debug = False,
@@ -616,6 +619,8 @@ def train_rules_gnn(
     
     if rollout > 0:
         train_logger.debug("rolling out...")
+        full_frames = True
+
         
     for ep in range(epochs):
         torch.cuda.empty_cache()
@@ -646,7 +651,7 @@ def train_rules_gnn(
                 lr = lr,
                 full_frames = full_frames,
                 rollout = rollout,
-                rollout_frames = rollout_frames,
+                total_rollout = total_rollout,
                 rollout_everyother = rollout_everyother,
                 ablate_boid_interaction = ablate_boid_interaction,
                 collect_debug = collect_debug,
@@ -716,29 +721,39 @@ def train_rules_gnn(
     return np.array(train_losses), model, debug_result_all
 
 
-def debatch_edge_index_weight(edge_index_output, edge_weight_output, INODE_NUM):
+def debatch_edge_index_weight(edge_index_output, edge_weight_output, INODE_NUM, files):
     """
     INODE_NUM: node dimension number for each file
     Takes batched sparse adjacency matrix
         and return seperate adjacency matrix for each file.
     """
     file_ind = torch.floor(edge_index_output / INODE_NUM) #file in this batch
+
     assert torch.all(file_ind[0] == file_ind[1])
     node_ind = edge_index_output % INODE_NUM #node in this batch
     
     W_by_file = []
+    file_IDs = []
     for file in np.unique(file_ind):
+        file_IDs.append(file)
+        
         col_ind = file_ind[0] == file
         edge_index_output_file = node_ind[:, col_ind]
         edge_weight_output_file = edge_weight_output[col_ind]
         W = return_adjacency_matrix(
             INODE_NUM, edge_index_output_file, edge_weight_output_file)
         W_by_file.append(W)
+    
+    # for all the files without adjacency matrix this frame
+    
+    for file in np.setdiff1d(files, np.unique(file_ind)):
+        W_by_file.append(np.zeros((INODE_NUM,INODE_NUM)))
+        file_IDs.append(file)
 
-    return W_by_file
+    return W_by_file, file_IDs
     
 def get_input_adjcency_from_debug_batch(
-    input_data_loader, starting_frame, visual_range, epoch_list):
+    input_data_loader, starting_frame, ending_frame, visual_range, epoch_list):
     "organization is epoch -> file -> frame"
 
     data_list = list(iter(input_data_loader))
@@ -754,15 +769,15 @@ def get_input_adjcency_from_debug_batch(
             S, F, N, dim = position.shape
 
             for file in range(S):
-                W_out[file] = []
-                for f in range(starting_frame, F):
+                W_out[file_num + file] = []
+                for f in range(starting_frame, ending_frame):
                     edge_index_input = build_single_graph_edges(
                         position[file, f, :, :], visual_range=visual_range
                     )
                     W_input_frame = normalize_by_col(
                         N, 1, edge_index_input, return_matrix=True
                     )
-                    W_out[file].append(W_input_frame)
+                    W_out[file_num + file].append(W_input_frame)
             file_num += S
 
         W_out_epoch[epoch] = W_out
@@ -770,7 +785,7 @@ def get_input_adjcency_from_debug_batch(
     return W_out_epoch
 
 def get_output_adjcency_from_debug_batch(
-    debug_result, epoch_list=None
+    debug_result, starting_frame, ending_frame, epoch_list=None, visual_range = 0.5, INODE_NUM = 20
 ):
     "organization is epoch -> file -> frame"
 
@@ -780,46 +795,74 @@ def get_output_adjcency_from_debug_batch(
 
     epoch_num = 0
     FRAME_NUM = 0
-    INODE_NUM = 20
     batch_num = 0
     frame = 0
 
     W_out_epoch = {} 
+    W_in_epoch = {} 
     for epoch in epoch_list:
         W_out = {}
+        W_in = {}
         
         file_num = 0
         B = len(debug_result[epoch_num])
         F = len(debug_result[epoch_num][batch_num]['actual'])
         
         for batch_ind in range(B):
-            file_num_batch = len(debug_result[epoch_num][batch_num]['actual'][FRAME_NUM]) #first frame
+            file_num_batch = len(debug_result[epoch_num][batch_ind]['actual'][FRAME_NUM]) #first frame
             
-            # initialize all files
+            # initialize all files in this batch
             for file_id in range(file_num, file_num + file_num_batch):
                 W_out[file_id] = []
+                W_in[file_id] = []
+            
+            for frame in range(starting_frame, ending_frame):
+                """output W"""
+                edge_index_output, edge_weight_output = debug_result[epoch_num][batch_ind]['W'][frame]
+                
+                W_by_file, file_ID = debatch_edge_index_weight(edge_index_output,
+                                                               edge_weight_output, INODE_NUM, np.arange(file_num_batch))
+                for _ in range(len(W_by_file)):
+                    file_id = file_ID[_] + file_num
+                    W_out[file_id].append(W_by_file[_])
+
+                """input W"""
+                pos = debug_result[epoch_num][batch_ind]['actual'][frame]
+                pos = torch.tensor(pos)
+                for file_ind in range(pos.shape[0]):
+                    edge_index_input = build_single_graph_edges(
+                            pos[file_ind], visual_range=visual_range
+                        )
+                    W_input_frame = normalize_by_col(
+                            INODE_NUM, 1, edge_index_input, return_matrix=True
+                        )
+                    W_in[file_ind + file_num].append(W_input_frame)
+                
+            
             file_num = file_num + file_num_batch
 
-            for frame in range(F):
-                edge_index_output, edge_weight_output = debug_result[epoch_num][batch_num]['W'][frame]
-                
-                W_by_file = debatch_edge_index_weight(edge_index_output, edge_weight_output, INODE_NUM)
-                for W_ in W_by_file:
-                    W_out[file_id].append(W_)
         W_out_epoch[epoch] = W_out
+        W_in_epoch[epoch] = W_in
 
-    return W_out_epoch
+
+    return W_out_epoch, W_in_epoch
 
 def get_adjcency_from_debug_batch(
-    debug_result, input_data_loader, visual_range, starting_frame
+    debug_result, input_data_loader, visual_range, starting_frame, ending_frame, model_starting_frame, inode
 ):
     """
     handle batching
     """
-    W_out_epoch = get_output_adjcency_from_debug_batch(debug_result, epoch_list=None)
-    W_input_epoch = get_input_adjcency_from_debug_batch(input_data_loader,
-        starting_frame, visual_range, epoch_list = list(W_out_epoch.keys()))
-    return W_input_epoch, W_output_epoch
+    starting_frame_ = starting_frame - model_starting_frame
+    W_out_epoch, W_input_epoch = get_output_adjcency_from_debug_batch(debug_result,
+                                                        starting_frame_,
+                                                        starting_frame_ + (ending_frame - starting_frame),
+                                                        epoch_list=None,
+                                                        visual_range = visual_range,
+                                                        INODE_NUM = inode)
+    #W_input_epoch = get_input_adjcency_from_debug_batch(input_data_loader,
+    #    starting_frame, ending_frame, visual_range, epoch_list = list(W_out_epoch.keys()))
+    return W_input_epoch, W_out_epoch
 
 
 def get_adjcency_from_debug(
@@ -938,17 +981,17 @@ def find_frame_sets(lst):
     
     return out
 
-def load_model(name, file_name, root_path = "trained_models"):
+def load_model(name, folder, file_name):
     model_path = expand_path(
-        f"{root_path}/{file_name}.pt",
+        f"{folder}/{file_name}.pt",
         get_project_root(),
     )
     model_spec_path = expand_path(
-        f"{root_path}/{file_name}_model_spec.pkl",
+        f"{folder}/{file_name}_model_spec.pkl",
         get_project_root(),
     )
     train_spec_path = expand_path(
-        f"{root_path}/{file_name}_train_spec.pkl",
+        f"{folder}/{file_name}_train_spec.pkl",
         get_project_root(),
     )
     
@@ -980,7 +1023,7 @@ def load_model(name, file_name, root_path = "trained_models"):
     
     # load model
     # Load the state dictionary
-    gnn_model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+    gnn_model.load_state_dict(torch.load(model_path, map_location = 'cpu'))
     logger.debug("Loaded model.")
     
     # Set the model to evaluation mode (important for inference)
