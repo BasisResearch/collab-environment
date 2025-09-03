@@ -43,24 +43,7 @@ This needs to be done much more efficiently.
 """
 
 
-if __name__ == "__main__":
-    #
-    # Get the config file name if specified on the command line
-    #
-    parser = argparse.ArgumentParser(
-        prog="run_boids_simulator",
-        description="Simulates boids in a 3D environment",
-        epilog="---",
-    )
-    parser.add_argument("-cf", "--config_file")
-    args = parser.parse_args()
-    if args.config_file:
-        config_filename = expand_path(args.config_file, get_project_root())
-    else:
-        config_filename = expand_path(
-            "collab_env/sim/boids/config.yaml", get_project_root()
-        )
-
+def run_simulator(config_filename):
     config = yaml.safe_load(open(config_filename))
     if config["visuals"]["show_visualizer"]:
         render_mode = "human"
@@ -246,7 +229,7 @@ if __name__ == "__main__":
         # -- 080725 10:45PM
         # Add the initial positions to the dataframe
         df = add_obs_to_df(None, obs, time_step=0)
-        done = False
+        # done = False
 
         #
         # MAIN LOOP
@@ -340,3 +323,24 @@ if __name__ == "__main__":
             shutil.move(video_file_path, episode_video_file_path)
 
     logger.info("all episodes complete")
+
+
+if __name__ == "__main__":
+    #
+    # Get the config file name if specified on the command line
+    #
+    parser = argparse.ArgumentParser(
+        prog="run_boids_simulator",
+        description="Simulates boids in a 3D environment",
+        epilog="---",
+    )
+    parser.add_argument("-cf", "--config_file")
+    args = parser.parse_args()
+    if args.config_file:
+        config_filename = expand_path(args.config_file, get_project_root())
+    else:
+        config_filename = expand_path(
+            "collab_env/sim/boids/config.yaml", get_project_root()
+        )
+
+    run_simulator(config_filename=config_filename)
