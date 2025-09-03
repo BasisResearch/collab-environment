@@ -21,7 +21,7 @@ simulator:
 
 
 visuals:
-  store_video: False
+  store_video: True
   show_visualizer: False
   width: 1080
   height: 720

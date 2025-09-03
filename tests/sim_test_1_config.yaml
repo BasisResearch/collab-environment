@@ -24,8 +24,8 @@ logging:
 visuals:
   store_video: True
   show_visualizer: False
-  width: 1920
-  height: 1280
+  width: 1080
+  height: 720
   video_codec: '*mpv4'
   video_file_extension: 'mp4'
   video_fps: 30

@@ -196,7 +196,7 @@ def sim_check_files(
     num_targets=5,
 ):
     """
-    Tests the following scenarios:
+    Default parameters test the following scenarios:
     1. run_boids_simulator successfully runs with command line specified config file.
     2. output folder is created.
     3. three episodes of parquet files are created.
