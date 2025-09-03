@@ -493,9 +493,9 @@ def main():
     else:
         #model_names = ["vpluspplus_a", "lazy"]
         model_names = ["vpluspplus_a"]
-        noise_levels = [0.005] #[0, 0.005]
-        heads = [3] #[1 2 3] 
-        visual_ranges = [0.5] #[0.1, 0.5]
+        noise_levels = [0, 0.005] #[0, 0.005]
+        heads = [1 2 3]
+        visual_ranges = [0.1, 0.5]
         seeds = range(args.seeds)
     
     # Generate all combinations with worker IDs
