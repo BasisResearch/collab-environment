@@ -265,7 +265,8 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 def static_visualize_2sets(p, v, p2, v2,
                     starting_frame = 0,
                     rollout_starting_frame = 5,
-                    ending_frame = None):
+                    ending_frame = None,
+                    ax = None):
     """
     overlay multiple frames of boids on top of each other.
     """
@@ -281,7 +282,7 @@ def static_visualize_2sets(p, v, p2, v2,
     
 
     # Create the figure and axes
-    fig, ax = plt.subplots(figsize=(6,5))
+    fig, ax = plt.subplots(figsize=(6,5)) if ax is None else (None, ax)
     divider = make_axes_locatable(ax)
     cax = divider.append_axes('right', size='5%', pad=0.1)
     cax2 = divider.append_axes('right', size='5%', pad=0.5)
@@ -324,10 +325,12 @@ def static_visualize_2sets(p, v, p2, v2,
 
     sm = plt.cm.ScalarMappable(cmap=cmap1, norm=norm)
     sm2 = plt.cm.ScalarMappable(cmap=cmap2, norm=norm)
-    fig.colorbar(sm, cax=cax, orientation='vertical',label='frames (true)')
-    fig.colorbar(sm2, cax=cax2, orientation='vertical',label='frames (rollout)')
+    if fig is not None:
+        fig.colorbar(sm, cax=cax, orientation='vertical',label='frames (true)')
+        fig.colorbar(sm2, cax=cax2, orientation='vertical',label='frames (rollout)')
 
-    plt.show()
+        plt.show()
+    
     return ax
 
 

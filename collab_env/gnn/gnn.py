@@ -255,13 +255,14 @@ def identify_frames(pos, vel):
     # construct lazy model prediction error
     actual = pos[:,1:]
     predicted = pos[:,:-1] + vel[:,:-1]
+    # TODO: DB: WHY DO WE DO THIS????
     loss = [functional.mse_loss(actual[:,f],predicted[:,f]) for f in range(actual.shape[1])]
 
     # polarity
     polarity = torch.norm(torch.mean(vel,axis = 2), dim = 2) #across birds
     polarity = polarity[:,:-4] #skip last 4 frames
     polarity_diff = torch.abs(torch.diff(polarity, axis = 1))
-    threshold = torch.mean(polarity_diff, axis = 1) + torch.std(polarity_diff, axis = 1)
+    threshold = torch.mean(polarity_diff, axis = 1) + torch.std(polarity_diff, axis = 1)/torch.sqrt(torch.tensor(polarity_diff.shape[1]))
     threshold = threshold.reshape((-1,1))
     diff_ind = torch.argwhere(torch.sum(polarity_diff >= threshold, axis = 0)).ravel().cpu().numpy()
     candidate_frames = np.unique(np.concatenate([(d-2, d-1, d, d+1, d+2, d+3) for d in diff_ind]))
@@ -643,7 +644,8 @@ def train_rules_gnn(
 
         for batch_idx, (position, species_idx) in enumerate(dataloader):
             # Only log every 10th batch to reduce noise
-            train_logger.debug(f"Epoch {ep+1}/{epochs} | Processing batch {batch_idx+1}/{len(dataloader)}")
+            if (batch_idx % 100 == 0) or (batch_idx == len(dataloader) - 1):
+                train_logger.debug(f"Epoch {ep+1}/{epochs} | Processing batch {batch_idx+1}/{len(dataloader)}")
 
             S, Frame, N, _ = position.shape
             
