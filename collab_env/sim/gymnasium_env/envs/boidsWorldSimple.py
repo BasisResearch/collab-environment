@@ -179,6 +179,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             self.submesh_target = True
             self.submesh_vertices = [None] * self.num_submesh_targets
             for t in range(self.num_submesh_targets):
+                logger.debug(f"target mesh file {self.target_mesh_file[t]}")
                 self.submesh_vertex_indices.append(
                     get_submesh_indices_from_ply(
                         expand_path(self.target_mesh_file[t], get_project_root())
