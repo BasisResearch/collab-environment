@@ -5,6 +5,9 @@ INCLUDED_NOTEBOOKS="docs/"
 # Array of notebooks to exclude
 EXCLUDED_NOTEBOOKS=(
     "docs/data/gcloud_example_download.ipynb"
+    "docs/gnn/0b-Select_frames_2D.ipynb"
+    "docs/gnn/ModelSelection.ipynb"
+    "docs/gnn/ModelSelection-food.ipynb"
     "docs/alignment/align.ipynb"
     "docs/alignment/reprojection.ipynb"
 )
