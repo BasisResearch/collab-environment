@@ -6,6 +6,7 @@ from torch_geometric.nn import GCNConv, GATConv
 from torch_geometric.nn.inits import glorot, zeros
 from torch.nn import Parameter
 
+
 class GNN(torch.nn.Module):
     def __init__(
         self,
@@ -59,7 +60,9 @@ class GNN(torch.nn.Module):
         # the 1st layer is a graph attention network.
         x = x.float()
         if edge_weight is not None:
-            edge_weight = edge_weight.float()  # all input needs to be the same precision.
+            edge_weight = (
+                edge_weight.float()
+            )  # all input needs to be the same precision.
         h_tmp, W = self.gatn(
             x, edge_index, edge_attr=edge_weight, return_attention_weights=True
         )
@@ -78,7 +81,7 @@ class GNN(torch.nn.Module):
         print("self.gatn.att_src, post permute", self.gatn.att_src)
         glorot(self.gatn.att_dst)
         glorot(self.gatn.att_edge)
-    
+
     def permute_attention(self):
         """permute parameters"""
         current_seed = torch.cuda.initial_seed()
@@ -91,7 +94,7 @@ class GNN(torch.nn.Module):
 
         torch.cuda.manual_seed(current_seed + 2)
         self.gatn.att_edge = permute_second_dim(self.gatn.att_edge)
-    
+
     def uni_attention(self):
         """zero out att, due to softmax, output will be uniform"""
         print("self.gatn.att_src", self.gatn.att_src)
@@ -100,6 +103,7 @@ class GNN(torch.nn.Module):
 
         zeros(self.gatn.att_dst)
         zeros(self.gatn.att_edge)
+
 
 def permute_second_dim(t):
     permuted_indices = torch.randperm(t.shape[2])
