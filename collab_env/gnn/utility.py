@@ -143,7 +143,7 @@ def dataset2testloader(
             train_dataset,
             batch_size=batch_size,
             shuffle=True,
-            generator=torch.Generator(device="cuda"),
+            generator=torch.Generator(device=device),
         )
         return test_loader, train_loader
 

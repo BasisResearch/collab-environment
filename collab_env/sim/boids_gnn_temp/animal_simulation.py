@@ -344,7 +344,7 @@ def visualize_graph_2sets(
 
 
 def static_visualize_2sets(
-    p, v, p2, v2, starting_frame=0, rollout_starting_frame=5, ending_frame=None
+    p, v, p2, v2, starting_frame=0, rollout_starting_frame=5, ending_frame=None, fig = None, ax = None
 ):
     """
     overlay multiple frames of boids on top of each other.
@@ -360,7 +360,7 @@ def static_visualize_2sets(
     # N = p.shape[1]
 
     # Create the figure and axes
-    fig, ax = plt.subplots(figsize=(6, 5))
+    fig, ax = plt.subplots(figsize=(6, 5)) if fig is None else (fig, ax)
     divider = make_axes_locatable(ax)
     # cax = divider.append_axes('right', size='5%', pad=0.1)
     cax2 = divider.append_axes("right", size="5%", pad=0.2)
