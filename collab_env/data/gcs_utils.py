@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-
+from typing import Union
 import gcsfs
 from google.cloud import storage
 from google.oauth2 import service_account
@@ -181,6 +181,80 @@ class GCSClient:
         logger.info(f"Uploading file {local_path} to {gcs_path}.")
         self._gcs.put(local_path, gcs_path)
         logger.info(f"Uploaded file {local_path} to {gcs_path}.")
+
+    def upload_folder(self, local_path: Union[str, Path], gcs_path: str):
+        """
+        Upload a local folder to GCS.
+
+        Args:
+            local_path: Local path of the folder to upload
+            gcs_path: GCS path where folder should be uploaded
+        """
+        assert self.is_initialized, (
+            "GCSClient must be initialized before uploading a folder"
+        )
+        logger.info(f"Uploading folder {local_path} to {gcs_path}.")
+
+        local_path_obj = Path(local_path)
+        for root, _, files in os.walk(local_path_obj):
+            for file in files:
+                file_path = Path(root) / file
+                relative_path = file_path.relative_to(local_path_obj)
+                gcs_file_path = f"{gcs_path}/{relative_path.as_posix()}"
+                self.upload_file(str(file_path), gcs_file_path)
+
+        logger.info(f"Finished uploading folder {local_path} to {gcs_path}.")
+
+    def download_folder(
+        self, gcs_path: str, local_path: Union[str, Path], overwrite: bool = False
+    ):
+        """
+        Download a folder from GCS.
+
+        Args:
+            gcs_path: GCS path of the folder to download
+            local_path: Local path where folder should be downloaded
+        """
+        assert self.is_initialized, (
+            "GCSClient must be initialized before downloading a folder"
+        )
+        logger.info(f"Downloading folder {gcs_path} to {local_path}.")
+
+        # Ensure gcs_path ends with slash for folder operations
+        if not gcs_path.endswith("/"):
+            gcs_path += "/"
+
+        # Create local directory if it doesn't exist
+        local_path_obj = Path(local_path)
+        local_path_obj.mkdir(parents=True, exist_ok=True)
+
+        # Get all files recursively in the GCS folder and subdirectories
+        files = self.glob(f"{gcs_path}**")
+
+        for gcs_file_path in files:
+            # Skip folder markers
+            if gcs_file_path.endswith("/.folder_marker"):
+                continue
+
+            # Calculate relative path from gcs_path
+            relative_path = gcs_file_path[len(gcs_path) :]
+            if not relative_path:  # Skip if it's the folder itself
+                continue
+
+            # Create local file path
+            local_file_path = local_path_obj / relative_path
+
+            # Create parent directories if they don't exist
+            local_file_path.parent.mkdir(parents=True, exist_ok=True)
+
+            if local_file_path.exists() and not overwrite:
+                continue
+
+            # Download the file
+            logger.info(f"Downloading {gcs_file_path} to {local_file_path}")
+            self._gcs.get(gcs_file_path, str(local_file_path))
+
+        logger.info(f"Finished downloading folder {gcs_path} to {local_path}.")
 
     def delete_path(self, gcs_path: str):
         """

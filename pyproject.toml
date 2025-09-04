@@ -41,13 +41,15 @@ dependencies = [
   "gymnasium",
   "torch_geometric",
   "ipympl",
+  "pyarrow",
   "pycolmap",
   "pyvista",
   "trame",
   "trame-vtk",
   "trame-vuetify",
   "lpips",
-  "scikit-image"
+  "scikit-image",
+  "types-PyYAML",
 ]
 
 [tool.setuptools]                         # NEW
