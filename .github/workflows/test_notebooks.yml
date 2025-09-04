@@ -26,6 +26,9 @@ jobs:
           restore-keys: |
             pip-
 
+      - name: Install ExifTool
+        run: sudo apt-get update && sudo apt-get install -y exiftool
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:

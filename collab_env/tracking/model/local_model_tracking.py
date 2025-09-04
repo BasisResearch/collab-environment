@@ -2,13 +2,13 @@ import json
 import os
 from pathlib import Path
 from typing import Optional
-
 import cv2
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from tqdm import tqdm
 from ultralytics.trackers.byte_tracker import BYTETracker
+from ultralytics.engine.results import Boxes
 
 
 def video_to_frames(video_path, out_dir, prefix="frame"):
@@ -66,32 +66,52 @@ def track_objects(csv_path: Path) -> dict:
             detections.append([x1, y1, x2, y2, conf])
         all_frames.append(detections)
 
+    # Create proper args object for ByteTracker with official defaults
+    class ByteTrackerArgs:
+        track_high_thresh = 0.25
+        track_low_thresh = 0.1
+        new_track_thresh = 0.25
+        track_buffer = 30
+        match_thresh = 0.8
+        fuse_score = True
+
     # Initialize ByteTracker
-    tracker = BYTETracker(None)
+    tracker = BYTETracker(ByteTrackerArgs(), frame_rate=30)
     track_history: dict[str, list[tuple[int, tuple[int, int]]]] = {}
 
     # Perform tracking
     for frame_idx, detections in enumerate(all_frames):
         if not detections:
             continue
-        dets_np = np.array(detections)
+        dets_np = np.array(detections, dtype=np.float32)
         if dets_np.ndim != 2 or dets_np.shape[1] < 5:
             continue
-        class_ids = np.zeros((dets_np.shape[0], 1))  # Add dummy class IDs
-        formatted_dets = np.hstack((dets_np[:, :5], class_ids))
-        tracked = tracker.update(formatted_dets)
 
-        for det in tracked:
-            x1, y1, x2, y2, track_id, _ = det[:6]
-            cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
-            if track_id not in track_history:
-                track_history[track_id] = []
-            track_history[track_id].append((frame_idx, (cx, cy)))
+        # Use Ultralytics Boxes class which is properly subscriptable
+        # Boxes expects: x1, y1, x2, y2, conf, class
+        # Add dummy class column if not present
+        if dets_np.shape[1] == 5:
+            dets_np = np.hstack([dets_np, np.zeros((dets_np.shape[0], 1))])
+
+        # Create Boxes object (orig_shape doesn't matter for tracking)
+        boxes = Boxes(dets_np, orig_shape=(1080, 1920))
+
+        # Call update with Boxes object
+        tracked = tracker.update(boxes, img=None)
+
+        # Process tracked detections
+        if tracked.size > 0:
+            for det in tracked:
+                x1, y1, x2, y2, track_id = det[:5]
+                cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
+                if int(track_id) not in track_history:
+                    track_history[track_id] = []
+                track_history[track_id].append((frame_idx, (cx, cy)))
 
     return track_history
 
 
-def visualize_detections_from_video(
+def get_detections_from_video(
     csv_path: Path,
     video_path: Path,
     output_video_path: Path,
@@ -191,43 +211,11 @@ def visualize_detections_from_video(
         print(f"✅ Annotated frames saved to: {output_frames_dir}")
 
 
-def overlay_tracks_on_video(
-    csv_path: Path, frame_dir: Path, output_video: Path, fps: int = 5
-):
-    df = pd.read_csv(csv_path)
-    df["track_id"] = df["track_id"].astype(int)
-
-    frame_paths = sorted(frame_dir.glob("*.jpg"))
-    if not frame_paths:
-        raise FileNotFoundError(f"No frames found in {frame_dir}")
-
-    # Get frame size
-    sample_frame = cv2.imread(str(frame_paths[0]))
-    h, w = sample_frame.shape[:2]
-    writer = cv2.VideoWriter(
-        str(output_video),
-        cv2.VideoWriter_fourcc(*"mp4v"),  # type: ignore
-        fps,
-        (w, h),
-    )
-
-    for frame_path in frame_paths:
-        frame_idx = int(frame_path.stem.split("_")[-1])
-        frame = cv2.imread(str(frame_path))
-
-        frame_tracks = df[df["frame"] == frame_idx]
-        for _, row in frame_tracks.iterrows():
-            _, x, y = int(row["track_id"]), int(row["x"]), int(row["y"])
-            cv2.circle(frame, (x, y), 5, (255, 255, 0), -1)
-
-        writer.write(frame)
-
-    writer.release()
-    print(f"✅ Saved annotated video to: {output_video}")
-
-
 def run_tracking(
-    session_path: Path, camera_type: str = "thermal", camera_number: int = 1
+    session_path: Path,
+    camera_type: str = "thermal",
+    camera_number: int = 1,
+    detections_csv: Optional[Path] = None,
 ):
     """
     Run tracking on either thermal or RGB videos for a given session.
@@ -241,35 +229,32 @@ def run_tracking(
     )
     if camera_type == "thermal":
         subfolder = f"thermal_{camera_number}"
-        frame_dir = session_path / f"thermal_{camera_number}" / "annotated_frames"
-        csv_pattern = "*.csv"
-        subfolder_path = session_path / f"thermal_{camera_number}"
+        frame_dir = session_path / f"thermal_{camera_number}"
+        if detections_csv is None:
+            detections_csv = frame_dir / f"detections_{camera_number}.csv"
+        subfolder_path = session_path / subfolder
     elif camera_type == "rgb":
         subfolder = f"rgb_{camera_number}"
         print("using detections from thermal camera")
-        frame_dir = session_path / f"thermal_{camera_number}" / "cropped" / "frames"
-        csv_pattern = "*.csv"
+        frame_dir = session_path / "thermal_{camera_number}"
+        if detections_csv is None:
+            detections_csv = frame_dir / f"detections_{camera_number}.csv"
         subfolder_path = session_path / subfolder
     else:
         print("Invalid camera_type. Use 'thermal' or 'rgb'.")
         return
-
+    if not detections_csv.exists():
+        print(f"⚠️ No detections CSV found at: {detections_csv}")
+        return
     if not subfolder_path.exists():
         print(f"⚠️ Subfolder not found: {subfolder_path}")
         return
-
-    try:
-        csv_file = next(subfolder_path.glob(csv_pattern))
-    except StopIteration:
-        print(f"⚠️ No CSV found in {subfolder_path}")
-        return
-
     if not frame_dir.exists():
         print(f"⚠️ Missing frames at: {frame_dir}")
         return
 
     # Run tracking
-    track_history = track_objects(csv_file)
+    track_history = track_objects(detections_csv)
 
     # Save tracks
     output_csv = subfolder_path / f"{camera_type}_{camera_number}_tracks.csv"
@@ -398,6 +383,66 @@ def output_tracked_bboxes_csv(
     out_df = pd.DataFrame(output_rows)
     out_df.to_csv(output_csv, index=False)
     print(f"✅ Tracked bounding box CSV saved to: {output_csv}")
+
+
+def generate_thermal_masks_from_bboxes(
+    bbox_csv: Path,
+    video_path: Path,
+    output_mask_dir: Path,
+    temp_threshold: int = 128,  # adjust based on your thermal encoding
+    mask_value: int = 255,
+):
+    """
+    Generate binary masks for thermal video frames, masking pixels within each bounding box
+    that are warmer than temp_threshold.
+
+    Args:
+        bbox_csv (Path): CSV file with columns ['frame', 'x1', 'y1', 'x2', 'y2'].
+        video_path (Path): Path to the thermal video file.
+        output_mask_dir (Path): Directory to save mask images.
+        temp_threshold (int): Pixel intensity threshold for "warm" pixels.
+        mask_value (int): Value to assign to mask pixels.
+    """
+
+    output_mask_dir.mkdir(parents=True, exist_ok=True)
+    df = pd.read_csv(bbox_csv)
+    df["frame"] = df["frame"].astype(int)
+
+    cap = cv2.VideoCapture(str(video_path))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    for frame_idx in range(total_frames):
+        ret, frame = cap.read()
+        if not ret:
+            print(f"⚠️ Unable to read frame {frame_idx} from {video_path}")
+            continue
+
+        # Convert to grayscale if needed
+        if len(frame.shape) == 3:
+            frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        else:
+            frame_gray = frame
+
+        mask = np.zeros(frame_gray.shape, dtype=np.uint8)
+
+        # Get all bboxes for this frame
+        group = df[df["frame"] == frame_idx]
+        for _, row in group.iterrows():
+            x1, y1, x2, y2 = (
+                int(row["x1"]),
+                int(row["y1"]),
+                int(row["x2"]),
+                int(row["y2"]),
+            )
+            roi = frame_gray[y1:y2, x1:x2]
+            roi_mask = (roi > temp_threshold).astype(np.uint8) * mask_value
+            mask[y1:y2, x1:x2] = np.maximum(mask[y1:y2, x1:x2], roi_mask)
+
+        mask_path = output_mask_dir / f"frame_{frame_idx:06d}.jpg"
+        cv2.imwrite(str(mask_path), mask)
+
+    cap.release()
+    print(f"✅ Thermal masks saved to: {output_mask_dir}")
 
 
 def plot_tracks_at_frame_bbox_from_video(
