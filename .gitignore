@@ -95,8 +95,11 @@ site/
 out
 *.matrix.gz
 /docs/source/.ipynb_checkpoints/
+data/
 config-local/
 *preview*.htm*
 simulated_data/
 logs/
 results/
+/sim-output/
+/good-runs/

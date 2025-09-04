@@ -1,5 +1,5 @@
 """
-TOC
+
 - 7/21/25 12:29 -- they seem to move together with all weights at 1. Need to bound them inside a cube and play with neighborhood sizes as some of
 them seem to stop -- not sure why that is happening.
 - 7/21/25 -- runs with 5 agents and a moving target but the agents scatter.
@@ -8,10 +8,10 @@ them seem to stop -- not sure why that is happening.
 """
 
 import gymnasium as gym
-from collab_env.sim.boids.boidsAgents import BoidsWorldAgent
-import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
 from tqdm import tqdm  # Progress bar
 
+import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
+from collab_env.sim.boids.boidsAgents import BoidsWorldAgent
 # from logger.debug import logger.debug
 
 
@@ -19,8 +19,8 @@ NUM_AGENTS = 40
 WALKING = False
 if __name__ == "__main__":
     """
-    TOC -- 073125 3:00PM
-    Need to include command line arguments 
+    -- 073125 3:00PM
+    Need to include command line arguments
     """
     # Training hyperparameters
     learning_rate = (
@@ -45,11 +45,6 @@ if __name__ == "__main__":
 
     agent = BoidsWorldAgent(
         env=env,
-        action_to_direction=None,
-        learning_rate=learning_rate,
-        initial_epsilon=start_epsilon,
-        epsilon_decay=epsilon_decay,
-        final_epsilon=final_epsilon,
         num_agents=NUM_AGENTS,
         walking=WALKING,
     )
@@ -62,16 +57,16 @@ if __name__ == "__main__":
         done = False
 
         """
-        TOC -- 073125 -- 8:46AM
+        -- 073125 -- 8:46AM
         Need to decide on how this is going to end. 
         
-        TOC -- 073124 2:21PM 
+        -- 073124 2:21PM 
         We are going with a limited number of frames.
         """
         # logger.debug('starting main loop ')
 
         # while not done:
-        for _ in tqdm(range(25000)):
+        for _ in tqdm(range(250)):
             # Agent chooses action (initially random, gradually more intelligent)
             action = agent.get_action(obs)
             # print('action = ' + str(action))
