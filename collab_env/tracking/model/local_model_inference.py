@@ -13,7 +13,12 @@ from ultralytics import YOLO
 
 
 def infer_with_yolo(
-    video_path, model_path, output_csv_path, output_video_path=None, show_window=True
+    video_path,
+    model_path,
+    output_csv_path,
+    output_video_path=None,
+    show_window=True,
+    verbose=True,
 ):
     model = YOLO(model_path)
     print("Model loaded successfully for inference!")
@@ -46,7 +51,9 @@ def infer_with_yolo(
             writer_csv = csv.writer(f)
             writer_csv.writerow(["count_objects", "output_image", "predictions"])
 
-    for frame_idx in tqdm(range(total_frames), desc="Processing video frames"):
+    for frame_idx in tqdm(
+        range(total_frames), desc="Processing video frames", disable=not verbose
+    ):
         ret, frame = cap.read()
         if not ret:
             print(f"Error: Unable to read frame {frame_idx}")

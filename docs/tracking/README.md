@@ -10,8 +10,7 @@ This guide provides best practices and instructions for using the script effecti
 
 ## **Overview**
 
-What is the data?
--------------
+### What is the data?
 
 Our fieldwork data is stored in Google Cloud, with unprocessed data in an internal google drive. The metadata YML file for each session should contain the following fields:
 
@@ -25,10 +24,32 @@ Each entry in `data_sources` should be a dictionary with the following fields:
   - `path`: (string, required) The relative or final path to the file within the project or data repository. Based on the project structure, this should be a path to a thermal_1, thermal_2, rgb_1, or rgb_2 directory, assuming 2 camera set up.
 
 
-The data structure is 
+The data structure is as follows: 
+Unique session name: `YYYY_MM_DD-session_0001`
 
-Data processing
------------------
+```text
+YYYY_MM_DD-session_0001/             # Unique session folder
+    ├── thermal_1/                   # Thermal camera 1 data
+    │   ├── cameraInfoTime.csq
+    │   ├── cameraInfoTime_vmin-vmax.mp4 # if using preprocessed
+    │   
+    ├── thermal_2/                   # Thermal camera 2 data
+    │   ├── cameraInfoTime.csq
+    │   ├── cameraInfoTime_vmin-vmax.mp4
+    │ 
+    ├── rgb_cam_1/                   # RGB camera 1 data
+    │   └── cameraSerial.mp4
+    ├── rgb_cam_2/                   # RGB camera 2 data
+    │   └── cameraSerial.mp4
+    └── Metadata.yaml                # Session metadata and notes, described above
+```
+
+- `thermal_1` and `thermal_2` contain raw `.csq` files, and will store the processed `.mp4` videos. One may be empty or missing if only one camera is useable.
+- `rgb_cam_1` and `rgb_cam_2` store RGB video files from each camera. One may be empty or missing if only one camera is useable.
+- `Metadata.yaml` includes session notes, project tags, and metadata for all sources, described above.
+
+
+### Data processing
 
 `thermal_processing.py` is a tool for converting .csq files into mp4s. 
 
@@ -44,7 +65,7 @@ The alignment process involves three main steps:
 
 ---
 ## **Tips and Tricks**
-#### Best Practices for Thermal Processing
+### Best Practices for Thermal Processing
 * Selecting vmin and vmax  
     **What are vmin and vmax?**  
     These values define the minimum and maximum pixel intensities for visualizing thermal data. Often, the optimal contrast for thermal videos is not the full range of captured temperatures. If autodetection does not produce good visual results, use the preview mode (`--preview` in the command line or `preview = True` in notebook) to manually adjust these parameters.  
@@ -60,7 +81,7 @@ The alignment process involves three main steps:
         If you are working with large .csq files, use the --max_frames argument to limit the number of frames processed for faster results.  
         Ensure the --fps value matches the original frame rate of the thermal camera for accurate playback. In the `data` folder, all videos are at a frame rate of 30fps.  
 
-#### Best Practices for Alignment
+### Best Practices for Alignment
 The alignment mechanism is manual, requiring some user input. The field of view (FOV) of the RGB videos is far larger than that of the thermal camera. To match the FOVs, you may need to crop, rotate, and translate the videos.
 
 * Cropping and Rotation
@@ -104,19 +125,19 @@ python alignment_gui.py \
     --skip_translation
 ```
 
-## Inference
-Downloading Model Weights and running inference
-=============================================
+### Inference
+#### Downloading Model Weights and running inference
+
 
 This section explains how to download training images from the cloud and train various models (YOLO, RF-DETR) using either the Roboflow API or local scripts. This section is useful if you want to fine-tune a model more. 
 
-Downloading Training Images or weights
---------------------------------------
+#### Downloading Training Images or weights
+
 To access training images please download the zip file from the roboflow_model bucket in the google cloud. 
 The bucket should contain a .pt file containing the model weights (yolo11_weights) for an rf-detr model and a zip file containing the images, labels, and annotations in YOLO v7 PyTorch format, as well as in the COCO format.
 
 
-### Downloading from Google Cloud
+#### Downloading from Google Cloud
 1. **Install the Google Cloud CLI**:
    If you haven't already, install the Google Cloud CLI by following the instructions [here](https://cloud.google.com/sdk/docs/install).
 
@@ -150,7 +171,43 @@ infer_with_yolo(
 )
 ```
 
+
 ## Tracking
 Once the animals are detected via the inference step, we recommend checking the bounding boxes before feeding them to the tracker. 
 
-We use [Ultralytics for object tracking ](https://docs.ultralytics.com/modes/track/). 
+We use [Ultralytics for object tracking ](https://docs.ultralytics.com/modes/track/) with default parameters. 
+
+### Example Tracking with ByteTracker
+
+The pipeline notebook uses the ByteTracker option. To see the version with idtracker.ai, see below. 
+
+In the pipeline, videos are first parsed using `get_detections_from_video`, which creates a directory of annotated frames and a video showing the overlayed bounding boxes. 
+This is what is used as input to `run_tracking`, which uses the `track_objects` function implementing ByteTracker. 
+Finally, `output_tracked_bboxes_csv` combines the tracking and detection files into a single one, which can be used to build pixel masks or infer animal size. 
+
+
+Detection and Tracking is also compatible with [idtracker.ai](https://idtracker.ai/latest/user_guide/usage.html), with parameters selected in their GUI. 
+
+### Example Tracker Configuration for idtracker.ai
+
+Below is an example configuration .toml for running tracking on a processed thermal video:
+
+```python
+video_paths = [LOCAL_PROCESSED_DIR_{some_video},
+LOCAL_PROCESSED_DIR_{some_video}
+]
+intensity_ths = [19, 255]                # Minimum and maximum pixel intensity thresholds
+area_ths = [50.0, float('inf')]          # Minimum and maximum area thresholds for detected objects
+tracking_intervals = ""                  # Specify intervals if needed, empty string for full video
+number_of_animals = 10                   # Expected number of animals to track
+use_bkg = True                           # Enable background subtraction
+check_segmentation = False               # Disable segmentation check
+track_wo_identities = False              # Track with identities
+background_subtraction_stat = 'median'   # Use median for background subtraction
+```
+
+You can also run 
+```python
+idtrackerai --load example.toml --track
+```
+Adjust these parameters as needed for your dataset and tracking requirements.

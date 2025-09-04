@@ -14,6 +14,7 @@ Example:
     process_directory("data/thermal", "output/videos", color="hot", preview=True, max_frames=100)
 """
 
+import argparse
 import os
 import re
 import subprocess
@@ -329,7 +330,14 @@ def export_thermal_video(
 
 
 def process_directory(
-    folder_path, out_path, color="binary", preview=True, max_frames=None, fps=30
+    folder_path,
+    out_path,
+    color="binary",
+    preview=True,
+    max_frames=None,
+    fps=30,
+    vmin: Optional[float] = None,
+    vmax: Optional[float] = None,
 ):
     """Process the thermal_1 and thermal_2 subfolders in the given folder_path and export their .csq files as MP4 videos."""
     folder_path = Path(folder_path)
@@ -367,10 +375,30 @@ def process_directory(
 
                 vmin = float(input("Enter vmin: "))
                 vmax = float(input("Enter vmax: "))
+            elif vmin is not None and vmax is not None:
+                vmin = vmin
+                vmax = vmax
+                print(f"Using provided vmin={vmin}, vmax={vmax}")
             else:
-                print("Auto-detecting vmin/vmax...")
-                vmin, vmax = choose_vmin_vmax(file_path)
-                print(f"→ Using vmin={vmin}, vmax={vmax}")
+                # preview is False: if caller provided both bounds, use them;
+                # if one or both are missing, auto-detect the missing values.
+                if vmin is None and vmax is None:
+                    print("Auto-detecting vmin/vmax...")
+                    auto_vmin, auto_vmax = choose_vmin_vmax(file_path)
+                    vmin, vmax = float(auto_vmin), float(auto_vmax)
+                    print(f"→ Using vmin={vmin}, vmax={vmax}")
+                else:
+                    # fill any missing bound from auto-detection
+                    if vmin is None or vmax is None:
+                        auto_vmin, auto_vmax = choose_vmin_vmax(file_path)
+                        if vmin is None:
+                            vmin = float(auto_vmin)
+                        if vmax is None:
+                            vmax = float(auto_vmax)
+                    # ensure native python floats
+                    vmin = float(vmin)
+                    vmax = float(vmax)
+                    print(f"Using provided/filled vmin={vmin}, vmax={vmax}")
 
             reader.reset()
             out_file = (
@@ -424,3 +452,69 @@ def validate_session_structure(session_path: Path) -> List[str]:
         for issue in issues:
             print(f"- {issue}")
     return issues
+
+
+if __name__ == "__main__":
+    import argparse
+
+    parser = argparse.ArgumentParser(
+        description="Process thermal directory into videos/frames"
+    )
+    parser.add_argument(
+        "--folder_path",
+        type=str,
+        required=True,
+        help="Path to the folder containing thermal data",
+    )
+    parser.add_argument(
+        "--out_path", type=str, required=True, help="Path to save the processed videos"
+    )
+    parser.add_argument(
+        "--color",
+        type=str,
+        default="hot",
+        help="Colormap to use for thermal video rendering (default: 'hot')",
+    )
+    parser.add_argument(
+        "--vmin",
+        type=float,
+        default=None,
+        help="Minimum temperature value for colormap scaling (optional)",
+    )
+    parser.add_argument(
+        "--vmax",
+        type=float,
+        default=None,
+        help="Maximum temperature value for colormap scaling (optional)",
+    )
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="Show preview to choose vmin/vmax interactively (overrides provided values)",
+    )
+    parser.add_argument(
+        "--max_frames",
+        type=int,
+        default=None,
+        help="Maximum frames to process per video (optional)",
+    )
+    parser.add_argument(
+        "--fps",
+        type=int,
+        default=30,
+        help="Output video FPS (default: 30)",
+    )
+
+    args = parser.parse_args()
+
+    # If preview is requested, launch gui, if not, check for input vmin/vmax, otherwise use auto-detection
+    process_directory(
+        folder_path=Path(args.folder_path),
+        out_path=Path(args.out_path),
+        color=args.color,
+        preview=args.preview,
+        max_frames=args.max_frames,
+        fps=args.fps,
+        vmin=args.vmin,
+        vmax=args.vmax,
+    )
