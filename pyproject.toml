@@ -50,6 +50,7 @@ dependencies = [
   "lpips",
   "scikit-image",
   "types-PyYAML",
+  "starbars",
 ]
 
 [tool.setuptools]                         # NEW
