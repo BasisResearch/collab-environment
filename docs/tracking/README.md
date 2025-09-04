@@ -190,8 +190,6 @@ Detection and Tracking is also compatible with [idtracker.ai](https://idtracker.
 
 ### Example Tracker Configuration for idtracker.ai
 
-To run idtracker.ai, use the `tracking_requirements.sh` file to set up the installation. Then run on the videos. 
-
 Below is an example configuration .toml for running tracking on a processed thermal video:
 
 ```python
