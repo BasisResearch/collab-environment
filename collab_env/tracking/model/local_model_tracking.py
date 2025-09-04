@@ -104,10 +104,9 @@ def track_objects(csv_path: Path) -> dict:
             for det in tracked:
                 x1, y1, x2, y2, track_id = det[:5]
                 cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
-                track_id = int(track_id)
-                if track_id not in track_history:
-                    track_history[str(track_id)] = []
-                track_history[str(track_id)].append((frame_idx, (cx, cy)))
+                if int(track_id) not in track_history:
+                    track_history[track_id] = []
+                track_history[track_id].append((frame_idx, (cx, cy)))
 
     return track_history
 
