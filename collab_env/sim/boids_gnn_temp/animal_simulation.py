@@ -354,7 +354,7 @@ def static_visualize_2sets(
     fig=None,
     ax=None,
     display_colorbar=True,
-    display_rectangle=True
+    display_rectangle=True,
 ):
     """
     overlay multiple frames of boids on top of each other.
@@ -381,7 +381,13 @@ def static_visualize_2sets(
     ax.set_ylim(-0.1, 1.1)
     if display_rectangle:
         rect = patches.Rectangle(
-            (0, 0), 1, 1, linewidth=1, edgecolor="k", facecolor=[0.9, 0.9, 0.9], alpha=0.1
+            (0, 0),
+            1,
+            1,
+            linewidth=1,
+            edgecolor="k",
+            facecolor=[0.9, 0.9, 0.9],
+            alpha=0.1,
         )
         ax.add_patch(rect)
     ax.set_xticks([])
@@ -445,7 +451,7 @@ def static_visualize_2sets(
                 scale_units="xy",
                 scale=quiver_scale,
             )
-    
+
     if display_colorbar:
         # sm = plt.cm.ScalarMappable(cmap=cmap1, norm=norm)
         sm2 = plt.cm.ScalarMappable(cmap=cmap2, norm=norm)
