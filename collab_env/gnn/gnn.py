@@ -653,10 +653,10 @@ def train_rules_gnn(
         debug_result_all[ep] = {}
 
         train_losses_by_batch = []  # train loss this epoch
-
+        num_batches = len(dataloader)
         for batch_idx, (position, species_idx) in enumerate(dataloader):
             # Only log every 10th batch to reduce noise
-            if batch_idx % 10 == 0 or batch_idx == len(dataloader) - 1:
+            if batch_idx % 10 == 0 or batch_idx == num_batches - 1:
                 train_logger.debug(
                     f"Epoch {ep + 1}/{epochs} | Processing batch {batch_idx + 1}/{len(dataloader)}"
                 )
