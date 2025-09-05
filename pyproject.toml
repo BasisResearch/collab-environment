@@ -51,6 +51,7 @@ dependencies = [
   "scikit-image",
   "types-PyYAML",
   "starbars",
+  "rich",
 ]
 
 [tool.setuptools]                         # NEW
