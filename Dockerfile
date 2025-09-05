@@ -1,7 +1,7 @@
 # Docker multi-stage build
 # syntax=docker/dockerfile:1
 # Build with the following commands:
-# docker build --platform=linux/amd64 --progress=plain -t tommybotch/collab-environment .
+# docker build --platform=linux/amd64 --progress=plain -t user/image_name .
 
 ARG UBUNTU_VERSION=22.04
 ARG NVIDIA_CUDA_VERSION=11.8.0
