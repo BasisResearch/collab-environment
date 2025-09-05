@@ -285,6 +285,9 @@ def identify_frames(pos, vel):
         .cpu()
         .numpy()
     )
+    if len(diff_ind) == 0:
+        logger.warning("No frames found for identification")
+        return np.array([])
     candidate_frames = np.unique(
         np.concatenate([(d - 2, d - 1, d, d + 1, d + 2, d + 3) for d in diff_ind])
     )
@@ -464,6 +467,9 @@ def run_gnn(
     if total_rollout > 0:
         frames = frames[:total_rollout]
 
+    p = None
+    v = None
+    a = None
     for frame_ind in range(
         len(frames) - 1
     ):  # range(Frame-1): #since we are predicting frame + 1, we have to stop 1 frame earlier
@@ -474,10 +480,6 @@ def run_gnn(
             frame_prev = frames[frame_ind - 1]
         frame_next = frames[frame_ind + 1]
 
-        # dummy initialization
-        a = acc[:, 0]
-        v = vel[:, 0]
-        p = pos[:, 0]
         # have to be this convoluted instead of a simple :(frame+1) because we will want to replace p,v,a with rollout predicted value.
         if frame == 0 or frame_prev != frame - 1:  # not continuous!
             past_p = pos[:, frame, :, :]  # include the current frame
@@ -488,6 +490,9 @@ def run_gnn(
             past_v = past_v[:, None, :, :]
             past_a = past_a[:, None, :, :]
         else:
+            assert p is not None
+            assert v is not None
+            assert a is not None
             past_p = torch.cat([past_p, p[:, None, :, :]], axis=1)
             past_v = torch.cat([past_v, v[:, None, :, :]], axis=1)
             past_a = torch.cat([past_a, a[:, None, :, :]], axis=1)
@@ -651,9 +656,10 @@ def train_rules_gnn(
 
         for batch_idx, (position, species_idx) in enumerate(dataloader):
             # Only log every 10th batch to reduce noise
-            train_logger.debug(
-                f"Epoch {ep + 1}/{epochs} | Processing batch {batch_idx + 1}/{len(dataloader)}"
-            )
+            if batch_idx % 10 == 0 or batch_idx == len(dataloader) - 1:
+                train_logger.debug(
+                    f"Epoch {ep + 1}/{epochs} | Processing batch {batch_idx + 1}/{len(dataloader)}"
+                )
 
             S, Frame, N, _ = position.shape
 

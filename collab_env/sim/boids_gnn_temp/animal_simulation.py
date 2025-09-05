@@ -344,7 +344,17 @@ def visualize_graph_2sets(
 
 
 def static_visualize_2sets(
-    p, v, p2, v2, starting_frame=0, rollout_starting_frame=5, ending_frame=None, fig = None, ax = None
+    p,
+    v,
+    p2,
+    v2,
+    starting_frame=0,
+    rollout_starting_frame=5,
+    ending_frame=None,
+    fig=None,
+    ax=None,
+    display_colorbar=True,
+    display_rectangle=True
 ):
     """
     overlay multiple frames of boids on top of each other.
@@ -361,17 +371,19 @@ def static_visualize_2sets(
 
     # Create the figure and axes
     fig, ax = plt.subplots(figsize=(6, 5)) if fig is None else (fig, ax)
-    divider = make_axes_locatable(ax)
-    # cax = divider.append_axes('right', size='5%', pad=0.1)
-    cax2 = divider.append_axes("right", size="5%", pad=0.2)
+    if display_colorbar:
+        divider = make_axes_locatable(ax)
+        # cax = divider.append_axes('right', size='5%', pad=0.1)
+        cax2 = divider.append_axes("right", size="5%", pad=0.2)
 
     # Set plot limits
     ax.set_xlim(-0.1, 1.1)
     ax.set_ylim(-0.1, 1.1)
-    rect = patches.Rectangle(
-        (0, 0), 1, 1, linewidth=1, edgecolor="k", facecolor=[0.9, 0.9, 0.9], alpha=0.1
-    )
-    ax.add_patch(rect)
+    if display_rectangle:
+        rect = patches.Rectangle(
+            (0, 0), 1, 1, linewidth=1, edgecolor="k", facecolor=[0.9, 0.9, 0.9], alpha=0.1
+        )
+        ax.add_patch(rect)
     ax.set_xticks([])
     ax.set_xticklabels([])
     ax.set_yticks([])
@@ -433,11 +445,12 @@ def static_visualize_2sets(
                 scale_units="xy",
                 scale=quiver_scale,
             )
-
-    # sm = plt.cm.ScalarMappable(cmap=cmap1, norm=norm)
-    sm2 = plt.cm.ScalarMappable(cmap=cmap2, norm=norm)
-    # fig.colorbar(sm, cax=cax, orientation='vertical',label='frames (true)')
-    fig.colorbar(sm2, cax=cax2, orientation="vertical", label="frames (rollout)")
+    
+    if display_colorbar:
+        # sm = plt.cm.ScalarMappable(cmap=cmap1, norm=norm)
+        sm2 = plt.cm.ScalarMappable(cmap=cmap2, norm=norm)
+        # fig.colorbar(sm, cax=cax, orientation='vertical',label='frames (true)')
+        fig.colorbar(sm2, cax=cax2, orientation="vertical", label="frames (rollout)")
 
     # plt.show()
     return ax
