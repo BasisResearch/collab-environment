@@ -7,6 +7,7 @@ from gymnasium import spaces
 
 # from Boids.sim_utils import calc_angles
 from loguru import logger
+from scipy.spatial import cKDTree as KDTree
 
 from collab_env.data.file_utils import get_project_root, expand_path
 from collab_env.sim.boids.sim_utils import get_submesh_indices_from_ply
@@ -71,6 +72,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         color_tracks_by_time=False,
         number_track_color_groups=1,
         track_color_rate=4,
+        kd_workers=1, # 1 seems to work better than -1 on Macbook Pro M4 MAX
     ):
         if target_mesh_color is None:
             target_mesh_color = [1, 0, 1]
@@ -154,6 +156,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.terminated = False
         self.truncated = False
         self.raycasting_scene = None
+        self.kd_workers = kd_workers
 
         """
         -- 081225 3:58PM
@@ -173,11 +176,13 @@ class BoidsWorldSimpleEnv(gym.Env):
         #
         self.num_submesh_targets = 0
         self.submesh_vertex_indices = []
+        self.submesh_kdtree = []
         self.submesh_vertices = []
         if self.target_mesh_file is not None:
             self.num_submesh_targets = len(self.target_mesh_file)
             self.submesh_target = True
             self.submesh_vertices = [None] * self.num_submesh_targets
+            self.submesh_kdtree = [None] * self.num_submesh_targets
             for t in range(self.num_submesh_targets):
                 logger.debug(f"target mesh file {self.target_mesh_file[t]}")
                 self.submesh_vertex_indices.append(
@@ -474,9 +479,25 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         """
 
-        d, c = self.compute_distance_and_closest_points_to_vertices(
-            self.submesh_vertices, self._agent_location
+        # d_v, c_v = self.compute_distance_and_closest_points_to_vertices(
+        #      self.submesh_vertices, self._agent_location
+        # )
+
+        d, c = self.compute_distance_and_closest_points_to_vertices_kdtree(
+             self.submesh_vertices, self.submesh_kdtree, self._agent_location
         )
+
+        '''
+        -- 090625 7:20PM 
+        Tested kdtree to make sure it matched the norm calculation, which it does with negligible 
+        numerical differences. 
+        '''
+        # diff_d = d - d_v
+        # indices = np.nonzero(diff_d)
+        # diff_c = c[indices]
+        # diff_cv = c_v[indices]
+        # logger.debug(f'diff c:\n {diff_c}')
+        # logger.debug(f'diff c_v:\n {diff_cv}')
         """
         -- 082425 1:15PM
         These are now coming back as lists, so no need to force that here. 
@@ -485,11 +506,13 @@ class BoidsWorldSimpleEnv(gym.Env):
         closest_points = np.array(c)
         distances = np.array(distances).transpose()
 
-        logger.debug(f"dist {distances}")
-        logger.debug(f"dist shape {distances.shape}")
+        # logger.debug(f"dist {distances}")
+        # logger.debug(f"dist shape {distances.shape}")
+
         closest_points = np.array(closest_points).transpose((1, 0, 2))
-        logger.debug(f"points {closest_points}")
-        logger.debug(f"points shape {closest_points.shape}")
+
+        # logger.debug(f"points {closest_points}")
+        # logger.debug(f"points shape {closest_points.shape}")
 
         return distances, closest_points
 
@@ -1334,6 +1357,46 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.box_line_set.colors = open3d.utility.Vector3dVector(colors)
         self.vis.add_geometry(self.box_line_set)
 
+    def compute_distance_and_closest_points_to_vertices_kdtree(
+        self,
+        submesh_vertices,
+        submesh_kdtree,
+        locations,
+    ):
+        """
+
+        Args:
+            submesh_vertices:
+            submesh_kdtree:
+            locations:
+
+        Returns:
+
+        """
+
+        distances = np.zeros((self.num_submesh_targets, len(locations)))
+        closest_points = np.zeros((self.num_submesh_targets, len(locations), 3))
+
+        for t in range(self.num_submesh_targets):
+            logger.debug(f"t: {t}")
+            dist_kd, closest_indices = submesh_kdtree[t].query(locations, workers=self.kd_workers)
+            logger.debug(f"distances[t] shape: {distances[t].shape}")
+            logger.debug(f"dist_kd shape: {dist_kd.shape}")
+            logger.debug(f"closest indices shape: {closest_indices.shape}")
+            # logger.debug(f'closest indices: {closest_indices}')
+            logger.debug(f"closest points shape: {closest_points[t].shape}")
+            logger.debug(f"submesh_vertices[t] shape: {submesh_vertices[t].shape}")
+            logger.debug(
+                f"submesh_vertices[t][closest_indices] shape: {submesh_vertices[t][closest_indices].shape}"
+            )
+            # closest_points[t] = np.squeeze(submesh_vertices[t][closest_indices], axis=1)
+            # scipy doesn't require the squeeze, sklearn KDTree does.
+            closest_points[t] = submesh_vertices[t][closest_indices]
+            logger.debug(f"closest points: {closest_points[t]}")
+            # distances[t] = np.squeeze(dist_kd, axis=1)
+            distances[t] = dist_kd
+        return distances, closest_points
+
     def compute_distance_and_closest_points_to_vertices(
         self,
         submesh_vertices,
@@ -1838,6 +1901,10 @@ class BoidsWorldSimpleEnv(gym.Env):
                     self.submesh_vertices[t] = np.array(self.mesh_scene.vertices)[
                         vertex_mask
                     ]  # + mesh.get_center()
+                    """
+                    -- 090625 4:39PM 
+                    """
+                    self.submesh_kdtree[t] = KDTree(self.submesh_vertices[t])
 
         if self.show_box:
             self.add_box()
