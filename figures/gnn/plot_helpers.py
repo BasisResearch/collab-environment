@@ -5,6 +5,8 @@ import numpy as np
 from collab_env.data.file_utils import expand_path, get_project_root
 from collab_env.gnn.gnn import debug_result2prediction
 from collab_env.gnn.utility import handle_discrete_data
+import networkx as nx
+import matplotlib.pyplot as plt
 
 BIRD_NUM = 20
 
@@ -252,3 +254,71 @@ def mean_trace_B(del_v, acc_):
     sd = np.array(sd)
 
     return bins, mean, sd
+
+def plot_weighted_graph(pos, adj_matrix, ax = None, boid = None):
+    """
+    Plots a graph with nodes at given positions and edge thickness 
+    proportional to edge weight.
+
+    Args:
+        pos (dict): A dictionary where keys are node indices and values are 
+                    (x, y) coordinates.
+        adj_matrix (np.ndarray): An N x N adjacency matrix where the value 
+                                 at [i][j] is the weight of the edge between 
+                                 node i and node j.
+    """
+    G = nx.Graph()
+    N = len(pos)
+
+    # Add nodes to the graph
+    G.add_nodes_from(pos.keys())
+
+    # Add weighted edges from the adjacency matrix
+    if boid is None:
+        boids_to_consider = np.arange(N)
+    else:
+        boids_to_consider = boid
+    for i in boids_to_consider:
+        adj_matrix[:, i] = adj_matrix[:, i] / np.nanmax(adj_matrix[:, i])
+        for j in range(N):
+            if j == i:
+                continue
+            weight = adj_matrix[j, i]
+            #if weight > 0.1:
+            G.add_edge(i, j, weight=np.round(weight,2))
+    
+    # Get edge weights for plotting
+    edgelist = [(u, v) for u, v in G.edges()]
+    weights = [G[u][v]['weight'] for u, v in G.edges()]
+
+    # Scale the weights to make the thickness more visible
+    scaled_weights = [w*3 for w in weights]
+
+    # Different transparency for each edge
+    edge_alphas = [w/2 for w in weights]
+
+    # Draw the graph
+    if ax is None:
+        fig, ax = plt.subplots(nrows=1, ncols=1, figsize=(8, 8))
+    
+    nx.draw_networkx_nodes(
+            G,
+            pos,
+            ax=ax,
+            node_color='skyblue',
+            node_size=5,
+        )
+    nx.draw_networkx_edges(G, pos, ax=ax, edgelist=edgelist, alpha=edge_alphas, width=scaled_weights,)
+
+    # Create a dictionary of edge labels
+    edge_labels = nx.get_edge_attributes(G, 'weight')
+    
+    # Draw the edge labels
+    #nx.draw_networkx_edge_labels(G, pos, ax=ax, edge_labels=edge_labels, font_color='black')
+    
+    # Draw node labels
+    nx.draw_networkx_labels(G, pos, ax=ax, font_size=10, font_color='black')
+    
+    #plt.title("Graph with Edge Thickness Based on Weight", fontsize=16)
+    #plt.savefig('graph_plot.png')
+    plt.show()

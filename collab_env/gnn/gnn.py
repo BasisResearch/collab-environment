@@ -11,6 +11,9 @@ from collab_env.data.file_utils import expand_path, get_project_root
 from loguru import logger
 from torch_geometric.data import Data, Batch
 from itertools import groupby
+from collab_env.gnn.feature import (node_feature_vel, node_feature_vel_pos, node_feature_vel_pos_plus,
+                                    node_feature_vel_plus_pos_plus, node_feature_vel_pos_sinusoidal)
+from captum.attr import IntegratedGradients, Saliency
 
 
 def build_single_graph_edges(positions, visual_range):
@@ -87,120 +90,6 @@ def build_pyg_batch(
     # Create PyG batch - this handles edge index offsetting automatically
     batch = Batch.from_data_list(data_list)
     return batch
-
-
-def node_feature_vel(past_p, past_v, past_a, species_idx, species_dim):
-    """
-    Only has the agent velocities and position as feature.
-    """
-    init_p = past_p[:, -1, :, :]
-    init_v = past_v[:, -1, :, :]
-    S, N, dim = init_p.shape
-
-    # Flatten
-    x_vel = init_v.contiguous().view(S * N, dim)
-    x_pos = init_p.contiguous().view(S * N, dim)
-    x_pos_boundary = torch.maximum(
-        1 - x_pos, torch.ones_like(x_pos) * 0.5
-    )  # as in Allen et al., CoRL 2022
-    x_species = species_idx.contiguous().view(S * N)
-    species_onehot = functional.one_hot(x_species, num_classes=species_dim).float()
-    x_input = torch.cat(
-        [x_vel, x_pos_boundary, species_onehot], dim=-1
-    )  # [S*N, in_node_dim]
-
-    return x_input
-
-
-def node_feature_vel_pos(past_p, past_v, past_a, species_idx, species_dim):
-    """
-    Only has the agent velocities and position as feature.
-    """
-    init_p = past_p[:, -1, :, :]
-    init_v = past_v[:, -1, :, :]
-    S, N, dim = init_p.shape
-
-    # Flatten
-    x_vel = init_v.contiguous().view(S * N, dim)
-    x_pos = init_p.contiguous().view(S * N, dim)
-    x_pos_boundary = torch.maximum(
-        1 - x_pos, torch.ones_like(x_pos) * 0.5
-    )  # as in Allen et al., CoRL 2022
-    x_species = species_idx.contiguous().view(S * N)
-    species_onehot = functional.one_hot(x_species, num_classes=species_dim).float()
-    x_input = torch.cat(
-        [x_vel, x_pos, x_pos_boundary, species_onehot], dim=-1
-    )  # [S*N, in_node_dim]
-
-    return x_input
-
-
-def node_feature_vel_pos_plus(
-    past_p, past_v, past_a, species_idx, species_dim, past_time=3
-):
-    """
-    Only has the agent velocities and position as feature.
-    """
-    init_v = past_v[:, -1, :, :]
-    S, F, N, dim = past_p.shape
-    past_p = past_p[:, -past_time:, :, :]
-    past_p = torch.permute(past_p, [0, 2, 1, 3])
-
-    # Flatten
-    x_vel = init_v.contiguous().view(S * N, dim)
-    x_pos = past_p.contiguous().view((S * N, past_time * dim))
-    x_pos_boundary = torch.maximum(
-        1 - x_pos, torch.ones_like(x_pos) * 0.5
-    )  # as in Allen et al., CoRL 2022
-    x_species = species_idx.contiguous().view(S * N)
-    species_onehot = functional.one_hot(x_species, num_classes=species_dim).float()
-    x_input = torch.cat(
-        [x_vel, x_pos, x_pos_boundary, species_onehot], dim=-1
-    )  # [S*N, in_node_dim]
-
-    # del x_vel
-    # del x_pos
-    # del x_pos_boundary
-    # del species_onehot
-
-    return x_input
-
-
-def node_feature_vel_plus_pos_plus(
-    past_p, past_v, past_a, species_idx, species_dim, past_time=3
-):
-    """
-    Only has the agent velocities and position as feature.
-    """
-
-    S, F, N, dim = past_p.shape
-    past_p = past_p[:, -past_time:, :, :]
-    past_p = torch.permute(past_p, [0, 2, 1, 3])
-
-    S, F, N, _ = past_v.shape
-    past_v = past_v[:, -past_time:, :, :]
-    past_v = torch.permute(past_v, [0, 2, 1, 3])
-
-    # Flatten
-    x_vel = past_v.contiguous().view((S * N, past_time * dim))
-    x_pos = past_p.contiguous().view((S * N, past_time * dim))
-    x_pos_boundary = torch.maximum(
-        1 - x_pos, torch.ones_like(x_pos) * 0.5
-    )  # as in Allen et al., CoRL 2022
-
-    x_species = species_idx.contiguous().view(S * N)
-    species_onehot = functional.one_hot(x_species, num_classes=species_dim).float()
-
-    x_input = torch.cat(
-        [x_vel, x_pos, x_pos_boundary, species_onehot], dim=-1
-    )  # [S*N, in_node_dim]
-
-    # del x_vel
-    # del x_pos
-    # del x_pos_boundary
-    # del species_onehot
-
-    return x_input
 
 
 def clip_acc(a, clip=1):
@@ -373,6 +262,63 @@ def run_gnn_frame_pyg(model, pyg_batch, v_minushalf, delta_t, device=None):
 
     return pred_pos, pred_vel, pred_acc, pred_vplushalf, W
 
+def run_gnn_frame_pyg_attribute(model, pyg_batch, v_minushalf, delta_t, device=None,
+                                method = "saliency"):
+    """
+    Run GNN forward pass using PyTorch Geometric batch and also attribute input features.
+
+    model: GNN model
+    pyg_batch: PyG Batch object with x, edge_index, batch
+    v_minushalf: v_{t-1/2}, used only for Leapfrog integration
+    delta_t: discrete time
+    device: compute device
+
+    Returns: pred_pos, pred_vel, pred_acc, pred_vplushalf, W
+    """
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    pyg_batch = pyg_batch.to(device)
+
+    node_prediction = model.node_prediction
+    prediction_integration = model.prediction_integration
+
+    # Forward pass - PyG handles batching automatically!
+    input_features = pyg_batch.x.requires_grad_(True)
+
+    #pred, W = model(pyg_batch.x, pyg_batch.edge_index, pyg_batch.edge_attr.squeeze(-1))
+
+    # loop through nodes
+    B = pyg_batch.batch.max().item() + 1
+    N = pyg_batch.batch.bincount()[0].item()  # Nodes per graph
+    all_attributions = [] 
+    #print("Starting to attribute")
+    for node_idx in range(B * N):
+        #print(f"...attributing node {node_idx}...")
+        all_attributions_tmp = torch.zeros_like(input_features)
+        for dim_idx in range(2):  # x and y acceleration
+            def target_forward_fn(x):
+                pyg_batch_copy = pyg_batch.clone()
+                pyg_batch_copy.x = x
+                pred, _ = model(pyg_batch_copy.x, pyg_batch_copy.edge_index, 
+                                  pyg_batch_copy.edge_attr.squeeze(-1))
+                return pred[node_idx, dim_idx].unsqueeze(0)
+            
+            if "saliency" in method:
+                ig = Saliency(target_forward_fn)
+                input_features_attr = ig.attribute(input_features)
+            else:
+                ig = IntegratedGradients(target_forward_fn)
+                input_features_attr = ig.attribute(input_features,
+                                              n_steps=100,
+                                              return_convergence_delta=False)
+            all_attributions_tmp += input_features_attr
+        all_attributions.append(all_attributions_tmp.detach().cpu())
+
+    attributions = torch.mean(torch.vstack(all_attributions), axis = 0)
+
+    return attributions
+
 
 def run_gnn(
     model,
@@ -391,6 +337,7 @@ def run_gnn(
     rollout_everyother=-1,
     ablate_boid_interaction=False,
     collect_debug=True,
+    run_attribute = 0,
 ):
     """
     This functions calls run_gnn_frame()
@@ -422,6 +369,8 @@ def run_gnn(
 
     batch_loss = 0
     delta_t = 1
+
+    frame_attributions = []
 
     S, Frame, N, _ = position.shape
 
@@ -457,6 +406,8 @@ def run_gnn(
         node_feature = node_feature_vel_pos_plus
     elif node_feature_function_name == "vel_plus_pos_plus":
         node_feature = node_feature_vel_plus_pos_plus
+    elif "sinu" in node_feature_function_name:
+        node_feature = node_feature_vel_pos_sinusoidal
     else:
         raise ValueError(f"Unknown node feature function: {node_feature_function_name}")
 
@@ -527,9 +478,14 @@ def run_gnn(
         (pred_pos, pred_vel, pred_acc, pred_vplushalf, W) = run_gnn_frame_pyg(
             model, pyg_batch, vminushalf, delta_t, device
         )
-        # print("pred_pos.shape", pred_pos.shape)
-        # print("target_pos.shape", target_pos.shape)
-        # print("pred_pos.shape", pred_pos.shape)
+        if run_attribute == 1:
+            attributions = run_gnn_frame_pyg_attribute(
+                model, pyg_batch, vminushalf, delta_t, device, method = "integrated")
+        elif run_attribute == 2:
+            attributions = run_gnn_frame_pyg_attribute(
+                model, pyg_batch, vminushalf, delta_t, device, method = "saliency")
+
+            frame_attributions.append(attributions)
 
         # Loss
         edge_index, edge_weight = W
@@ -592,7 +548,8 @@ def run_gnn(
     # del vminushalf
     # del v_function
     # gc.collect()
-
+    if run_attribute:
+        return batch_loss, debug_result, model, frame_attributions
     return batch_loss, debug_result, model
 
 
@@ -617,6 +574,7 @@ def train_rules_gnn(
     val_dataloader=None,
     early_stopping_patience=10,
     min_delta=1e-6,
+    run_attribute = False,
 ):
     if train_logger is None:
         train_logger = logger
@@ -625,6 +583,7 @@ def train_rules_gnn(
     model = model.to(device)
 
     debug_result_all = {}
+    attribution_all = {}
 
     train_losses = []  # train loss by epoch
     val_losses = []  # validation loss by epoch
@@ -644,6 +603,7 @@ def train_rules_gnn(
         train_logger.debug("rolling out...")
         full_frames = True
 
+
     for ep in range(epochs):
         torch.cuda.empty_cache()
 
@@ -651,6 +611,7 @@ def train_rules_gnn(
         train_logger.debug(f"Starting epoch {ep + 1}/{epochs}")
 
         debug_result_all[ep] = {}
+        attribution_all[ep] = {}
 
         train_losses_by_batch = []  # train loss this epoch
         num_batches = len(dataloader)
@@ -663,7 +624,8 @@ def train_rules_gnn(
 
             S, Frame, N, _ = position.shape
 
-            (loss, debug_result_all[ep][batch_idx], model) = run_gnn(
+            if run_attribute:
+                (loss, debug_result_all[ep][batch_idx], model, attribution_all[ep][batch_idx]) = run_gnn(
                 model,
                 position,
                 species_idx,
@@ -679,7 +641,27 @@ def train_rules_gnn(
                 rollout_everyother=rollout_everyother,
                 ablate_boid_interaction=ablate_boid_interaction,
                 collect_debug=collect_debug,
-            )
+                run_attribute=run_attribute,
+                )
+            else:
+                (loss, debug_result_all[ep][batch_idx], model) = run_gnn(
+                    model,
+                    position,
+                    species_idx,
+                    species_dim,
+                    visual_range=visual_range,
+                    sigma=sigma,
+                    device=device,
+                    training=training,
+                    lr=lr,
+                    full_frames=full_frames,
+                    rollout=rollout,
+                    total_rollout=total_rollout,
+                    rollout_everyother=rollout_everyother,
+                    ablate_boid_interaction=ablate_boid_interaction,
+                    collect_debug=collect_debug,
+                    run_attribute=run_attribute,
+                )
 
             train_losses_by_batch.append(loss)
 
@@ -712,6 +694,7 @@ def train_rules_gnn(
                         rollout_everyother=rollout_everyother,
                         ablate_boid_interaction=ablate_boid_interaction,
                         collect_debug=False,
+                        run_attribute=False,
                     )
                     val_losses_by_batch.append(val_loss)
 
@@ -749,7 +732,9 @@ def train_rules_gnn(
         train_logger.info(
             f"Restored best model with validation loss: {best_val_loss:.4f}"
         )
-
+    
+    if run_attribute:
+        return np.array(train_losses), model, debug_result_all, attribution_all
     return np.array(train_losses), model, debug_result_all
 
 
@@ -876,7 +861,7 @@ def get_output_adjcency_from_debug_batch(
                     W_out[file_id].append(W_by_file[_])
 
                 """input W"""
-                pos = debug_result[epoch_num][batch_ind]["actual"][frame]
+                pos = debug_result[epoch_num][batch_ind]["predicted"][np.max([0,frame-1])]
                 pos = torch.tensor(pos)
                 for file_ind in range(pos.shape[0]):
                     edge_index_input = build_single_graph_edges(
@@ -1027,17 +1012,18 @@ def load_model(name, folder, file_name):
     return gnn_model, model_spec, train_spec
 
 
-def save_model(model, model_spec, train_spec, file_name):
+def save_model(model, model_spec, train_spec, file_name, data_name):
+    folder = f"trained_models/runpod/{data_name}/trained_models"
     # model weights
     model_output = expand_path(
-        f"trained_models/{file_name}.pt",
+        f"{folder}/{file_name}.pt",
         get_project_root(),
     )
     torch.save(model.state_dict(), model_output)
 
     # model specs
     model_spec_path = expand_path(
-        f"trained_models/{file_name}_model_spec.pkl",
+        f"{folder}/{file_name}_model_spec.pkl",
         get_project_root(),
     )
     with open(model_spec_path, "wb") as f:  # 'wb' for write binary
@@ -1045,7 +1031,7 @@ def save_model(model, model_spec, train_spec, file_name):
 
     # training specs
     train_spec_path = expand_path(
-        f"trained_models/{file_name}_train_spec.pkl",
+        f"{folder}/{file_name}_train_spec.pkl",
         get_project_root(),
     )
     with open(train_spec_path, "wb") as f:  # 'wb' for write binary

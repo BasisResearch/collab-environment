@@ -71,9 +71,17 @@ def update_boids_with_food(boids, width, height, species_configs):
         b["x"] += b["dx"]
         b["y"] += b["dy"]
 
+def perturb_initial_velocity(boids, width, height, sigma = 0.005):
+
+    for b in boids:
+        noise = np.random.normal(0, sigma, 2)  # for 2-dimensions
+        b["dx"] += noise[0] * width
+        b["dy"] += noise[1] * height
+
+    return boids
 
 def init_multi_species_boids(
-    species_configs, species_counts, width, height, velocity_scale=10, seed=2025
+    species_configs, species_counts, width, height, velocity_scale=10,
 ):
     boids = []
     for species, count in species_counts.items():
@@ -89,8 +97,6 @@ def init_multi_species_boids(
             )
             continue
         for _ in range(count):
-            np.random.seed(2 * seed + _)
-            random.seed(2 * seed + _)
             boids.append(
                 {
                     "x": random.random() * width,

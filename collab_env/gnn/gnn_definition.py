@@ -2,8 +2,9 @@
 
 import torch
 import torch.nn.functional as functional
-from torch_geometric.nn import GCNConv, GATConv
+from torch_geometric.nn import GCNConv, GATConv 
 from torch_geometric.nn.inits import glorot, zeros
+from torch_geometric.nn.norm import LayerNorm
 from torch.nn import Parameter
 
 
@@ -111,6 +112,69 @@ def permute_second_dim(t):
     t_perm = Parameter(t_perm)
     return t_perm
 
+class GNN_residual(GNN):
+    """
+    inherits all functionality from GNN class but with a residual layer
+    """
+    def __init__(
+        self,
+        model_name,
+        in_node_dim,
+        node_feature_function,
+        node_prediction,
+        input_differentiation="finite",  # or "spline"
+        prediction_integration="Euler",  # or "Leapfrog"
+        start_frame=0,
+        heads=1,
+        hidden_dim=128,
+        output_dim=2,
+        alpha = 0.1, #0.1 residual + 0.9 GNN output
+    ):
+        super().__init__()
+
+        # layer norm, not used in GNN() forward, but used in subclass GNN_residual() forward
+        self.norm = LayerNorm(hidden_dim * heads) #mean/var across nodes!
+        self.norm_singlehead = LayerNorm(hidden_dim) #mean/var across nodes!
+        self.residual_linear = torch.nn.Linear(hidden_dim * heads, hidden_dim)
+        self.alpha = alpha
+
+
+    def forward(self, x, edge_index, edge_weight):
+        """
+        x:          [B*N, in_node_dim] node features (velocities + node position + species)
+        edge_index: [2, E]             edge list built from visual neighborhood
+        Returns:    [B*N, 2]           acceleration per boid
+        """
+        # the 1st layer is a graph attention network.
+        x = x.float()
+        if edge_weight is not None:
+            edge_weight = (
+                edge_weight.float()
+            )  # all input needs to be the same precision.
+        h_tmp, W = self.gatn(
+            x, edge_index, edge_attr=edge_weight, return_attention_weights=True
+        )
+        (edge_index, edge_weight) = W
+        h = functional.relu(h_tmp)
+
+        # residual
+        h_res = self.gatn.lin(x) #get the linear layer inside
+        h = (1-self.alpha) * h + self.alpha * h_res
+
+        # layer normal
+        h = self.norm(h)
+
+        # the 2nd layer is simple convolutional later.
+        # Note that we use the updated graph from the attention network
+        h_out = functional.relu(self.gcn2(h, edge_index, torch.mean(edge_weight, 1)))
+
+        # residual connection
+        h_out = (1-self.alpha) * h_out + self.alpha * self.residual_linear(h)
+
+        # layer norm
+        h_out = self.norm_singlehead(h_out)
+
+        return self.out(h_out), W
 
 class Lazy(torch.nn.Module):
     """In this lazy network,

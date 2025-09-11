@@ -7,6 +7,8 @@ import matplotlib.animation as animation
 import matplotlib as mpl
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 import matplotlib.patches as patches
+from figures.gnn.plot_helpers import plot_weighted_graph
+import copy
 
 
 class AnimalTrajectoryDataset(Dataset):
@@ -69,6 +71,84 @@ class AnimalTrajectoryDataset(Dataset):
             torch.tensor(p, dtype=torch.float32),  # [N, 2]
             torch.tensor(sp, dtype=torch.long),  # [N]
         )
+
+class PerturbedTrajectoryDataset(Dataset):
+    def __init__(
+        self,
+        init_fn,
+        perturb_fn, # function to perturb initial consitions
+        perturb_args, 
+        update_fn,  # initialization of the animals, # updating of the animals
+        species_configs,
+        width,
+        height,
+        steps=800,
+        num_samples=1000,
+        num_perturb_per_sample = 20,
+        velocity_scale=10,
+        seed=2025,
+    ):
+        """
+        Instead of N random initial conditions, we have just N/20, each with a 20 different perturbation.
+
+        species_configs: dictionary of dictionary. 1st layer of keys: spieces; 2nd layer: parameters
+            different spieces shall have the same set of parameters but with different numerical values.
+        species_counts: dictionary of species:count
+
+        Returns:
+        initial position, N (num of total boids across all spieces) x 2
+        initial speed, N (num of total boids across all spieces) x 2
+        future positions, step x N (num of total boids across all spieces) x 2
+        spieces labels, N
+        """
+        self.width = width
+        self.height = height
+        self.sequences = []
+
+        species_counts = {
+            i: species_configs[i]["counts"] for i in species_configs.keys()
+        }
+        self.species_to_idx = {s: i for i, s in enumerate(species_counts.keys())}
+        self.N = sum(species_counts.values())
+
+        num_initialization = int(np.floor(num_samples / num_perturb_per_sample))
+
+        perturb_args["width"] = width
+        perturb_args["height"] = height
+
+        for i in range(num_initialization):  # loop through number of videos
+            boids = init_fn(
+                species_configs, species_counts, width, height, velocity_scale
+            )
+
+            for j in range(num_perturb_per_sample):
+                boids_j = copy.deepcopy(boids)
+
+                boids_j = perturb_fn(boids_j, **perturb_args)
+
+                traj = []
+
+                for t in range(steps):
+                    pos = np.array([[b["x"], b["y"]] for b in boids_j], dtype=np.float32)
+                    vel = np.array([[b["dx"], b["dy"]] for b in boids_j], dtype=np.float32)
+
+                    traj.append((pos, vel))
+                    update_fn(boids_j, width, height, species_configs)
+
+                positions = np.stack([p for (p, _) in traj]) / [width, height]
+                species = [self.species_to_idx[b["species"]] for b in boids_j]
+                self.sequences.append((positions, species))
+
+    def __len__(self):
+        return len(self.sequences)
+
+    def __getitem__(self, idx):
+        p, sp = self.sequences[idx]
+        return (
+            torch.tensor(p, dtype=torch.float32),  # [N, 2]
+            torch.tensor(sp, dtype=torch.long),  # [N]
+        )
+
 
 
 def visualize_pair(p1, p2, v1=None, v2=None, starting_frame=0, label=None):
@@ -245,12 +325,13 @@ def visualize_graph_2sets(
     v2,
     starting_frame=0,
     ending_frame=None,
-    file_id=0,
-    model=None,
-    device=None,
+    adj = None,
+    plot_node = None,
+    #save_path = None,
+    title = None,
+    food_source = None,
 ):
     """ """
-    model = model.to(device) if model else None
 
     p0 = p[starting_frame]
     p0_2 = p2[starting_frame]
@@ -266,6 +347,10 @@ def visualize_graph_2sets(
     ax.set_xlim(0, 1)
     ax.set_ylim(0, 1)
     quiver_scale = 10
+
+    if food_source is not None:
+        disk = plt.Circle(food_source, 0.05, color='gold', alpha=0.6)
+    
 
     # Initialization function: plot the background of each frame
     def init():
@@ -292,6 +377,13 @@ def visualize_graph_2sets(
                 scale_units="xy",
                 scale=quiver_scale,
             )
+        
+        if food_source is not None:
+            # Add the disk patch to the axes
+            ax.add_patch(disk)
+        
+        ax.set_xticks([])
+        ax.set_yticks([])
 
         # ax.plot([pos[0]+vel[0],pos[0]+vel[0]],[pos[0]+vel[0],pos[0]+vel[0]])
 
@@ -322,7 +414,20 @@ def visualize_graph_2sets(
                 scale_units="xy",
                 scale=quiver_scale,
             )
-        ax.set_title("Frame" + str(i))
+        ax.set_title(title + "\nFrame" + str(i))
+        ax.set_xticks([])
+        ax.set_yticks([])
+        
+        if adj is not None:
+            print("here")
+            pos_dict = {}
+            for n in range(p2.shape[1]):
+                pos_dict[n] = (p2[i, n, 0], p2[i, n, 1])
+            plot_weighted_graph(pos_dict, adj[i], ax, plot_node)
+
+        if food_source is not None:
+            # Add the disk patch to the axes
+            ax.add_patch(disk)
 
     if ending_frame is None:
         ending_frame = p.shape[0] - 1
@@ -335,6 +440,7 @@ def visualize_graph_2sets(
         repeat=False,
         blit=False,
     )
+
 
     # To save the animation as a GIF (requires ImageMagick or Pillow)
     # ani.save('flocking_test.gif', writer='imagemagick', fps=30)
@@ -355,6 +461,7 @@ def static_visualize_2sets(
     ax=None,
     display_colorbar=True,
     display_rectangle=True,
+    title = None
 ):
     """
     overlay multiple frames of boids on top of each other.
@@ -370,7 +477,7 @@ def static_visualize_2sets(
     # N = p.shape[1]
 
     # Create the figure and axes
-    fig, ax = plt.subplots(figsize=(6, 5)) if fig is None else (fig, ax)
+    fig, ax = plt.subplots(figsize=(6, 5)) if ax is None else (fig, ax)
     if display_colorbar:
         divider = make_axes_locatable(ax)
         # cax = divider.append_axes('right', size='5%', pad=0.1)

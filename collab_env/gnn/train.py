@@ -14,15 +14,24 @@ from datetime import datetime
 import argparse
 from loguru import logger
 import pickle
+from torch.utils.data import Subset
 
 # Add project paths
-# current_dir = Path(__file__).parent
-# project_root = current_dir.parent.parent
-# sys.path.insert(0, str(project_root))
+#current_dir = Path(__file__).parent
+#project_root = current_dir.parent.parent
+#sys.path.insert(0, str(project_root))
+import sys
+import os
+script_path = os.path.realpath(os.path.dirname(__name__))
+os.chdir(script_path)
+sys.path.append("/workspace/collab-environment/")
+sys.path.append("/workspace/collab-environment/collab_env")
+sys.path.append("/workspace/collab-environment/collab_env/data/boids")
 
 from collab_env.gnn.gnn import train_rules_gnn, save_model
-from collab_env.gnn.gnn_definition import GNN, Lazy
+from collab_env.gnn.gnn_definition import GNN, Lazy, GNN_residual
 from collab_env.gnn.utility import dataset2testloader
+from torch_geometric.loader import DataLoader
 from collab_env.data.file_utils import expand_path, get_project_root
 
 
@@ -52,6 +61,8 @@ def worker_wrapper(params):
             rollout,
             total_rollout,
             ablate,
+            feature,
+            run_attribute,
         ) = params
 
         # Set CUDA_VISIBLE_DEVICES in this process before CUDA is initialized
@@ -112,6 +123,8 @@ def train_single_config(params):
         rollout,
         total_rollout,
         ablate,
+        feature,
+        run_attribute
     ) = params
 
     # Determine device and worker label
@@ -213,7 +226,12 @@ def train_single_config(params):
         worker_logger.debug(f"Rolling out or not: {rollout}")
 
         # Create model
-        in_node_dim = 20 if "food" in data_name else 19
+        if "sin" in model_name or "sin" in feature:
+            in_node_dim = 93
+        else:
+            in_node_dim = 19
+        if "food" in data_name:
+            in_node_dim += 1
 
         worker_logger.debug(f"Creating model {model_name}")
 
@@ -229,10 +247,34 @@ def train_single_config(params):
             model = Lazy(**model_spec)
             lr = None
             training = False
-        else:
+        elif "residual" in model_name:
+            node_feature_function = ""
+            if "sin" in model_name or "sin" in feature:
+                node_feature_function = "sinusoid"
+            else:
+                node_feature_function = "vel_plus_pos_plus"
             model_spec = {
-                "model_name": "vpluspplus_a",
-                "node_feature_function": "vel_plus_pos_plus",
+                "model_name": model_name,
+                "node_feature_function": node_feature_function,
+                "node_prediction": "acc",
+                "prediction_integration": "Euler",
+                "input_differentiation": "finite",
+                "in_node_dim": in_node_dim,
+                "start_frame": 3,
+                "heads": heads,
+            }
+            model = GNN_residual(**model_spec)
+            lr = 1e-4
+            training = True
+        else:
+            node_feature_function = ""
+            if "sin" in model_name or "sin" in feature:
+                node_feature_function = "sinusoid"
+            else:
+                node_feature_function = "vel_plus_pos_plus"
+            model_spec = {
+                "model_name": model_name,
+                "node_feature_function": node_feature_function,
                 "node_prediction": "acc",
                 "prediction_integration": "Euler",
                 "input_differentiation": "finite",
@@ -270,6 +312,10 @@ def train_single_config(params):
             elif ablate == 3:
                 print("ablating attention layer by zeroing")
                 model.uni_attention()
+            
+            if run_attribute > 0:
+                loader = DataLoader(
+                    Subset(test_loader.dataset, np.arange(50)), batch_size = 1)
 
         else:
             loader = train_loader
@@ -310,26 +356,50 @@ def train_single_config(params):
 
         worker_logger.debug("Training model with validation and early stopping")
         # Train with validation and early stopping
-        train_losses, trained_model, debug_result = train_rules_gnn(
-            model,
-            loader,
-            species_dim=len(species_configs.keys()),
-            visual_range=visual_range,
-            epochs=epochs,
-            lr=lr,
-            training=training,
-            sigma=noise,
-            device=device,
-            rollout=rollout,
-            total_rollout=total_rollout,
-            train_logger=worker_logger,
-            collect_debug=collect_debug,  # Disable debug to avoid CPU transfers
-            val_dataloader=test_loader
-            if not no_validation
-            else None,  # Use test_loader for validation unless disabled
-            early_stopping_patience=early_stopping_patience,  # Early stopping patience from args
-            min_delta=min_delta,  # Minimum improvement threshold from args
-        )
+        if run_attribute:
+            train_losses, trained_model, debug_result, attribution = train_rules_gnn(
+                model,
+                loader,
+                species_dim=len(species_configs.keys()),
+                visual_range=visual_range,
+                epochs=epochs,
+                lr=lr,
+                training=training,
+                sigma=noise,
+                device=device,
+                rollout=rollout,
+                total_rollout=total_rollout,
+                train_logger=worker_logger,
+                collect_debug=collect_debug,  # Disable debug to avoid CPU transfers
+                val_dataloader=test_loader
+                if not no_validation
+                else None,  # Use test_loader for validation unless disabled
+                early_stopping_patience=early_stopping_patience,  # Early stopping patience from args
+                min_delta=min_delta,  # Minimum improvement threshold from args
+                run_attribute = run_attribute,
+            )
+        else:
+            train_losses, trained_model, debug_result = train_rules_gnn(
+                model,
+                loader,
+                species_dim=len(species_configs.keys()),
+                visual_range=visual_range,
+                epochs=epochs,
+                lr=lr,
+                training=training,
+                sigma=noise,
+                device=device,
+                rollout=rollout,
+                total_rollout=total_rollout,
+                train_logger=worker_logger,
+                collect_debug=collect_debug,  # Disable debug to avoid CPU transfers
+                val_dataloader=test_loader
+                if not no_validation
+                else None,  # Use test_loader for validation unless disabled
+                early_stopping_patience=early_stopping_patience,  # Early stopping patience from args
+                min_delta=min_delta,  # Minimum improvement threshold from args
+                run_attribute = False,
+            )
 
         # Save model
         # model_spec = {"model_name": model_name, "heads": heads}
@@ -358,14 +428,25 @@ def train_single_config(params):
             #    f"trained_models/{save_name}.pkl",
             #    get_project_root()
             # )
-
             with open(rollout_path, "wb") as f:  # 'wb' for write binary
                 pickle.dump(debug_result, f)
 
+        if run_attribute > 0:
+            folder = f"trained_models/runpod/{data_name}/rollouts/"
+
+            attribute_path = expand_path(
+                f"{folder}/{save_name}_attribute{run_attribute}.pkl",
+                get_project_root(),
+                )
+            with open(attribute_path, "wb") as f:  # 'wb' for write binary
+                pickle.dump(attribution, f)
+
+            
+
         worker_logger.debug(f"Saving model {save_name}...")
         model_output, model_spec_path, train_spec_path = save_model(
-            trained_model, model_spec, train_spec, save_name
-        )
+            trained_model, model_spec, train_spec, save_name, data_name
+            )
         worker_logger.debug(f"Model saved to {model_output}.")
         worker_logger.debug(f"Model spec saved to {model_spec_path}.")
         worker_logger.debug(f"Train spec saved to {train_spec_path}.")
@@ -434,10 +515,34 @@ def main():
         description="Maximize GPU utilization with concurrent training"
     )
     parser.add_argument(
+        "--model-name",
+        type = str,
+        default = "vel_plus_pos_plus",
+        help = "model save name(default: vpluspplus_a)",
+    )
+    parser.add_argument(
         "--dataset",
         type=str,
         default="boid_single_species_basic",
         help="Dataset to use (default: boid_single_species_basic)",
+    )
+    parser.add_argument(
+        '--heads',
+        nargs='+',  # Expects one or more items
+        type=int,   # Specify the type of each item in the list
+        help='number of heads',
+    )
+    parser.add_argument(
+        '--noise',
+        nargs='+',  # Expects one or more items
+        type=float,   # Specify the type of each item in the list
+        help='noise levels',
+    )
+    parser.add_argument(
+        "--seeds",
+        nargs='+',  # Expects one or more items
+        type=int,
+        help="seeds"
     )
     parser.add_argument(
         "--workers-per-gpu",
@@ -451,9 +556,7 @@ def main():
         default=None,
         help="Override total number of workers (ignores workers-per-gpu)",
     )
-    parser.add_argument(
-        "--seeds", type=int, default=5, help="Number of seeds (default: 5)"
-    )
+    
     parser.add_argument(
         "--batch-size",
         type=int,
@@ -517,6 +620,14 @@ def main():
         "--total_rollout", type=int, default=100, help="Total number of rollout"
     )
     parser.add_argument("--ablate", type=int, default=0, help="ablate attention layer")
+    parser.add_argument(
+        "--feature",
+        type = str,
+        default = "vel_plus_pos_plus",
+        help = "node feature to use (default: vel_plus_pos_plus)",
+    )
+    parser.add_argument(
+        "--run_attribute", type=int, default=0, help="Run Captum attribute")
 
     args = parser.parse_args()
 
@@ -613,20 +724,22 @@ def main():
         noise_levels = [0]
         heads = [1]
         visual_ranges = [0.1]
-        seeds = range(2 * max_workers)
+        seeds = args.seeds
     else:
         # model_names = ["vpluspplus_a", "lazy"]
-        model_names = ["vpluspplus_a"]
-        noise_levels = [0, 0.005]  # [0, 0.005]
-        heads = [1, 2, 3]
-        visual_ranges = [0.1, 0.5]
-        seeds = range(args.seeds)
+        model_names = [args.model_name]
+        noise_levels = args.noise #[0, 0.005]  # [0, 0.005]
+        heads = args.heads
+        visual_ranges = [0.5]
+        seeds = args.seeds
 
     # Generate all combinations with worker IDs
     all_params = []
     worker_id = 0
     for model in model_names:
         for noise in noise_levels:
+            if noise == 0:
+                noise = int(0)
             for head in heads:
                 for vr in visual_ranges:
                     for seed in seeds:
@@ -651,6 +764,8 @@ def main():
                                 args.rollout,
                                 args.total_rollout,
                                 args.ablate,
+                                args.feature,
+                                args.run_attribute,
                             )
                         )
                         worker_id += 1
@@ -682,6 +797,8 @@ def main():
                 rollout,
                 total_rollout,
                 ablate,
+                feature,
+                run_attribute,
             ) = all_params[i]
             assigned_gpu = wid % gpu_count
             logger.info(
@@ -712,6 +829,8 @@ def main():
                 rollout,
                 total_rollout,
                 ablate,
+                feature,
+                run_attribute,
             ) = all_params[i]
             logger.info(
                 f"  Config {wid:02d} -> CPU: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs}), rollout = {rollout}  "
