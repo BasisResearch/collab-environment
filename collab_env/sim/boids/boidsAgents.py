@@ -1,7 +1,19 @@
+from enum import Enum, auto
+
 from loguru import logger
 
 import gymnasium as gym
 import numpy as np
+
+
+class Mesh_Avoidance(Enum):
+    UP = auto()
+    FLAT = auto()
+    DOWN = auto()
+    NO_DOWN = auto()
+    NO_UP = auto()
+    OPPOSITE = auto()
+    LAND = auto()
 
 
 class BoidsWorldAgent:
@@ -31,6 +43,7 @@ class BoidsWorldAgent:
         walking=True,
         has_mesh_scene=True,
         random_walk=False,
+        mesh_avoidance_type=Mesh_Avoidance.UP,
     ):
         """Initialize a Q-Learning agent.
 
@@ -64,6 +77,7 @@ class BoidsWorldAgent:
         self.max_force = max_force
         self.walking = walking
         self.env_has_mesh_scene = has_mesh_scene
+        self.mesh_avoidance_type = mesh_avoidance_type
 
         """
         -- 080525
@@ -221,7 +235,27 @@ class BoidsWorldAgent:
         acceleration = self.min_ground_separation**2 / (
             location[agent_index] - closest_point
         )
-        acceleration[1] = np.abs(acceleration[1])  # make sure we move up.
+        """
+        -- 091025 10:33PM
+        If the closest point is up, keep the height the same rather than going down. This 
+        might be better than always moving up. 
+        """
+        if self.mesh_avoidance_type == Mesh_Avoidance.UP:
+            acceleration[1] = np.abs(acceleration[1])  # make sure we move up.
+        if self.mesh_avoidance_type == Mesh_Avoidance.DOWN:
+            acceleration[1] = -np.abs(acceleration[1])  # make sure we move down.
+        elif self.mesh_avoidance_type == Mesh_Avoidance.FLAT:
+            acceleration[1] = 0.0  # stay in same horizontal plane.
+        elif self.mesh_avoidance_type == Mesh_Avoidance.NO_DOWN:
+            acceleration[1] = max(0.0, acceleration[1])  # make sure we don't move down.
+        elif self.mesh_avoidance_type == Mesh_Avoidance.NO_UP:
+            acceleration[1] = min(0.0, acceleration[1])  # make sure we don't move up
+        elif self.mesh_avoidance_type == Mesh_Avoidance.LAND:
+            acceleration = closest_point - location[agent_index]
+        elif self.mesh_avoidance_type == Mesh_Avoidance.OPPOSITE:
+            # default is opposite computed in acceleration assignment above.
+            pass
+
         self.cap_force_and_apply(acceleration, velocity, agent_index)
 
         """

@@ -1,7 +1,7 @@
 
 simulator:
   # one seed required for each episode
-  seed: [837, 439, 642, 316, 202, 409, 627, 834, 977, 189, 401, 719, 810, 738, 655, 367, 36, 653, 753, 977, 716, 311, 112, 417, 599, 666, 721, 128, 456, 564, 178, 97, 764, 242, 257, 253, 4, 217, 171, 536, 122, 716, 933, 850, 271, 410, 195, 172, 958, 274]
+  seed: [1250, 439, 642, 316, 202, 409, 627, 834, 977, 189, 401, 719, 810, 738, 655, 367, 36, 653, 753, 977, 716, 311, 112, 417, 599, 666, 721, 128, 456, 564, 178, 97, 764, 242, 257, 253, 4, 217, 171, 536, 122, 716, 933, 850, 271, 410, 195, 172, 958, 274]
   walking: False
   num_agents: 20
   num_targets: 1 # for now this must be at least 1. This needs to be fixed.
@@ -23,9 +23,9 @@ simulator:
 visuals:
   store_video: False
   show_visualizer: True
-  width: 1920
+  width: 1920     # sometimes too high a resolution fails, so may need to go smaller
   height: 1280
-  video_codec: '*mpv4'
+  video_codec: '*mpv4' # only mp4 has been tested
   video_fps: 30
   video_file_extension: 'mp4'
   agent_shape: 'sphere'
@@ -50,7 +50,7 @@ environment:
   init_range_low: 0.4
   init_range_high: 0.6
   height_init_max: 450
-  target_position: [[750, 500, 750], [500, 100, 100], [300, 100, 750], [800,800,200]]
+  target_position: [[750, 20, 750], [500, 100, 100], [300, 100, 750], [800,800,200]]
 
 agent:
   min_ground_separation: 7.5
@@ -76,6 +76,7 @@ agent:
   height_init_min: 100
   height_init_max: 200
   random_walk: False
+  mesh_avoidance: 'opposite' # one of: 'up', 'flat', 'opposite', 'down', 'no_down', 'no_up', 'land'
 
 meshes:
     # mesh_scene: ''
@@ -90,7 +91,8 @@ meshes:
     #scene_angle: [0.0, 0.0, 0.0]
     #mesh_scene: 'meshes/example_mesh.ply'
     #scene_angle: [-10.0, 0.0, -115.0]
-    sub_mesh_target: ['meshes/labeled_meshes/query-tree_top-cluster.ply'] #'meshes/labeled_meshes/query-tree_top-cluster.ply'] # list, one for each submesh
+    sub_mesh_target: ['meshes/labeled_meshes/query-tree_top-cluster.ply']  # 'meshes/labeled_meshes/query-tree_top-cluster.ply'] # list, one for each submesh
+    # sub_mesh_target: ['meshes/C0043/query-feeder_top-cluster.ply']# 'meshes/labeled_meshes/query-tree_top-cluster.ply'] # list, one for each submesh
     # sub_mesh_angle: [0.0, 0.0, 0.0]
 
 files:

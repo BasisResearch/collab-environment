@@ -72,7 +72,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         color_tracks_by_time=False,
         number_track_color_groups=1,
         track_color_rate=4,
-        kd_workers=1, # 1 seems to work better than -1 on Macbook Pro M4 MAX
+        kd_workers=1,  # 1 seems to work better than -1 on Macbook Pro M4 MAX
     ):
         if target_mesh_color is None:
             target_mesh_color = [1, 0, 1]
@@ -98,7 +98,20 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.mesh_scene = None  # initialized by reset()
         self.max_dist_from_center = 3
         self.agent_shape = agent_shape.upper()
-        self.agent_color = agent_color
+        """ 
+        -- 091225 10:23AM
+        Make this a list so we can have different colors for each agent 
+        """
+        if agent_color == []:
+            self.agent_color = [
+                ColorMaps.turbo_colormap_data[
+                    int(i * len(ColorMaps.turbo_colormap_data) / num_agents)
+                ]
+                for i in range(num_agents)
+            ]
+        else:
+            self.agent_color = [agent_color] * num_agents
+
         self.target_scale = target_scale
         self.action_scale = agent_scale
         self.agent_mean_init_velocity = agent_mean_init_velocity
@@ -199,6 +212,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             
             TAKE THIS OUT AFTER TESTING 
             """
+
             # self.submesh_vertex_indices[1] = list(range(121350, 121550))
 
         self.observation_space = spaces.Dict(
@@ -345,8 +359,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         # it here rather than making the call for no reason.
         #
         if self.mesh_scene is None:
-            scene_distances = -np.ones(self.num_agents)
-            scene_closest_points = -np.ones(self.num_agents)
+            scene_distances = -np.ones(self.num_agents)  # , dtype=np.float32)
+            scene_closest_points = -np.ones(self.num_agents)  # , dtype=np.float32)
         else:
             scene_distances, scene_closest_points = (
                 self.compute_distance_and_closest_points(
@@ -410,7 +424,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         if self.mesh_scene is None:
             distances = -np.ones(self.num_agents)
-            closest_points = -np.ones(self.num_agents)
+            closest_points = -np.ones((self.num_agents, 3))
         else:
             distances, closest_points = self.compute_distance_and_closest_points(
                 self.mesh_scene, self._agent_location
@@ -484,14 +498,14 @@ class BoidsWorldSimpleEnv(gym.Env):
         # )
 
         d, c = self.compute_distance_and_closest_points_to_vertices_kdtree(
-             self.submesh_vertices, self.submesh_kdtree, self._agent_location
+            self.submesh_vertices, self.submesh_kdtree, self._agent_location
         )
 
-        '''
+        """
         -- 090625 7:20PM 
         Tested kdtree to make sure it matched the norm calculation, which it does with negligible 
         numerical differences. 
-        '''
+        """
         # diff_d = d - d_v
         # indices = np.nonzero(diff_d)
         # diff_c = c[indices]
@@ -1277,6 +1291,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         # reward = prev_distance - distance # rewarded for gaining ground
         # reward = 1 if terminated else 0  # Binary sparse rewards
         observation = self._get_obs()
+        logger.debug(f"observation:\n{observation}")
 
         """
         -- 073125 2:51PM
@@ -1379,7 +1394,9 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         for t in range(self.num_submesh_targets):
             logger.debug(f"t: {t}")
-            dist_kd, closest_indices = submesh_kdtree[t].query(locations, workers=self.kd_workers)
+            dist_kd, closest_indices = submesh_kdtree[t].query(
+                locations, workers=self.kd_workers
+            )
             logger.debug(f"distances[t] shape: {distances[t].shape}")
             logger.debug(f"dist_kd shape: {dist_kd.shape}")
             logger.debug(f"closest indices shape: {closest_indices.shape}")
@@ -1719,7 +1736,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                 )
 
             self.mesh_agent[i].compute_vertex_normals()
-            self.mesh_agent[i].paint_uniform_color(self.agent_color)
+            self.mesh_agent[i].paint_uniform_color(self.agent_color[i])
             self.mesh_agent[i].translate(self._agent_location[i])
             self.mesh_agent[i].scale(
                 scale=self.agent_scale, center=self._agent_location[i]

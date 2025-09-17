@@ -9,6 +9,7 @@ them seem to stop -- not sure why that is happening.
 
 import argparse
 import os
+from importlib.metadata import distributions
 
 from datetime import datetime
 
@@ -24,7 +25,7 @@ import pyarrow as pa
 import shutil
 
 
-from collab_env.sim.boids.boidsAgents import BoidsWorldAgent
+from collab_env.sim.boids.boidsAgents import BoidsWorldAgent, Mesh_Avoidance
 import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
 from collab_env.data.file_utils import get_project_root, expand_path
 from collab_env.sim.boids.sim_utils import (
@@ -95,6 +96,20 @@ def run_simulator(config_filename):
     # at some point.
     copied_config_file_path = expand_path("config.yaml", new_run_folder)
     shutil.copy(config_filename, copied_config_file_path)
+
+    package_list_file_path = expand_path("package_list.txt", new_run_folder)
+    with open(package_list_file_path, "w") as f:
+        pairs = sorted(
+            (
+                (dist.metadata.get("Name") or dist.name).lower(),
+                f"{dist.metadata.get('Name') or dist.name}=={dist.version}",
+            )
+            for dist in distributions()
+        )
+        result = ""
+        for _, line in pairs:
+            result += line + "\n"
+        f.write(result)
 
     # -- 080225
     # Find the path for the video in the run folder.
@@ -183,6 +198,7 @@ def run_simulator(config_filename):
         min_speed=config["agent"]["min_speed"],
         max_force=config["agent"]["max_force"],
         random_walk=config["agent"]["random_walk"],
+        mesh_avoidance_type=Mesh_Avoidance[config["agent"]["mesh_avoidance"].upper()],
     )
 
     num_targets = config["simulator"]["num_targets"]

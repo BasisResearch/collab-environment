@@ -75,6 +75,7 @@ agent:
   height_init_min: 100
   height_init_max: 300
   random_walk: False
+  mesh_avoidance: 'no_down'
 
 meshes:
     # mesh_scene: ''
