@@ -186,6 +186,7 @@ def run_simulator(config_filename):
         min_ground_separation=config["agent"]["min_ground_separation"],
         min_separation=config["agent"]["min_separation"],
         neighborhood_dist=config["agent"]["neighborhood_dist"],
+        random_weight=config["agent"]["random_weight"],
         ground_weight=config["agent"]["ground_weight"],
         separation_weight=config["agent"]["separation_weight"],
         alignment_weight=config["agent"]["alignment_weight"],
@@ -202,26 +203,6 @@ def run_simulator(config_filename):
     )
 
     num_targets = config["simulator"]["num_targets"]
-    # distance_columns = [f"distance_target_center_{t}" for t in range(1, num_targets + 1)]
-    # distance_target_mesh = [f"distances_to_target_mesh_closest_point_{t}" for t in range(1, num_targets + 1)]
-    # closest_point_columns = [
-    #     f"closest_point_target_{t}" for t in range(1, num_targets + 1)
-    # ]
-    # pandas_columns = (
-    #     [
-    #         "id",
-    #         "type",
-    #         "time",
-    #         "x",
-    #         "y",
-    #         "z",
-    #         "v_x",
-    #         "v_y",
-    #         "v_z",
-    #     ]
-    #     + distance_columns
-    #     + closest_point_columns
-    # )
 
     #
     # There should be one seed for each episode

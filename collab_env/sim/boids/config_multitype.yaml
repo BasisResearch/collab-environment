@@ -10,7 +10,7 @@ simulator:
   submesh_show_points: False # put spheres on at least some of the submesh vertices
   moving_targets: False
   num_episodes: 1
-  num_frames: 200
+  num_frames: 3000
   target_creation_time: [500] # min is 1, which creates the target at the beginning of the episode.
   show_box: False
   # run_main_folder: "collab_env/sim/runs"
@@ -53,35 +53,38 @@ environment:
   target_position: [[750, 20, 750], [500, 100, 100], [300, 100, 750], [800,800,200]]
 
 agent:
-  min_ground_separation: 7.5
-  ground_avoidance_mean: 1.0
-  ground_avoidance_variance: 0.01
-  ground_avoidance_max_speed: 0.1
-  min_separation: 20.0
-  neighborhood_dist: 80.0
-  separation_weight: 15.0
-  alignment_weight: 1.0
-  cohesion_weight: 0.5
-  ground_weight: 0.0
-  target_weight: [0.002, -1.0, 0.0, 0.0] #[0.002]
-  max_speed: 1.0
-  min_speed: 0.1
-  max_force: 0.1
-  mean_init_velocity: 0.0
-  variance_init_velocity: 0.5
-  init_range_low: 0.4
-  init_range_high: 0.6
-  height_range_low: 0.0
-  height_range_high: 1.0
-  height_init_min: 100
-  height_init_max: 200
-  random_walk: False
-  mesh_avoidance: 'no_down' # one of: 'up', 'flat', 'opposite', 'down', 'no_down', 'no_up', 'land'
+  - num_agents_of_type: 20
+  - min_ground_separation: 7.5
+  - ground_avoidance_mean: 1.0
+  - ground_avoidance_variance: 0.01
+  - ground_avoidance_max_speed: 0.1
+  - min_separation: 20.0
+  - neighborhood_dist: 80.0
+  - random_weight: 1.0 # how much randomness should be in the agents' actions.
+  - separation_weight: 0.0 # 15.0
+  - alignment_weight: 1.0 # 1.0
+  - cohesion_weight: 0.0 # 0.5
+  - ground_weight: 0.0
+  - target_weight: [10.0, -1.0, 0.0, 0.0] #[0.002]
+  - max_speed: 1.0
+  - min_speed: 0.1
+  - max_force: 0.1
+  - mean_init_velocity: 0.0
+  - variance_init_velocity: 0.5
+  - init_range_low: 0.4
+  - init_range_high: 0.6
+  - height_range_low: 0.0
+  - height_range_high: 1.0
+  - height_init_min: 150
+  - height_init_max: 250
+  - random_walk: False
+  - mesh_avoidance: 'no_down' # one of: 'up', 'flat', 'opposite', 'down', 'no_down', 'no_up', 'land'
 
 meshes:
     # mesh_scene: ''
     # scene_angle: [0.0, 0.0, 0.0]
-    mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
+    # mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
+    mesh_scene: meshes/C0043/mesh.ply
     scene_angle: [-90.0, 0.0, 0.0]
     #mesh_scene: 'meshes/labeled_meshes/mesh.ply'
     # mesh_scene: 'meshes/labeled_meshes/query-tree_top-cluster.ply'
@@ -91,8 +94,8 @@ meshes:
     #scene_angle: [0.0, 0.0, 0.0]
     #mesh_scene: 'meshes/example_mesh.ply'
     #scene_angle: [-10.0, 0.0, -115.0]
-    sub_mesh_target: ['meshes/labeled_meshes/query-tree_top-cluster.ply']  # 'meshes/labeled_meshes/query-tree_top-cluster.ply'] # list, one for each submesh
-    # sub_mesh_target: ['meshes/C0043/query-feeder_top-cluster.ply']# 'meshes/labeled_meshes/query-tree_top-cluster.ply'] # list, one for each submesh
+    # sub_mesh_target: ['meshes/labeled_meshes/query-tree_top-cluster.ply']  # 'meshes/labeled_meshes/query-tree_top-cluster.ply'] # list, one for each submesh
+    sub_mesh_target: ['meshes/C0043/query-feeder_top-cluster.ply']# 'meshes/labeled_meshes/query-tree_top-cluster.ply'] # list, one for each submesh
     # sub_mesh_angle: [0.0, 0.0, 0.0]
 
 files:
