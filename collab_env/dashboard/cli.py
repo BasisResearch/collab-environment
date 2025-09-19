@@ -48,6 +48,12 @@ def main():
 
     parser.add_argument("--autoreload", action="store_true", help="Enable autoreload")
 
+    parser.add_argument(
+        "--read-only",
+        action="store_true",
+        help="Enable read-only mode (disable upload/delete functionality)"
+    )
+
     args = parser.parse_args()
 
     # Configure logging
@@ -60,6 +66,8 @@ def main():
     logger.info(f"Curated bucket: {args.curated_bucket}")
     logger.info(f"Processed bucket: {args.processed_bucket}")
     logger.info(f"Port: {args.port}")
+    if args.read_only:
+        logger.info("🔒 Read-only mode enabled (upload/delete functionality disabled)")
 
     try:
         show_browser = not args.no_browser
@@ -85,6 +93,7 @@ def main():
                 remote_name=args.remote_name,
                 curated_bucket=args.curated_bucket,
                 processed_bucket=args.processed_bucket,
+                read_only=args.read_only,
             )
         else:
             serve_dashboard(
@@ -94,6 +103,7 @@ def main():
                 remote_name=args.remote_name,
                 curated_bucket=args.curated_bucket,
                 processed_bucket=args.processed_bucket,
+                read_only=args.read_only,
             )
     except KeyboardInterrupt:
         logger.info("Dashboard stopped by user")

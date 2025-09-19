@@ -36,9 +36,13 @@ class DataDashboard(param.Parameterized):
         remote_name: Optional[str] = None,
         curated_bucket: Optional[str] = None,
         processed_bucket: Optional[str] = None,
+        read_only: bool = False,
         **params,
     ):
         super().__init__(**params)
+
+        # Store read-only mode setting
+        self.read_only = read_only
 
         # Initialize clients
         try:
@@ -152,13 +156,15 @@ class DataDashboard(param.Parameterized):
 
         # General file management buttons
         self.replace_file_button = pn.widgets.Button(
-            name="Replace in Cloud", button_type="primary", width=140
+            name="Replace in Cloud", button_type="primary", width=140,
+            disabled=read_only
         )
         self.download_original_button = pn.widgets.Button(
             name="Download Original", button_type="warning", width=140, visible=False
         )
         self.delete_file_button = pn.widgets.Button(
-            name="Delete local and remote", button_type="danger", width=160
+            name="Delete local and remote", button_type="danger", width=160,
+            disabled=read_only
         )
 
         # File management controls container with proper spacing
@@ -199,6 +205,7 @@ class DataDashboard(param.Parameterized):
             height=0,  # Start collapsed
             sizing_mode="fixed",
             styles={"display": "none"},
+            margin=0,  # Consistent margin settings
         )
 
         # Modal dialog buttons (will be created in create_layout)
@@ -228,9 +235,11 @@ class DataDashboard(param.Parameterized):
         self.bbox_viewer_button.on_click(self._open_bbox_viewer)
         self.mesh_3d_viewer_button.on_click(self._open_mesh_3d_viewer)
         self.stop_all_viewers_button.on_click(self._stop_all_bbox_viewers)
-        self.replace_file_button.on_click(self._replace_file_in_cloud)
+        # Wire up file management callbacks if not in read-only mode
+        if not read_only:
+            self.replace_file_button.on_click(self._replace_file_in_cloud)
+            self.delete_file_button.on_click(self._delete_file)
         self.download_original_button.on_click(self._download_original_file)
-        self.delete_file_button.on_click(self._delete_file)
         self.confirm_delete_button.on_click(self._confirm_delete)
         self.cancel_delete_button.on_click(self._cancel_delete)
 
@@ -513,7 +522,11 @@ class DataDashboard(param.Parameterized):
             # Hide loading and show completion status
             self._hide_loading()
             cache_status = "💾" if render_info.get("from_cache", False) else "📡"
-            self.status_pane.object = f"<p>{cache_status} Loaded: {file_path} ({self._format_file_size(len(content))})</p>"
+            status_msg = f"<p>{cache_status} Loaded: {file_path} ({self._format_file_size(len(content))})"
+            if self.read_only:
+                status_msg += " <span style='color:#666;'>[READ-ONLY MODE]</span>"
+            status_msg += "</p>"
+            self.status_pane.object = status_msg
 
         except Exception as e:
             logger.error(f"Error loading file {file_path}: {e}")
@@ -833,22 +846,57 @@ class DataDashboard(param.Parameterized):
                 logger.info("🔄 Creating/updating VTK pane with new render window")
 
                 try:
+                    # Show and expand the VTK container FIRST to ensure proper sizing
+                    logger.info("📦 EXPANDING VTK container before VTK pane creation")
+                    self.persistent_vtk_container.height = 600
+                    self.persistent_vtk_container.margin = 5
+                    self.persistent_vtk_container.styles = {"display": "block"}
+
                     # Create VTK pane on demand if it doesn't exist
                     if self.vtk_pane is None:
                         logger.info("🔨 Creating VTK pane ONCE with render window")
-                        self.vtk_pane = pn.pane.VTK(
-                            render_window,
-                            width=800,
-                            height=600,
-                            sizing_mode="fixed",
-                            enable_keybindings=True,
-                            orientation_widget=True,
-                        )
 
-                        # Add to the container
-                        self.persistent_vtk_container.clear()
-                        self.persistent_vtk_container.append(self.vtk_pane)
-                        logger.info("✅ VTK pane created ONCE and added to container")
+                        # Create VTK pane with more robust settings to avoid viewport errors
+                        try:
+                            self.vtk_pane = pn.pane.VTK(
+                                render_window,
+                                width=800,
+                                height=600,
+                                sizing_mode="fixed",
+                                enable_keybindings=True,
+                                orientation_widget=True,
+                                margin=0,  # Ensure no margin conflicts
+                            )
+
+                            # Add to the container
+                            self.persistent_vtk_container.clear()
+                            self.persistent_vtk_container.append(self.vtk_pane)
+                            logger.info("✅ VTK pane created ONCE and added to container")
+
+                        except Exception as vtk_create_error:
+                            logger.error(f"🚨 Failed to create VTK pane: {vtk_create_error}")
+                            # Try creating a simpler VTK pane without optional features
+                            try:
+                                logger.info("🔄 Attempting simplified VTK pane creation...")
+                                self.vtk_pane = pn.pane.VTK(
+                                    render_window,
+                                    width=800,
+                                    height=600,
+                                    sizing_mode="fixed",
+                                    enable_keybindings=False,  # Disable to avoid JS conflicts
+                                    orientation_widget=False,  # Disable to avoid JS conflicts
+                                    margin=0,
+                                )
+
+                                # Add to the container
+                                self.persistent_vtk_container.clear()
+                                self.persistent_vtk_container.append(self.vtk_pane)
+                                logger.info("✅ Simplified VTK pane created successfully")
+
+                            except Exception as simple_error:
+                                logger.error(f"🚨 Even simplified VTK pane failed: {simple_error}")
+                                self.vtk_pane = None
+                                raise vtk_create_error
 
                         # The camera should already be properly set by PyVista, but ensure it's visible
                         logger.info("📷 Initial camera view set by PyVista")
@@ -859,70 +907,22 @@ class DataDashboard(param.Parameterized):
                         )
                         self.vtk_pane.object = render_window  # type: ignore[attr-defined]
 
-                        # Reset camera view to properly frame the new data
-                        logger.info("📷 Resetting camera view for new PLY data")
+                        # Update the render window but preserve camera if already set properly
+                        logger.info("📷 Updating render window for new PLY data")
                         try:
-                            # Get mesh bounds and center for better camera positioning
-                            mesh_bounds = render_info.get("mesh_bounds")
-                            mesh_center = render_info.get("mesh_center")
-
-                            # Access the render window from the VTK pane and reset camera
+                            # The camera should already be properly positioned by file_viewers.py
+                            # Only do minimal adjustments if needed
                             ren_win = self.vtk_pane.object  # type: ignore[attr-defined]
-                            if ren_win and hasattr(ren_win, "GetRenderers"):
-                                renderers = ren_win.GetRenderers()
-                                if renderers.GetNumberOfItems() > 0:
-                                    renderer = renderers.GetFirstRenderer()
-                                    if renderer:
-                                        # Reset camera to fit the bounds
-                                        renderer.ResetCamera()
-
-                                        # If we have mesh center, position camera for better iso view
-                                        if (
-                                            mesh_center is not None
-                                            and mesh_bounds is not None
-                                        ):
-                                            camera = renderer.GetActiveCamera()
-                                            # Calculate a good distance from the bounds
-                                            bounds_range = max(
-                                                mesh_bounds[1]
-                                                - mesh_bounds[0],  # x range
-                                                mesh_bounds[3]
-                                                - mesh_bounds[2],  # y range
-                                                mesh_bounds[5]
-                                                - mesh_bounds[4],  # z range
-                                            )
-                                            distance = (
-                                                bounds_range * 2.0
-                                            )  # Good viewing distance
-
-                                            # Set isometric view position
-                                            camera.SetPosition(
-                                                mesh_center[0] + distance,
-                                                mesh_center[1] + distance,
-                                                mesh_center[2] + distance,
-                                            )
-                                            camera.SetFocalPoint(
-                                                mesh_center[0],
-                                                mesh_center[1],
-                                                mesh_center[2],
-                                            )
-                                            camera.SetViewUp(0, 0, 1)  # Z-up
-                                            renderer.ResetCameraClippingRange()
-
-                                        ren_win.Render()
-                                        logger.info(
-                                            "✅ Camera view reset with mesh bounds successfully"
-                                        )
+                            if ren_win and hasattr(ren_win, "Render"):
+                                # Just trigger a render to ensure display is updated
+                                ren_win.Render()
+                                logger.info(
+                                    "✅ Render window updated successfully"
+                                )
                         except Exception as camera_error:
                             logger.warning(
-                                f"⚠️ Could not reset camera view: {camera_error}"
+                                f"⚠️ Could not update render window: {camera_error}"
                             )
-
-                    # Show and expand the VTK container
-                    logger.info("📦 EXPANDING VTK container")
-                    self.persistent_vtk_container.height = 600
-                    self.persistent_vtk_container.margin = 5
-                    self.persistent_vtk_container.styles = {"display": "block"}
 
                 except Exception as vtk_error:
                     logger.error(f"🚨 VTK pane creation/update failed: {vtk_error}")
@@ -1290,7 +1290,10 @@ class DataDashboard(param.Parameterized):
             )
 
             if success:
-                self.status_pane.object = f"<p style='color:green'>✅ {message} - Use 'Replace in Cloud' button to upload</p>"
+                if self.read_only:
+                    self.status_pane.object = f"<p style='color:green'>✅ {message} - Local conversion completed (read-only mode)</p>"
+                else:
+                    self.status_pane.object = f"<p style='color:green'>✅ {message} - Use 'Replace in Cloud' button to upload</p>"
                 # Replace the local cached file with the converted version
                 self._replace_local_video_and_reload(bucket, full_path, converted_path)
             else:
@@ -1900,8 +1903,8 @@ class DataDashboard(param.Parameterized):
                 )
                 is_modified = self.file_manager.is_file_modified(bucket, full_path)
 
-                # Show replace button only if file is modified
-                self.replace_file_button.visible = is_modified
+                # Show replace button only if file is modified and not in read-only mode
+                self.replace_file_button.visible = is_modified and not self.read_only
                 if is_modified:
                     self.replace_file_button.name = "Replace in Cloud (Modified)"
                 else:
@@ -1924,6 +1927,10 @@ class DataDashboard(param.Parameterized):
     def _replace_file_in_cloud(self, _):
         """Replace the current file in cloud with the cached version."""
         if not self.selected_file or not self.selected_session:
+            return
+
+        if self.read_only:
+            self.status_pane.object = "<p style='color:orange'>⚠️ Dashboard is in read-only mode</p>"
             return
 
         try:
@@ -2022,11 +2029,19 @@ class DataDashboard(param.Parameterized):
         if not self.selected_file or not self.selected_session:
             return
 
+        if self.read_only:
+            self.status_pane.object = "<p style='color:orange'>⚠️ Dashboard is in read-only mode</p>"
+            return
+
         # Show modal confirmation dialog
         self._show_modal(self.selected_file)
 
     def _perform_file_deletion(self):
         """Actually perform the file deletion after confirmation."""
+        if self.read_only:
+            self.status_pane.object = "<p style='color:orange'>⚠️ Dashboard is in read-only mode</p>"
+            return
+
         try:
             # Show loading
             self._show_loading("Deleting file...")
@@ -2188,6 +2203,7 @@ def create_app(
     remote_name: Optional[str] = None,
     curated_bucket: Optional[str] = None,
     processed_bucket: Optional[str] = None,
+    read_only: bool = False,
 ):
     """Create and return the dashboard application."""
     try:
@@ -2195,6 +2211,7 @@ def create_app(
             remote_name=remote_name,
             curated_bucket=curated_bucket,
             processed_bucket=processed_bucket,
+            read_only=read_only,
         )
         return dashboard.create_layout()
     except Exception as e:
@@ -2222,12 +2239,14 @@ def serve_dashboard(
     remote_name: Optional[str] = None,
     curated_bucket: Optional[str] = None,
     processed_bucket: Optional[str] = None,
+    read_only: bool = False,
 ):
     """Serve the dashboard application."""
     app = create_app(
         remote_name=remote_name,
         curated_bucket=curated_bucket,
         processed_bucket=processed_bucket,
+        read_only=read_only,
     )
 
     return pn.serve(

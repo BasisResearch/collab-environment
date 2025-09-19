@@ -5,7 +5,7 @@ This allows using Panel's native autoreload without the new tab issue:
     panel serve dashboard_app.py --dev --show --port 5007
 
 You can also pass custom arguments:
-    panel serve dashboard_app.py --dev --show --port 5007 --args --curated-bucket my_curated --processed-bucket my_processed
+    panel serve dashboard_app.py --dev --show --port 5007 --args --curated-bucket my_curated --processed-bucket my_processed --read-only
 """
 
 import panel as pn
@@ -32,6 +32,11 @@ parser.add_argument(
     default="fieldwork_processed",
     help="Name of processed data bucket (default: fieldwork_processed)",
 )
+parser.add_argument(
+    "--read-only",
+    action="store_true",
+    help="Enable read-only mode (disable upload/delete functionality)"
+)
 
 # Parse known args to handle panel serve's additional arguments
 args, unknown = parser.parse_known_args()
@@ -41,6 +46,7 @@ app = create_app(
     remote_name=args.remote_name,
     curated_bucket=args.curated_bucket,
     processed_bucket=args.processed_bucket,
+    read_only=args.read_only,
 )
 
 # Make it servable

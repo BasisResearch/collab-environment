@@ -25,10 +25,11 @@ class FileViewerRegistry:
 
     def _register_default_viewers(self):
         """Register default file viewers."""
-        # Text viewers
-        text_viewer = TextViewer()
-        for ext in [".yml", ".yaml", ".txt", ".xml", ".json", ".md", ".rst"]:
-            self.viewers[ext] = text_viewer
+        # Text viewers - disabled for now
+        
+        # text_viewer = TextViewer()
+        # for ext in [".yml", ".yaml", ".txt", ".xml", ".json", ".md", ".rst"]:
+        #     self.viewers[ext] = text_viewer
 
         # Table viewers
         table_viewer = TableViewer()
@@ -906,8 +907,33 @@ class PLYViewer(BaseViewer):
                         # opacity=0.9,
                     )
 
-                plotter.camera_position = "iso"
+                # Set camera position with better default view
+                # Use explicit camera positioning instead of "iso" to avoid issues
+                if hasattr(mesh, "bounds") and hasattr(mesh, "center"):
+                    bounds = mesh.bounds
+                    center = mesh.center
+
+                    # Calculate a good viewing distance based on mesh size
+                    x_range = bounds[1] - bounds[0]
+                    y_range = bounds[3] - bounds[2]
+                    z_range = bounds[5] - bounds[4]
+                    max_range = max(x_range, y_range, z_range)
+                    distance = max_range * 2.5
+
+                    # Set camera to a nice isometric view
+                    plotter.camera.position = (
+                        center[0] + distance,
+                        center[1] + distance,
+                        center[2] + distance
+                    )
+                    plotter.camera.focal_point = center
+                    plotter.camera.up = (0, 0, 1)  # Z-up
+                else:
+                    # Fallback to standard iso view
+                    plotter.camera_position = "iso"
+
                 plotter.reset_camera()  # type: ignore
+                plotter.reset_camera_clipping_range()  # Ensure proper clipping
 
                 # Store mesh bounds for camera reset in app
                 mesh_bounds = mesh.bounds if hasattr(mesh, "bounds") else None
