@@ -105,10 +105,21 @@ A web-based dashboard for browsing and editing data files from GCS buckets using
 * **Session Discovery**: Automatically discovers matching sessions across ``fieldwork_curated`` and ``fieldwork_processed`` buckets
 * **Multi-Format Viewer**: Built-in viewers for text files (YAML, TXT, XML, JSON, Markdown), tabular data (CSV, Parquet), and video files (MP4, AVI, MOV, MKV)
 * **Video Bbox Overlay Viewer**: Interactive video player with synchronized bounding box/tracking overlays from CSV data - automatically detects ``*_bboxes.csv`` files and provides real-time visualization controls
+* **3D Mesh Viewer**: Interactive PLY file viewer with VTK-based rendering for point clouds and 3D meshes, includes automatic camera positioning from pickle parameters
+* **3D Track Viewer**: View 3D tracking data overlaid on meshes with playback controls, automatic detection of ``*_3d.csv`` files, and camera parameter integration
 * **Video Conversion**: Convert incompatible videos (e.g., OpenCV MPEG-4) to browser-compatible H.264 format with one-click upload
 * **File Editing**: Edit and save text-based files directly back to GCS
 * **Local Caching**: Automatically caches downloaded files locally for faster access with cache management UI
 * **Enhanced UI**: Enlarged navigation panel with file tree, cache status icons, and progress indicators
+* **Read-Only Mode**: Optional mode that disables all upload/delete operations to prevent accidental modifications to cloud storage
+
+**Read-Only Mode:**
+
+The dashboard supports a read-only mode for safer browsing when you want to prevent any accidental modifications to cloud storage:
+
+* **Disabled in read-only mode**: Upload to cloud (Replace in Cloud button), Delete from cloud and cache, status shows [READ-ONLY MODE]
+* **Still enabled**: All viewing operations, local file editing and caching, video conversion (local), Download Original from cloud, cache management operations
+* **Usage**: Add ``--read-only`` flag to any dashboard command
 
 **Prerequisites:**
 
@@ -130,12 +141,21 @@ Install `rclone <https://rclone.org/>`_ and `ffmpeg` for your platform:
 
     # Basic usage
     python -m collab_env.dashboard.cli
-    
+
     # Custom port and buckets
     python -m collab_env.dashboard.cli --port 8080 --curated-bucket my-curated --processed-bucket my-processed
-    
+
     # Don't auto-open browser
     python -m collab_env.dashboard.cli --no-browser
+
+    # Read-only mode (disables upload/delete functionality)
+    python -m collab_env.dashboard.cli --read-only
+
+    # Combine multiple options
+    python -m collab_env.dashboard.cli --port 8080 --read-only --no-browser
+
+    # Show all available options
+    python -m collab_env.dashboard.cli --help
 
 **Development with Autoreload:**
 
@@ -145,10 +165,13 @@ For the best development experience with autoreload that refreshes existing brow
 
     # Easy way: Use the provided script
     ./scripts/dev_dashboard.sh
-    
+
     # Or manually navigate to dashboard directory
     cd collab_env/dashboard
     panel serve dashboard_app.py --dev --show --port 5007
+
+    # With read-only mode
+    panel serve dashboard_app.py --dev --show --port 5007 --args --read-only
 
 **Dashboard Interface:**
 
@@ -188,6 +211,34 @@ The dashboard includes an advanced video analysis feature for viewing tracking d
 * Bounding box format: ``x1, y1, x2, y2`` (pixel coordinates of box corners)
 * Or centroid format: ``x, y`` (center point coordinates)
 * File naming convention: ``*_bboxes.csv`` in same directory as video file
+
+**3D Mesh and Track Viewer:**
+
+The dashboard includes advanced 3D visualization capabilities for PLY meshes and tracking data:
+
+**PLY Mesh Viewer Features:**
+
+* **Interactive 3D Rendering**: Uses PyVista and VTK for high-quality 3D visualization
+* **Point Cloud and Mesh Support**: Automatically detects and renders both point clouds and surface meshes
+* **Camera Parameter Integration**: Automatically loads camera parameters from ``*_mesh-aligned.pkl`` files
+* **Smart Camera Positioning**: When camera params are available, positions view to match original capture perspective
+
+**3D Track Viewer Features:**
+
+* **Auto-Detection**: Automatically finds ``*_3d.csv`` tracking files in the same session
+* **Real-Time Playback**: Frame-by-frame playback with speed controls and timeline scrubber
+* **Track Visualization**: Color-coded spheres for each track with configurable size
+* **Movement Trails**: Optional trail visualization showing track paths over time
+* **Camera Frustum Display**: Shows the original camera position and field of view when params are available
+
+**3D Viewer Usage:**
+
+1. Navigate to any PLY file in the dashboard
+2. The file opens in an interactive 3D viewer with mouse controls (rotate, zoom, pan)
+3. If ``*_3d.csv`` files exist → "View 3D Tracks" button appears
+4. Click button → Opens 3D track viewer with mesh and animated tracks
+5. Use playback controls to visualize movement patterns over time
+6. Toggle display options: mesh visibility, track IDs, trails, camera frustum
 
 Usage
 -----
