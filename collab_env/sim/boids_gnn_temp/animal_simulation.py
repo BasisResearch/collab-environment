@@ -1,8 +1,12 @@
-import matplotlib.animation as animation
-import matplotlib.pyplot as plt
-import numpy as np
 import torch
 from torch.utils.data import Dataset
+import numpy as np
+
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+import matplotlib as mpl
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+import matplotlib.patches as patches
 
 
 class AnimalTrajectoryDataset(Dataset):
@@ -41,7 +45,7 @@ class AnimalTrajectoryDataset(Dataset):
 
         for _ in range(num_samples):  # loop through number of videos
             boids = init_fn(
-                species_configs, species_counts, width, height, velocity_scale, seed
+                species_configs, species_counts, width, height, velocity_scale, seed + _
             )
             traj = []
 
@@ -82,6 +86,9 @@ def visualize_pair(p1, p2, v1=None, v2=None, starting_frame=0, label=None):
         label = np.zeros(p1.shape[1])
         fig, axes = plt.subplots(1, 1, figsize=(4, 4))
         axes = [axes]
+
+    # N = p1.shape[1]
+    # colors = ["C"+str(n%10) for n in range(N)]
 
     # Set plot limits
     for ax in axes:
@@ -159,16 +166,20 @@ def visualize_pair(p1, p2, v1=None, v2=None, starting_frame=0, label=None):
     return ani, axes
 
 
-def visualize_graph(batch, starting_frame=0, file_id=0, model=None, device=None):
+def visualize_graph(
+    p, v, batch=None, starting_frame=0, file_id=0, model=None, device=None
+):
     """ """
     model = model.to(device) if model else None
 
-    p, species = batch
-    p0 = p[
-        file_id,
-        starting_frame:,
-    ]
-    N = p0.shape[1]
+    if batch is not None:
+        p, species = batch
+        p = p[file_id]
+
+    p0 = p[starting_frame]
+    N = p0.shape[0]
+    print("p0 shape", p0.shape)
+    print("p shape", p.shape)
     colors = ["C" + str(n % 10) for n in range(N)]
 
     # Create the figure and axes
@@ -180,18 +191,41 @@ def visualize_graph(batch, starting_frame=0, file_id=0, model=None, device=None)
 
     # Initialization function: plot the background of each frame
     def init():
-        ax.scatter(p0[file_id, :, 0], p0[file_id, :, 1], c=colors)
+        ax.scatter(p0[:, 0], p0[:, 1], color=colors)
+        if v is not None:
+            ax.quiver(
+                p0[:, 0],
+                p0[:, 1],
+                v[starting_frame, :, 0] * 10,
+                v[starting_frame, :, 1] * 10,
+                color=colors,
+                scale_units="xy",
+                scale=1,
+                alpha=0.5,
+            )
         # ax.plot([pos[0]+vel[0],pos[0]+vel[0]],[pos[0]+vel[0],pos[0]+vel[0]])
 
     def animate(i):
-        ax.scatter(p[file_id, i, :, 0], p[file_id, i, :, 1], c=colors)
+        ax.clear()
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.scatter(p[i, :, 0], p[i, :, 1], color=colors)
+        if v is not None:
+            ax.quiver(
+                p[i, :, 0],
+                p[i, :, 1],
+                v[i + 1, :, 0] * 10,
+                v[i + 1, :, 1] * 10,
+                scale_units="xy",
+                scale=1,
+            )
         ax.set_title("Frame" + str(i))
 
     ani = animation.FuncAnimation(
         fig,
         animate,
         init_func=init,
-        frames=np.arange(starting_frame + 1, p.shape[1]),
+        frames=np.arange(starting_frame + 1, p.shape[0] - 1),
         interval=5,
         repeat=False,
         blit=False,
@@ -202,3 +236,227 @@ def visualize_graph(batch, starting_frame=0, file_id=0, model=None, device=None)
 
     plt.show()
     return ani, ax
+
+
+def visualize_graph_2sets(
+    p,
+    v,
+    p2,
+    v2,
+    starting_frame=0,
+    ending_frame=None,
+    file_id=0,
+    model=None,
+    device=None,
+):
+    """ """
+    model = model.to(device) if model else None
+
+    p0 = p[starting_frame]
+    p0_2 = p2[starting_frame]
+    # N = p0.shape[0]
+    print("p0 shape", p0.shape)
+    print("p shape", p.shape)
+    # colors = ["C"+str(n%10) for n in range(N)]
+
+    # Create the figure and axes
+    fig, ax = plt.subplots()
+
+    # Set plot limits
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+    quiver_scale = 10
+
+    # Initialization function: plot the background of each frame
+    def init():
+        ax.scatter(p0[:, 0], p0[:, 1], color="C0")
+        ax.scatter(p0_2[:, 0], p0_2[:, 1], color="C1", alpha=0.5)
+
+        if v is not None:
+            ax.quiver(
+                p0[:, 0],
+                p0[:, 1],
+                v[starting_frame, :, 0] * quiver_scale,
+                v[starting_frame, :, 1] * quiver_scale,
+                color="C0",
+                scale_units="xy",
+                scale=quiver_scale,
+            )
+
+            ax.quiver(
+                p0_2[:, 0],
+                p0_2[:, 1],
+                v2[starting_frame, :, 0] * quiver_scale,
+                v2[starting_frame, :, 1] * quiver_scale,
+                color="C1",
+                scale_units="xy",
+                scale=quiver_scale,
+            )
+
+        # ax.plot([pos[0]+vel[0],pos[0]+vel[0]],[pos[0]+vel[0],pos[0]+vel[0]])
+
+    def animate(i):
+        ax.clear()
+        ax.set_xlim(0, 1)
+        ax.set_ylim(0, 1)
+        ax.scatter(p[i, :, 0], p[i, :, 1], color="C0")
+        ax.scatter(p2[i, :, 0], p2[i, :, 1], color="C1", alpha=0.5)
+        if v is not None:
+            ax.quiver(
+                p[i, :, 0],
+                p[i, :, 1],
+                v[i + 1, :, 0] * quiver_scale,
+                v[i + 1, :, 1] * quiver_scale,
+                color="C0",
+                alpha=0.5,
+                scale_units="xy",
+                scale=quiver_scale,
+            )
+            ax.quiver(
+                p2[i, :, 0],
+                p2[i, :, 1],
+                v2[i + 1, :, 0] * quiver_scale,
+                v2[i + 1, :, 1] * quiver_scale,
+                color="C1",
+                alpha=0.5,
+                scale_units="xy",
+                scale=quiver_scale,
+            )
+        ax.set_title("Frame" + str(i))
+
+    if ending_frame is None:
+        ending_frame = p.shape[0] - 1
+    ani = animation.FuncAnimation(
+        fig,
+        animate,
+        init_func=init,
+        frames=np.arange(starting_frame + 1, ending_frame),
+        interval=5,
+        repeat=False,
+        blit=False,
+    )
+
+    # To save the animation as a GIF (requires ImageMagick or Pillow)
+    # ani.save('flocking_test.gif', writer='imagemagick', fps=30)
+
+    plt.show()
+    return ani, ax
+
+
+def static_visualize_2sets(
+    p,
+    v,
+    p2,
+    v2,
+    starting_frame=0,
+    rollout_starting_frame=5,
+    ending_frame=None,
+    fig=None,
+    ax=None,
+    display_colorbar=True,
+    display_rectangle=True,
+):
+    """
+    overlay multiple frames of boids on top of each other.
+    """
+    # cmap1 = plt.cm.Blues # Choose a colormap
+    cmap2 = plt.cm.Oranges  # Choose a colormap
+
+    p = p.squeeze()
+    v = v.squeeze()
+    p2 = p2.squeeze()
+    v2 = v2.squeeze()
+
+    # N = p.shape[1]
+
+    # Create the figure and axes
+    fig, ax = plt.subplots(figsize=(6, 5)) if fig is None else (fig, ax)
+    if display_colorbar:
+        divider = make_axes_locatable(ax)
+        # cax = divider.append_axes('right', size='5%', pad=0.1)
+        cax2 = divider.append_axes("right", size="5%", pad=0.2)
+
+    # Set plot limits
+    ax.set_xlim(-0.1, 1.1)
+    ax.set_ylim(-0.1, 1.1)
+    if display_rectangle:
+        rect = patches.Rectangle(
+            (0, 0),
+            1,
+            1,
+            linewidth=1,
+            edgecolor="k",
+            facecolor=[0.9, 0.9, 0.9],
+            alpha=0.1,
+        )
+        ax.add_patch(rect)
+    ax.set_xticks([])
+    ax.set_xticklabels([])
+    ax.set_yticks([])
+    ax.set_yticklabels([])
+
+    quiver_scale = 0.6
+
+    norm = mpl.colors.Normalize(
+        vmin=rollout_starting_frame, vmax=ending_frame, clip=True
+    )
+    for i in range(rollout_starting_frame, ending_frame):
+        # ax.scatter(p[i,:,0],p[i,:,1], color = cmap1(norm(i)))
+        ax.scatter(p[i, :, 0], p[i, :, 1], color=[0.9, 0.9, 0.9], alpha=0.5, s=1)
+        ax.scatter(p2[i, :, 0], p2[i, :, 1], color=cmap2(norm(i)), s=2)
+        # if v is not None:
+        ax.quiver(
+            p[i, :, 0],
+            p[i, :, 1],
+            v[i + 1, :, 0],
+            v[i + 1, :, 1],
+            color=[0.9, 0.9, 0.9],
+            alpha=0.9,
+            scale_units="xy",
+            scale=quiver_scale,
+        )
+        ax.quiver(
+            p2[i, :, 0],
+            p2[i, :, 1],
+            v2[i + 1, :, 0],
+            v2[i + 1, :, 1],
+            color=cmap2(norm(i)),
+            alpha=0.9,
+            scale_units="xy",
+            scale=quiver_scale,
+        )
+
+    for i in range(starting_frame, rollout_starting_frame):
+        # ax.scatter(p[i,:,0],p[i,:,1], color = "0.5", alpha = 0.5)
+        ax.scatter(p[i, :, 0], p[i, :, 1], color="0.5", alpha=0.5, s=1)
+        ax.scatter(p2[i, :, 0], p2[i, :, 1], color="0.5", alpha=0.5, s=1)
+        if v is not None:
+            ax.quiver(
+                p[i, :, 0],
+                p[i, :, 1],
+                v[i + 1, :, 0],
+                v[i + 1, :, 1],
+                color="0.5",
+                alpha=0.5,
+                scale_units="xy",
+                scale=quiver_scale,
+            )
+            ax.quiver(
+                p2[i, :, 0],
+                p2[i, :, 1],
+                v2[i + 1, :, 0],
+                v2[i + 1, :, 1],
+                color="0.5",
+                alpha=0.5,
+                scale_units="xy",
+                scale=quiver_scale,
+            )
+
+    if display_colorbar:
+        # sm = plt.cm.ScalarMappable(cmap=cmap1, norm=norm)
+        sm2 = plt.cm.ScalarMappable(cmap=cmap2, norm=norm)
+        # fig.colorbar(sm, cax=cax, orientation='vertical',label='frames (true)')
+        fig.colorbar(sm2, cax=cax2, orientation="vertical", label="frames (rollout)")
+
+    # plt.show()
+    return ax

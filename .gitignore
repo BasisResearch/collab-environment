@@ -1,6 +1,10 @@
 .env
 .envrc
+tests/.ipynb_checkpoints
 *.ipynb_checkpoints
+trained_models/*.pkl
+trained_models/*.pt
+trained_models
 *.py[cod]
 .DS_Store
 # C extensions
@@ -90,9 +94,14 @@ docs/build
 site/
 out
 *.matrix.gz
-/docs/source/.ipynb_checkpoints/
-data
+docs/source/.ipynb_checkpoints/
 config-local/
 *preview*.htm*
-/sim-output/
-/good-runs/
+simulated_data/
+trained_models/
+logs/
+results/
+sim-output/
+good-runs/
+data/
+data

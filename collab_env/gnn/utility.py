@@ -1,6 +1,8 @@
-import numpy as np
 import torch
+import numpy as np
 from scipy.interpolate import UnivariateSpline
+from torch.utils.data import random_split
+from torch_geometric.loader import DataLoader
 
 
 def handle_discrete_data(position, input_differentiation):
@@ -39,6 +41,9 @@ def spline_data(position):
 
 
 def v_function_2_vminushalf(v_function, frame):
+    if v_function is None:
+        return None
+
     B = len(v_function.keys())
     N = len(v_function[0].keys())
     D = len(v_function[0][0])
@@ -73,23 +78,16 @@ def finite_diff(time, position, query=None):
 def finite_diff_data(position):
     """Like upgrade_data, but no smoothing, just upgrade_data_finite_diff"""
     B, F, N, dim = np.shape(position)
-    time = np.arange(F)
+    # time = np.arange(F)
 
     v = torch.zeros_like(position)
     a = torch.zeros_like(position)
-    v_function = {}
+    # v_function = {}
 
     v[:, 1:, :, :] = torch.diff(position, axis=1)
     a[:, :-1, :, :] = torch.diff(v, axis=1)
 
-    for b in range(B):
-        v_function[b] = {}
-        for n in range(N):
-            v_function[b][n] = {}
-            for d in range(dim):
-                v_function[b][n][d] = finite_diff(time, position[b, :, n, d])
-
-    return position, v, a, v_function
+    return position, v, a, None
 
 
 def fit_spline_to_data(time, position, query=None):
@@ -117,3 +115,36 @@ def fit_spline_to_data(time, position, query=None):
     acceleration_fit = spline_acceleration(query)
 
     return position_fit, velocity_fit, acceleration_fit, spline_velocity
+
+
+def dataset2testloader(
+    dataset, train_size=0.7, batch_size=1, return_train=0, device=None
+):
+    # have to use seed = 2025
+    # split data into training set and test set
+    train_size = int(len(dataset) * train_size)
+    test_size = len(dataset) - train_size
+
+    # Create generator on the appropriate device
+    if device is None:
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    generator = torch.Generator(device=device).manual_seed(2025)
+
+    train_dataset, test_dataset = random_split(
+        dataset, [train_size, test_size], generator=generator
+    )
+
+    # right now we assume the batch_size = 1, because our real dataset are of different lengths.
+    # But we can expand to minibatches - except fpr a few specific functions, every function is written with minibatches in mind.
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+    if return_train:
+        train_loader = DataLoader(
+            train_dataset,
+            batch_size=batch_size,
+            shuffle=True,
+            generator=torch.Generator(device=device),
+        )
+        return test_loader, train_loader
+
+    return test_loader

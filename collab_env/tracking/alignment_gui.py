@@ -661,6 +661,60 @@ def align_videos(
     )
 
 
+def align_videos_CI(
+    rgb_video_path,
+    thermal_video_path,
+    output_dir_rgb,
+    output_dir_thm,
+    frame_size=(640, 480),
+    max_frames=1000,
+    warp_to="thermal",
+    rotation_angle=180.0,
+    skip_homography=False,
+    skip_translation=True,
+    crop_rect=(0, 0, 640, 480),
+    H=None,
+    rgb_offset=0,
+    thermal_offset=0,
+):
+    cropped_rgb_path = os.path.join(output_dir_rgb, "cropped_rgb.mp4")
+    crop_and_rotate_video(
+        rgb_video_path,
+        cropped_rgb_path,
+        crop_rect,
+        rotation_angle,
+        frame_size=frame_size,
+        max_frames=max_frames,
+    )
+
+    warped_thermal_path = os.path.join(output_dir_thm, "warped_thermal.mp4")
+    save_warped_video(
+        thermal_video_path, warped_thermal_path, H, frame_size, max_frames
+    )
+
+    print(f"RGB Offset: {rgb_offset}, Thermal Offset: {thermal_offset}")
+
+    # Define output paths for adjusted videos
+    adjusted_rgb_path = cropped_rgb_path.replace(".mp4", "_adjusted.mp4")
+    adjusted_thermal_path = warped_thermal_path.replace(".mp4", "_adjusted.mp4")
+
+    # Save the temporally adjusted RGB video
+    save_temporally_adjusted_video(
+        input_video_path=cropped_rgb_path,
+        output_video_path=adjusted_rgb_path,
+        frame_offset=rgb_offset,  #
+        frame_size=frame_size,
+    )
+
+    # Save the temporally adjusted Thermal video
+    save_temporally_adjusted_video(
+        input_video_path=warped_thermal_path,
+        output_video_path=adjusted_thermal_path,
+        frame_offset=thermal_offset,  #
+        frame_size=frame_size,
+    )
+
+
 def cropping_step(rgb_frame, thm_frame, frame_size=(640, 480)):
     """
     Displays RGB and thermal videos side by side for cropping with instructions, dynamic rotation slider, and error handling.
