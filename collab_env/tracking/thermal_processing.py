@@ -436,6 +436,7 @@ def process_directory(
     vmax: Optional[float] = None,
     thermal_folders: List[str] = ["thermal_1", "thermal_2"],
     include_colorbar: bool = True,
+    mp4_output_prefix: Optional[str] = "thermal",
 ):
     """Process the thermal_1 and thermal_2 subfolders in the given folder_path and export their .csq files as MP4 videos."""
     folder_path = Path(folder_path)
@@ -498,8 +499,12 @@ def process_directory(
                     print(f"Using provided/filled vmin={vmin}, vmax={vmax}")
 
             reader.reset()
+            
+            if mp4_output_prefix is None:
+                mp4_output_prefix = file_path.name
+            
             out_file = (
-                Path(out_path) / thermal_folder / f"{file_path.name}_{int(vmin)}_{int(vmax)}.mp4"
+                Path(out_path) / thermal_folder / f"{mp4_output_prefix}_{int(vmin)}_{int(vmax)}.mp4"
             )  # Ensure output is organized by thermal folder
             out_file.parent.mkdir(
                 parents=True, exist_ok=True
