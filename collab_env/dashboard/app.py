@@ -156,15 +156,19 @@ class DataDashboard(param.Parameterized):
 
         # General file management buttons
         self.replace_file_button = pn.widgets.Button(
-            name="Replace in Cloud", button_type="primary", width=140,
-            disabled=read_only
+            name="Replace in Cloud",
+            button_type="primary",
+            width=140,
+            disabled=read_only,
         )
         self.download_original_button = pn.widgets.Button(
             name="Download Original", button_type="warning", width=140, visible=False
         )
         self.delete_file_button = pn.widgets.Button(
-            name="Delete local and remote", button_type="danger", width=160,
-            disabled=read_only
+            name="Delete local and remote",
+            button_type="danger",
+            width=160,
+            disabled=read_only,
         )
 
         # File management controls container with proper spacing
@@ -871,13 +875,19 @@ class DataDashboard(param.Parameterized):
                             # Add to the container
                             self.persistent_vtk_container.clear()
                             self.persistent_vtk_container.append(self.vtk_pane)
-                            logger.info("✅ VTK pane created ONCE and added to container")
+                            logger.info(
+                                "✅ VTK pane created ONCE and added to container"
+                            )
 
                         except Exception as vtk_create_error:
-                            logger.error(f"🚨 Failed to create VTK pane: {vtk_create_error}")
+                            logger.error(
+                                f"🚨 Failed to create VTK pane: {vtk_create_error}"
+                            )
                             # Try creating a simpler VTK pane without optional features
                             try:
-                                logger.info("🔄 Attempting simplified VTK pane creation...")
+                                logger.info(
+                                    "🔄 Attempting simplified VTK pane creation..."
+                                )
                                 self.vtk_pane = pn.pane.VTK(
                                     render_window,
                                     width=800,
@@ -891,10 +901,14 @@ class DataDashboard(param.Parameterized):
                                 # Add to the container
                                 self.persistent_vtk_container.clear()
                                 self.persistent_vtk_container.append(self.vtk_pane)
-                                logger.info("✅ Simplified VTK pane created successfully")
+                                logger.info(
+                                    "✅ Simplified VTK pane created successfully"
+                                )
 
                             except Exception as simple_error:
-                                logger.error(f"🚨 Even simplified VTK pane failed: {simple_error}")
+                                logger.error(
+                                    f"🚨 Even simplified VTK pane failed: {simple_error}"
+                                )
                                 self.vtk_pane = None
                                 raise vtk_create_error
 
@@ -916,9 +930,7 @@ class DataDashboard(param.Parameterized):
                             if ren_win and hasattr(ren_win, "Render"):
                                 # Just trigger a render to ensure display is updated
                                 ren_win.Render()
-                                logger.info(
-                                    "✅ Render window updated successfully"
-                                )
+                                logger.info("✅ Render window updated successfully")
                         except Exception as camera_error:
                             logger.warning(
                                 f"⚠️ Could not update render window: {camera_error}"
@@ -1930,7 +1942,9 @@ class DataDashboard(param.Parameterized):
             return
 
         if self.read_only:
-            self.status_pane.object = "<p style='color:orange'>⚠️ Dashboard is in read-only mode</p>"
+            self.status_pane.object = (
+                "<p style='color:orange'>⚠️ Dashboard is in read-only mode</p>"
+            )
             return
 
         try:
@@ -2030,7 +2044,9 @@ class DataDashboard(param.Parameterized):
             return
 
         if self.read_only:
-            self.status_pane.object = "<p style='color:orange'>⚠️ Dashboard is in read-only mode</p>"
+            self.status_pane.object = (
+                "<p style='color:orange'>⚠️ Dashboard is in read-only mode</p>"
+            )
             return
 
         # Show modal confirmation dialog
@@ -2039,7 +2055,9 @@ class DataDashboard(param.Parameterized):
     def _perform_file_deletion(self):
         """Actually perform the file deletion after confirmation."""
         if self.read_only:
-            self.status_pane.object = "<p style='color:orange'>⚠️ Dashboard is in read-only mode</p>"
+            self.status_pane.object = (
+                "<p style='color:orange'>⚠️ Dashboard is in read-only mode</p>"
+            )
             return
 
         try:

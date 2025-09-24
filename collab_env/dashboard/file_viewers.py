@@ -26,7 +26,7 @@ class FileViewerRegistry:
     def _register_default_viewers(self):
         """Register default file viewers."""
         # Text viewers - disabled for now
-        
+
         # text_viewer = TextViewer()
         # for ext in [".yml", ".yaml", ".txt", ".xml", ".json", ".md", ".rst"]:
         #     self.viewers[ext] = text_viewer
@@ -924,7 +924,7 @@ class PLYViewer(BaseViewer):
                     plotter.camera.position = (
                         center[0] + distance,
                         center[1] + distance,
-                        center[2] + distance
+                        center[2] + distance,
                     )
                     plotter.camera.focal_point = center
                     plotter.camera.up = (0, 0, 1)  # Z-up

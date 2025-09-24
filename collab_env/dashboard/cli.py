@@ -51,7 +51,7 @@ def main():
     parser.add_argument(
         "--read-only",
         action="store_true",
-        help="Enable read-only mode (disable upload/delete functionality)"
+        help="Enable read-only mode (disable upload/delete functionality)",
     )
 
     args = parser.parse_args()

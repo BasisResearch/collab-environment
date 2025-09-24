@@ -35,7 +35,7 @@ parser.add_argument(
 parser.add_argument(
     "--read-only",
     action="store_true",
-    help="Enable read-only mode (disable upload/delete functionality)"
+    help="Enable read-only mode (disable upload/delete functionality)",
 )
 
 # Parse known args to handle panel serve's additional arguments
