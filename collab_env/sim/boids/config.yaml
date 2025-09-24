@@ -9,8 +9,8 @@ simulator:
   submesh_target: True
   submesh_show_points: False # put spheres on at least some of the submesh vertices
   moving_targets: False
-  num_episodes: 50
-  num_frames: 3000
+  num_episodes: 1
+  num_frames: 200
   target_creation_time: [500] # min is 1, which creates the target at the beginning of the episode.
   show_box: False
   # run_main_folder: "collab_env/sim/runs"
@@ -21,8 +21,8 @@ simulator:
 
 
 visuals:
-  store_video: True
-  show_visualizer: False
+  store_video: False
+  show_visualizer: True
   width: 1080     # sometimes too high a resolution fails, so may need to go smaller
   height: 720
   video_codec: '*mpv4' # only mp4 has been tested
