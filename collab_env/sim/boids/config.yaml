@@ -60,9 +60,9 @@ agent:
   min_separation: 20.0
   neighborhood_dist: 80.0
   random_weight: 1.0
-  separation_weight: 0.0
-  alignment_weight: 0.0
-  cohesion_weight: 0.0
+  separation_weight: 15.0
+  alignment_weight: 1.0
+  cohesion_weight: 0.5
   ground_weight: 0.0
   target_weight: [0.002, -1.0, 0.0, 0.0] #[0.002]
   max_speed: 1.0
@@ -115,7 +115,7 @@ meshes:
     # sub_mesh_angle: [0.0, 0.0, 0.0]
 
 files:
-    output_folder_prefix: 'hackathon-independent_sim_runs' # which of these am I using?
+    output_folder_prefix: 'boid_sim_runs' # which of these am I using?
     trajectory_file: 'episode-0-completed-20250822-203226.parquet'
     trajectory_folder: 'good-runs/sim_independent_tree_target_started_20250822_202708'
 
