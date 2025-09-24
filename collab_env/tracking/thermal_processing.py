@@ -235,8 +235,8 @@ class _FrameRenderer:
                 (self.frame_height, 6, 3), 255, dtype=np.uint8
             )  # thin white spacer
         else:
-            self.colorbar = None
-            self.separator = None
+            self.colorbar = None  # type: ignore
+            self.separator = None  # type: ignore
 
     def _build_colorbar(self) -> np.ndarray:
         bar_width = max(40, int(self.frame_width * 0.08))
@@ -499,12 +499,14 @@ def process_directory(
                     print(f"Using provided/filled vmin={vmin}, vmax={vmax}")
 
             reader.reset()
-            
+
             if mp4_output_prefix is None:
                 mp4_output_prefix = file_path.name
-            
+
             out_file = (
-                Path(out_path) / thermal_folder / f"{mp4_output_prefix}_{int(vmin)}_{int(vmax)}.mp4"
+                Path(out_path)
+                / thermal_folder
+                / f"{mp4_output_prefix}_{int(vmin)}_{int(vmax)}.mp4"
             )  # Ensure output is organized by thermal folder
             out_file.parent.mkdir(
                 parents=True, exist_ok=True
