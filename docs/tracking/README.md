@@ -1,6 +1,6 @@
 # Tracking scripts usage guide
 
-As part of the 'full_pipeline' notebook, there are 2 key steps: preprocessing (explained here), and inference (weight download and running explained in the model folder README). If you plan on using already processed data, skip the alignment stage. 
+As part of the `full_pipeline.ipynb` notebook, there are 2 key steps: preprocessing (explained here), and inference. If you plan on using already processed data, skip the alignment stage. 
 
 For preprocessing, you will use `thermal_processing.py` and the `alignment_gui.py` scripts, both called in the notebook, but also accessible as standalone scripts. *Note* that the GUI works best when run locally. 
 
@@ -99,7 +99,7 @@ The alignment mechanism is manual, requiring some user input. The field of view 
 
 ## **Usage**
 
-Use the `full_pipeline` notebook, or run the scripts from the command line with the required arguments:
+Use the `full_pipeline.ipynb` notebook, or run the scripts from the command line with the required arguments:
 ```python
 python thermal_processing.py \
     --folder_path path/to/thermal_data \
@@ -134,7 +134,7 @@ This section explains how to download training images from the cloud and train v
 #### Downloading Training Images or weights
 
 To access training images please download the zip file from the roboflow_model bucket in the google cloud. 
-The bucket should contain a .pt file containing the model weights (yolo11_weights) for an rf-detr model and a zip file containing the images, labels, and annotations in YOLO v7 PyTorch format, as well as in the COCO format.
+The bucket should contain a .pt file containing the model weights for a YOLOv11 and rf-detr model and a zip file containing the images, labels, and annotations in YOLO v7 PyTorch format, as well as in the COCO format.
 
 
 #### Downloading from Google Cloud
