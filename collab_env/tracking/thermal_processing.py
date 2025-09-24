@@ -19,17 +19,19 @@ import os
 import re
 import subprocess
 import tempfile
+from io import BytesIO
 from math import exp, sqrt
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 import cv2
 import exiftool
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
-from matplotlib import cm
 from libjpeg.utils import decode
+from mpl_toolkits.axes_grid1 import make_axes_locatable
+from PIL import Image
 from tqdm import tqdm
 
 # Constants
@@ -196,91 +198,6 @@ def process_frame(frame, vmin, vmax):
     return np.uint8((frame - vmin) / (vmax - vmin) * 255)
 
 
-RendererKey = Tuple[Tuple[int, ...], float, float, str, Tuple[float, float], bool]
-_renderer_cache: Dict[RendererKey, "_FrameRenderer"] = {}
-
-
-def _resolve_colormap_name(color: str) -> str:
-    """Normalize color map names so black represents lower values."""
-    if not color:
-        return color
-
-    normalized = color.strip()
-    if normalized.lower() == "binary" and not normalized.endswith("_r"):
-        return f"{normalized}_r"
-    return normalized
-
-
-class _FrameRenderer:
-    """Cacheable renderer that avoids matplotlib figure creation per frame."""
-
-    def __init__(
-        self,
-        frame_shape: Tuple[int, ...],
-        vmin: float,
-        vmax: float,
-        color: str,
-        figsize: Tuple[float, float],
-        include_colorbar: bool,
-    ) -> None:
-        cmap_name = _resolve_colormap_name(color)
-        self.vmin = float(vmin)
-        self.vmax = float(vmax)
-        self.cmap = cm.get_cmap(cmap_name)
-        self.frame_height, self.frame_width = frame_shape[:2]
-        self.include_colorbar = include_colorbar
-        if include_colorbar:
-            self.colorbar = self._build_colorbar()
-            self.separator = np.full(
-                (self.frame_height, 6, 3), 255, dtype=np.uint8
-            )  # thin white spacer
-        else:
-            self.colorbar = None
-            self.separator = None
-
-    def _build_colorbar(self) -> np.ndarray:
-        bar_width = max(40, int(self.frame_width * 0.08))
-        gradient = np.linspace(1.0, 0.0, self.frame_height, dtype=np.float32).reshape(
-            self.frame_height, 1
-        )
-        gradient = np.repeat(gradient, bar_width, axis=1)
-        rgba = self.cmap(gradient)
-        colorbar = np.clip(rgba[..., :3] * 255.0, 0, 255).astype(np.uint8)
-
-        tick_values = [self.vmax, (self.vmin + self.vmax) / 2.0, self.vmin]
-        tick_positions = [14, self.frame_height // 2, self.frame_height - 6]
-        for value, pos in zip(tick_values, tick_positions):
-            text = f"{value:.1f}"
-            self._draw_text(colorbar, text, (6, int(pos)), font_scale=0.45)
-
-        border = np.full((self.frame_height, 2, 3), 255, dtype=np.uint8)
-        return np.concatenate([border, colorbar, border], axis=1)
-
-    @staticmethod
-    def _draw_text(
-        image: np.ndarray,
-        text: str,
-        origin: Tuple[int, int],
-        font_scale: float = 0.5,
-        color: Tuple[int, int, int] = (255, 255, 255),
-    ) -> None:
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        cv2.putText(image, text, origin, font, font_scale, (0, 0, 0), 2, cv2.LINE_AA)
-        cv2.putText(image, text, origin, font, font_scale, color, 1, cv2.LINE_AA)
-
-    def render(self, frame: np.ndarray) -> np.ndarray:
-        if self.vmax == self.vmin:
-            normalized = np.zeros_like(frame, dtype=np.float32)
-        else:
-            normalized = (frame - self.vmin) / (self.vmax - self.vmin)
-        normalized = np.clip(normalized, 0.0, 1.0)
-        rgba = self.cmap(normalized)
-        rgb = np.clip(rgba[..., :3] * 255.0, 0, 255).astype(np.uint8)
-        if not self.include_colorbar or self.colorbar is None or self.separator is None:
-            return rgb
-        return np.concatenate((rgb, self.separator, self.colorbar), axis=1)
-
-
 def choose_vmin_vmax(path, default_vmin=-5, default_vmax=37):
     frame_collection = []
 
@@ -327,8 +244,7 @@ def render_frame_with_colorbar(
     vmin: float,
     vmax: float,
     color: str,
-    figsize: Tuple[float, float] = (5.0, 5.0),
-    include_colorbar: bool = True,
+    figsize: Tuple[int, int] = (5, 5),
 ) -> np.ndarray:
     """Render a thermal frame with a colorbar and return it as an RGB image."""
     if frame is None:
@@ -336,29 +252,20 @@ def render_frame_with_colorbar(
             "Frame is None. Cannot render colorbar."
         )  # Fix: Handle None frame
 
-    frame_shape = frame.shape
-    size = (float(figsize[0]), float(figsize[1]))
-    cmap_name = _resolve_colormap_name(color)
-    key: RendererKey = (
-        frame_shape,
-        float(vmin),
-        float(vmax),
-        cmap_name,
-        size,
-        bool(include_colorbar),
-    )
-    renderer = _renderer_cache.get(key)
-    if renderer is None:
-        renderer = _FrameRenderer(
-            frame_shape,
-            vmin,
-            vmax,
-            cmap_name,
-            size,
-            include_colorbar,
-        )
-        _renderer_cache[key] = renderer
-    return renderer.render(frame)
+    sns.set_style("ticks")
+    fig, ax = plt.subplots(figsize=figsize)
+    plt.axis("off")
+    ax.imshow(frame, cmap=color, vmin=vmin, vmax=vmax)
+    make_axes_locatable(ax)
+    fig.tight_layout(pad=0)
+
+    buf = BytesIO()
+    plt.savefig(buf, format="png", bbox_inches="tight", pad_inches=0)
+    buf.seek(0)
+    img = Image.open(buf)
+    img_array = np.array(img.convert("RGB"))
+    plt.close(fig)
+    return img_array
 
 
 def export_thermal_video(
@@ -369,7 +276,6 @@ def export_thermal_video(
     color: str,
     max_frames: Optional[int] = None,
     fps: int = 30,
-    include_colorbar: bool = True,
 ):
     """Convert thermal frames into an MP4 video with a fixed colormap."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -402,9 +308,7 @@ def export_thermal_video(
         frame = reader.next_frame()
         if frame is None:
             break
-        img = render_frame_with_colorbar(
-            frame, vmin, vmax, color, include_colorbar=include_colorbar
-        )
+        img = render_frame_with_colorbar(frame, vmin, vmax, color)
         height, width, _ = img.shape
         if out is None:
             out = cv2.VideoWriter(
@@ -434,11 +338,10 @@ def process_directory(
     fps=30,
     vmin: Optional[float] = None,
     vmax: Optional[float] = None,
-    thermal_folders: List[str] = ["thermal_1", "thermal_2"],
-    include_colorbar: bool = True,
 ):
     """Process the thermal_1 and thermal_2 subfolders in the given folder_path and export their .csq files as MP4 videos."""
     folder_path = Path(folder_path)
+    thermal_folders = ["thermal_1", "thermal_2"]
 
     for thermal_folder in thermal_folders:
         thermal_path = folder_path / thermal_folder
@@ -499,14 +402,11 @@ def process_directory(
 
             reader.reset()
             out_file = (
-                Path(out_path) / thermal_folder / f"{file_path.name}_{int(vmin)}_{int(vmax)}.mp4"
+                Path(out_path) / thermal_folder / f"thermal_{int(vmin)}_{int(vmax)}.mp4"
             )  # Ensure output is organized by thermal folder
             out_file.parent.mkdir(
                 parents=True, exist_ok=True
             )  # Create the output directory if it doesn't exist
-            if out_file.exists():
-                print(f"⚠️ File {out_file} already exists. Skipping...")
-                continue
             export_thermal_video(
                 reader,
                 out_file,
@@ -515,7 +415,6 @@ def process_directory(
                 color=color,
                 max_frames=max_frames or 0,
                 fps=fps,
-                include_colorbar=include_colorbar,
             )  # Handle None for max_frames
 
 
