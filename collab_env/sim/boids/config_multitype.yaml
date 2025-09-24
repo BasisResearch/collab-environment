@@ -21,10 +21,10 @@ simulator:
 
 
 visuals:
-  store_video: False
-  show_visualizer: True
-  width: 1920     # sometimes too high a resolution fails, so may need to go smaller
-  height: 1280
+  store_video: True
+  show_visualizer: False
+  width: 1080     # sometimes too high a resolution fails, so may need to go smaller
+  height: 720
   video_codec: '*mpv4' # only mp4 has been tested
   video_fps: 30
   video_file_extension: 'mp4'

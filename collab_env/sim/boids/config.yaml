@@ -9,8 +9,8 @@ simulator:
   submesh_target: True
   submesh_show_points: False # put spheres on at least some of the submesh vertices
   moving_targets: False
-  num_episodes: 1
-  num_frames: 200
+  num_episodes: 50
+  num_frames: 3000
   target_creation_time: [500] # min is 1, which creates the target at the beginning of the episode.
   show_box: False
   # run_main_folder: "collab_env/sim/runs"
@@ -21,14 +21,14 @@ simulator:
 
 
 visuals:
-  store_video: False
-  show_visualizer: True
-  width: 1920     # sometimes too high a resolution fails, so may need to go smaller
-  height: 1280
+  store_video: True
+  show_visualizer: False
+  width: 1080     # sometimes too high a resolution fails, so may need to go smaller
+  height: 720
   video_codec: '*mpv4' # only mp4 has been tested
   video_fps: 30
   video_file_extension: 'mp4'
-  agent_shape: [[10, 'sphere'], [10,'sphere']] # make this a list of pairs (number of agents, shape), so the environment can correctly draw variants.
+  agent_shape: [[20, 'sphere']] # make this a list of pairs (number of agents, shape), so the environment can correctly draw variants.
   agent_color: [] # [0.18995, 0.07176, 0.23217]
   agent_scale: 5.0
   target_scale: 10.0
@@ -60,9 +60,9 @@ agent:
   min_separation: 20.0
   neighborhood_dist: 80.0
   random_weight: 1.0
-  separation_weight: 15.0
-  alignment_weight: 1.0
-  cohesion_weight: 0.5
+  separation_weight: 0.0
+  alignment_weight: 0.0
+  cohesion_weight: 0.0
   ground_weight: 0.0
   target_weight: [0.002, -1.0, 0.0, 0.0] #[0.002]
   max_speed: 1.0
@@ -79,23 +79,23 @@ agent:
   random_walk: False
   mesh_avoidance: 'up' # one of: 'up', 'flat', 'opposite', 'down', 'no_down', 'no_up', 'land'
   # agent variants override base agent configuration
-  agent_variants:
-    - type: independent
-      num_agents_of_type: 10
-      random_weight: 1.0
-      separation_weight: 15.0 # 15.0
-      alignment_weight: 0.0 # 1.0
-      cohesion_weight: 0.0 # 0.5
-      ground_weight: 0.0
-      random_walk: False
-    - type: boid
-      num_agents_of_type: 10
-      random_weight: 1.0
-      separation_weight: 15.0 # 15.0
-      alignment_weight: 1.0 # 1.0
-      cohesion_weight: 0.5 # 0.5
-      ground_weight: 0.0
-      random_walk: False
+#  agent_variants:
+#    - type: independent
+#      num_agents_of_type: 10
+#      random_weight: 1.0
+#      separation_weight: 15.0 # 15.0
+#      alignment_weight: 0.0 # 1.0
+#      cohesion_weight: 0.0 # 0.5
+#      ground_weight: 0.0
+#      random_walk: False
+#    - type: boid
+#      num_agents_of_type: 10
+#      random_weight: 1.0
+#      separation_weight: 15.0 # 15.0
+#      alignment_weight: 1.0 # 1.0
+#      cohesion_weight: 0.5 # 0.5
+#      ground_weight: 0.0
+#      random_walk: False
 
 meshes:
     # mesh_scene: ''
@@ -115,7 +115,7 @@ meshes:
     # sub_mesh_angle: [0.0, 0.0, 0.0]
 
 files:
-    output_folder_prefix: 'boids_sim_runs' # which of these am I using?
+    output_folder_prefix: 'hackathon-independent_sim_runs' # which of these am I using?
     trajectory_file: 'episode-0-completed-20250822-203226.parquet'
     trajectory_folder: 'good-runs/sim_independent_tree_target_started_20250822_202708'
 

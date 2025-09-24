@@ -418,7 +418,7 @@ if __name__ == "__main__":
         config_filename = expand_path(args.config_file, get_project_root())
     else:
         config_filename = expand_path(
-            "collab_env/sim/boids/config_multitype.yaml", get_project_root()
+            "collab_env/sim/boids/config.yaml", get_project_root()
         )
 
     run_simulator(config_filename=config_filename)
