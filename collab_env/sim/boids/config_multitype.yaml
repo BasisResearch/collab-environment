@@ -28,7 +28,7 @@ visuals:
   video_codec: '*mpv4' # only mp4 has been tested
   video_fps: 30
   video_file_extension: 'mp4'
-  agent_shape: 'sphere'
+  agent_shape: [[10, 'sphere'], [10,'sphere']] # make this a list of pairs (number of agents, shape), so the environment can correctly draw variants.
   agent_color: [] # [0.18995, 0.07176, 0.23217]
   agent_scale: 5.0
   target_scale: 10.0
@@ -53,32 +53,49 @@ environment:
   target_position: [[750, 20, 750], [500, 100, 100], [300, 100, 750], [800,800,200]]
 
 agent:
-  - num_agents_of_type: 20
-  - min_ground_separation: 7.5
-  - ground_avoidance_mean: 1.0
-  - ground_avoidance_variance: 0.01
-  - ground_avoidance_max_speed: 0.1
-  - min_separation: 20.0
-  - neighborhood_dist: 80.0
-  - random_weight: 1.0 # how much randomness should be in the agents' actions.
-  - separation_weight: 0.0 # 15.0
-  - alignment_weight: 1.0 # 1.0
-  - cohesion_weight: 0.0 # 0.5
-  - ground_weight: 0.0
-  - target_weight: [10.0, -1.0, 0.0, 0.0] #[0.002]
-  - max_speed: 1.0
-  - min_speed: 0.1
-  - max_force: 0.1
-  - mean_init_velocity: 0.0
-  - variance_init_velocity: 0.5
-  - init_range_low: 0.4
-  - init_range_high: 0.6
-  - height_range_low: 0.0
-  - height_range_high: 1.0
-  - height_init_min: 150
-  - height_init_max: 250
-  - random_walk: False
-  - mesh_avoidance: 'no_down' # one of: 'up', 'flat', 'opposite', 'down', 'no_down', 'no_up', 'land'
+  min_ground_separation: 7.5
+  ground_avoidance_mean: 1.0
+  ground_avoidance_variance: 0.01
+  ground_avoidance_max_speed: 0.1
+  min_separation: 20.0
+  neighborhood_dist: 80.0
+  random_weight: 0.0 # how much randomness should be in the agents' actions.
+  separation_weight: 0.0 # 15.0
+  alignment_weight: 1.0 # 1.0
+  cohesion_weight: 0.0 # 0.5
+  ground_weight: 0.0
+  target_weight: [0.02, -1.0, 0.0, 0.0] #[0.002]
+  max_speed: 1.0
+  min_speed: 0.1
+  max_force: 0.1
+  mean_init_velocity: 0.0
+  variance_init_velocity: 0.5
+  init_range_low: 0.4
+  init_range_high: 0.6
+  height_range_low: 0.0
+  height_range_high: 1.0
+  height_init_min: 150
+  height_init_max: 250
+  random_walk: False
+  mesh_avoidance: 'up' # one of: 'up', 'flat', 'opposite', 'down', 'no_down', 'no_up', 'land'
+  # agent variants override base agent configuration
+  agent_variants:
+    - type: independent
+      num_agents_of_type: 10
+      random_weight: 1.0
+      separation_weight: 15.0 # 15.0
+      alignment_weight: 0.0 # 1.0
+      cohesion_weight: 0.0 # 0.5
+      ground_weight: 0.0
+      random_walk: False
+    - type: boid
+      num_agents_of_type: 10
+      random_weight: 1.0
+      separation_weight: 15.0 # 15.0
+      alignment_weight: 1.0 # 1.0
+      cohesion_weight: 0.5 # 0.5
+      ground_weight: 0.0
+      random_walk: False
 
 meshes:
     # mesh_scene: ''

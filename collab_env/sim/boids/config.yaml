@@ -59,6 +59,7 @@ agent:
   ground_avoidance_max_speed: 0.1
   min_separation: 20.0
   neighborhood_dist: 80.0
+  random_weight: 1.0
   separation_weight: 15.0
   alignment_weight: 1.0
   cohesion_weight: 0.5

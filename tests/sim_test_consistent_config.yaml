@@ -27,7 +27,7 @@ visuals:
   video_codec: '*mpv4'
   video_fps: 30
   video_file_extension: 'mp4'
-  agent_shape: 'sphere'
+  agent_shape: [[20, 'sphere']]
   agent_color: [0, 0, 1]
   agent_scale: 5.0
   target_scale: 0.5

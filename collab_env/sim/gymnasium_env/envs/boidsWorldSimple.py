@@ -31,7 +31,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         moving_targets=False,
         walking=False,
         target_scale=1.0,
-        agent_shape="CONE",
+        agent_shape=None,
         agent_scale=2.0,
         agent_color=[1, 0, 0],
         agent_mean_init_velocity=0.0,
@@ -97,7 +97,13 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.submesh_color = target_mesh_color
         self.mesh_scene = None  # initialized by reset()
         self.max_dist_from_center = 3
-        self.agent_shape = agent_shape.upper()
+        if agent_shape is None:
+            self.agent_shape = ["CONE"] * num_agents
+        else:
+            self.agent_shape = []
+            for n, shape in agent_shape:
+                self.agent_shape += [shape.upper()] * n
+
         """ 
         -- 091225 10:23AM
         Make this a list so we can have different colors for each agent 
@@ -1719,15 +1725,21 @@ class BoidsWorldSimpleEnv(gym.Env):
             -- 080225 1:57PM 
             Have a config option to make this a sphere instead of a cone. 
             """
-            if self.agent_shape == "SPHERE":
+            if self.agent_shape[i] == "SPHERE":
                 self.mesh_agent[i] = open3d.geometry.TriangleMesh.create_sphere(
                     radius=0.4
                 )
 
-            elif self.agent_shape == "BUNNY":
+            elif self.agent_shape[i] == "BUNNY":
                 bunny = open3d.data.BunnyMesh()
                 self.mesh_agent[i] = open3d.io.read_triangle_mesh(bunny.path)
-            else:  # default to cone
+            elif self.agent_shape[i] == "BOX":
+                self.mesh_agent[i] = open3d.geometry.TriangleMesh.create_box(
+                    width=1.0,
+                    height=1.0,
+                    depth=1.0,
+                )
+            else:  # default to arrow
                 self.mesh_agent[i] = open3d.geometry.TriangleMesh.create_arrow(
                     cone_height=0.8,
                     cone_radius=0.4,

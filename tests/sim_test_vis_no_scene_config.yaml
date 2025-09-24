@@ -28,7 +28,7 @@ visuals:
   video_codec: '*mpv4'
   video_fps: 20
   video_file_extension: 'mp4'
-  agent_shape: 'cone'
+  agent_shape: [[20, 'cone']]
   agent_color: [0, 1, 0]
   agent_scale: 2.0
   target_scale: 2.0

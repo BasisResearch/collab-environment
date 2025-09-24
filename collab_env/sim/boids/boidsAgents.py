@@ -28,6 +28,7 @@ class BoidsWorldAgent:
         self,
         env: gym.Env,
         num_agents=1,
+        initialize_index=0,
         num_targets=1,
         min_ground_separation=3.0,
         min_separation=4.0,
@@ -58,6 +59,7 @@ class BoidsWorldAgent:
         """
         self.env = env
         self.num_agents = num_agents
+        self.initialize_index = initialize_index
         self.num_targets = num_targets
         self.min_ground_separation = min_ground_separation
         self.min_separation = min_separation
@@ -130,7 +132,7 @@ class BoidsWorldAgent:
     def random_action(self, obs):
         velocity = np.array(obs["agent_vel"])  # using ADP style
         location = np.array(obs["agent_loc"])
-        for i in range(self.num_agents):
+        for i in range(self.initialize_index, self.initialize_index + self.num_agents):
             """
             -- 080825 3:53PM
             Duplicates code in SBA for ground response. Need to do that better.  
@@ -155,7 +157,7 @@ class BoidsWorldAgent:
                 total_force += target_force
                 self.cap_force_and_apply(total_force, velocity, i)
 
-        return velocity
+        return velocity[self.initialize_index : self.initialize_index + self.num_agents]
 
     """
     -- 081125 2:49PM
@@ -257,7 +259,7 @@ class BoidsWorldAgent:
         elif self.mesh_avoidance_type == Mesh_Avoidance.NO_UP:
             acceleration[1] = min(0.0, acceleration[1])  # make sure we don't move up
         elif self.mesh_avoidance_type == Mesh_Avoidance.LAND:
-            acceleration = closest_point - location[agent_index]
+            acceleration = closest_point - location[agent_index]  # move onto the ground
         elif self.mesh_avoidance_type == Mesh_Avoidance.OPPOSITE:
             # default is opposite computed in acceleration assignment above.
             pass
@@ -277,7 +279,7 @@ class BoidsWorldAgent:
         # logger.debug(f"called with obs: {obs}")
         velocity = np.array(obs["agent_vel"])  # using ADP style
         location = np.array(obs["agent_loc"])
-        for i in range(self.num_agents):
+        for i in range(self.initialize_index, self.initialize_index + self.num_agents):
             """
             -- 072325 -- 03:29PM
             If we get too close to the ground, reverse direction. This will likely be too abrupt
@@ -447,27 +449,10 @@ class BoidsWorldAgent:
                 may be important. 
                 """
                 self.cap_force_and_apply(total_force, velocity, agent_index=i)
-                # norm_total_force = np.linalg.norm(total_force)
-                # if norm_total_force > self.max_force:
-                #     total_force = total_force / norm_total_force * self.max_force
-                #     logger.debug(f"adjusted total force: {total_force}")
-                #
-                # # apply force
-                # if np.linalg.norm(total_force) > 0:
-                #     """
-                #     -- 072225 10:29AM -- Why was this subtraction? Oops. That fixed a lot of problems.
-                #     """
-                #     velocity[i] = total_force + velocity[i]
-                #
-                # norm_velocity = np.linalg.norm(velocity[i])
-                # if norm_velocity > self.max_speed:
-                #     velocity[i] = velocity[i] / norm_velocity * self.max_speed
-                # elif norm_velocity < self.min_speed:
-                #     velocity[i] = velocity[i] / norm_velocity * self.min_speed
 
         logger.debug("returning velocity: " + str(velocity))
 
-        return velocity
+        return velocity[self.initialize_index : self.initialize_index + self.num_agents]
 
     """
     Returns the new velocity for each agent. 
