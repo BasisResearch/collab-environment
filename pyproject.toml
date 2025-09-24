@@ -55,7 +55,20 @@ dependencies = [
 ]
 
 [tool.setuptools]                         # NEW
-packages = ["collab_env"]  
+packages = [
+    "collab_env.alignment",
+    "collab_env.dashboard", 
+    "collab_env.data",
+    "collab_env.gnn",
+    "collab_env.sim",
+    "collab_env.sim.boids",
+    "collab_env.sim.boids_gnn_temp",
+    "collab_env.sim.gymnasium_env",
+    "collab_env.sim.util",
+    "collab_env.tracking",
+    "collab_env.tracking.model",
+    "collab_env.utils"
+]  
 
 [project.optional-dependencies]
 docs = [
