@@ -99,29 +99,24 @@ def test_rclone_client_integration():
     assert isinstance(buckets, list)
 
 
-def test_file_viewers():
-    """Test file viewer functionality."""
+@pytest.mark.skip(reason="YML viewer removed from dashboard")
+def test_file_viewer_yml():
+    """Test YML file viewer functionality."""
     import tempfile
     import os
     from collab_env.dashboard.file_viewers import (
         FileViewerRegistry,
         TextViewer,
-        TableViewer,
     )
 
     # Test registry creation
     registry = FileViewerRegistry()
     assert registry is not None
 
-    # Test text viewer assignment
+    # Test text viewer assignment for YML
     text_viewer = registry.get_viewer("test.yml")
     assert text_viewer is not None
     assert isinstance(text_viewer, TextViewer)
-
-    # Test table viewer assignment
-    table_viewer = registry.get_viewer("test.csv")
-    assert table_viewer is not None
-    assert isinstance(table_viewer, TableViewer)
 
     # Test text rendering with actual file
     test_content = "test: value\nother: 123"
@@ -145,6 +140,53 @@ def test_file_viewers():
 
     # Test editing capabilities
     assert text_viewer.can_edit()
+
+
+def test_file_viewer_csv():
+    """Test CSV file viewer functionality."""
+    import tempfile
+    import os
+    from collab_env.dashboard.file_viewers import (
+        FileViewerRegistry,
+        TableViewer,
+    )
+
+    # Test registry creation
+    registry = FileViewerRegistry()
+    assert registry is not None
+
+    # Test table viewer assignment for CSV
+    table_viewer = registry.get_viewer("test.csv")
+    assert table_viewer is not None
+    assert isinstance(table_viewer, TableViewer)
+
+    # Test CSV rendering with actual file
+    test_content = "header1,header2\nvalue1,value2\nvalue3,value4"
+
+    # Create temporary file for testing
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".csv", delete=False
+    ) as temp_file:
+        temp_file.write(test_content)
+        temp_file_path = temp_file.name
+
+    try:
+        render_info = table_viewer.render_view(temp_file_path, "test.csv")
+        assert render_info["type"] == "table"
+        assert "html" in render_info
+        assert "stats" in render_info
+        # Check that it parsed the CSV correctly
+        assert render_info["stats"]["rows"] == 2
+        assert render_info["stats"]["columns"] == 2
+        assert render_info["stats"]["column_names"] == ["header1", "header2"]
+        # The HTML should contain the table data
+        assert "value1" in render_info["html"]
+        assert "value2" in render_info["html"]
+    finally:
+        # Clean up temporary file
+        os.unlink(temp_file_path)
+
+    # Test editing capabilities
     assert not table_viewer.can_edit()
 
 
