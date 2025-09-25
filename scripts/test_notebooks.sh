@@ -18,4 +18,4 @@ for notebook in "${EXCLUDED_NOTEBOOKS[@]}"; do
     IGNORE_FLAGS="$IGNORE_FLAGS --ignore $notebook"
 done
 
-CI=1 pytest --nbval-lax --dist loadscope --nbval-cell-timeout=600 -n auto $INCLUDED_NOTEBOOKS $IGNORE_FLAGS
+CI=1 pytest --nbval-lax --dist loadscope -n auto $INCLUDED_NOTEBOOKS $IGNORE_FLAGS
