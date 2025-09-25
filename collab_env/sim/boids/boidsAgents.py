@@ -1,7 +1,19 @@
+from enum import Enum, auto
+
 from loguru import logger
 
 import gymnasium as gym
 import numpy as np
+
+
+class Mesh_Avoidance(Enum):
+    UP = auto()
+    FLAT = auto()
+    DOWN = auto()
+    NO_DOWN = auto()
+    NO_UP = auto()
+    OPPOSITE = auto()
+    LAND = auto()
 
 
 class BoidsWorldAgent:
@@ -16,10 +28,12 @@ class BoidsWorldAgent:
         self,
         env: gym.Env,
         num_agents=1,
+        initialize_index=0,
         num_targets=1,
         min_ground_separation=3.0,
         min_separation=4.0,
         neighborhood_dist=20.0,
+        random_weight=0.0,
         ground_weight=1.0,
         separation_weight=3.0,
         alignment_weight=0.5,
@@ -31,6 +45,7 @@ class BoidsWorldAgent:
         walking=True,
         has_mesh_scene=True,
         random_walk=False,
+        mesh_avoidance_type=Mesh_Avoidance.UP,
     ):
         """Initialize a Q-Learning agent.
 
@@ -44,11 +59,13 @@ class BoidsWorldAgent:
         """
         self.env = env
         self.num_agents = num_agents
+        self.initialize_index = initialize_index
         self.num_targets = num_targets
         self.min_ground_separation = min_ground_separation
         self.min_separation = min_separation
         self.neighborhood_dist = neighborhood_dist
         self.ground_weight = ground_weight
+        self.random_weight = random_weight
         self.separation_weight = separation_weight
         self.alignment_weight = alignment_weight
         self.cohesion_weight = cohesion_weight
@@ -64,6 +81,7 @@ class BoidsWorldAgent:
         self.max_force = max_force
         self.walking = walking
         self.env_has_mesh_scene = has_mesh_scene
+        self.mesh_avoidance_type = mesh_avoidance_type
 
         """
         -- 080525
@@ -114,7 +132,7 @@ class BoidsWorldAgent:
     def random_action(self, obs):
         velocity = np.array(obs["agent_vel"])  # using ADP style
         location = np.array(obs["agent_loc"])
-        for i in range(self.num_agents):
+        for i in range(self.initialize_index, self.initialize_index + self.num_agents):
             """
             -- 080825 3:53PM
             Duplicates code in SBA for ground response. Need to do that better.  
@@ -139,7 +157,7 @@ class BoidsWorldAgent:
                 total_force += target_force
                 self.cap_force_and_apply(total_force, velocity, i)
 
-        return velocity
+        return velocity[self.initialize_index : self.initialize_index + self.num_agents]
 
     """
     -- 081125 2:49PM
@@ -216,12 +234,36 @@ class BoidsWorldAgent:
         """
         -- 081725 6:50PM
         Let's try going in the opposite direction of the closest point instead of up, front, right. 
+        
+        
+        -- 091825 1:48PM
+        Why are we squaring the numerator, not the denominator? 
         """
         closest_point = obs["mesh_scene_closest_points"][agent_index]
-        acceleration = self.min_ground_separation**2 / (
-            location[agent_index] - closest_point
+        acceleration = self.min_ground_separation / (
+            (location[agent_index] - closest_point) ** 2
         )
-        acceleration[1] = np.abs(acceleration[1])  # make sure we move up.
+        """
+        -- 091025 10:33PM
+        If the closest point is up, keep the height the same rather than going down. This 
+        might be better than always moving up. 
+        """
+        if self.mesh_avoidance_type == Mesh_Avoidance.UP:
+            acceleration[1] = np.abs(acceleration[1])  # make sure we move up.
+        if self.mesh_avoidance_type == Mesh_Avoidance.DOWN:
+            acceleration[1] = -np.abs(acceleration[1])  # make sure we move down.
+        elif self.mesh_avoidance_type == Mesh_Avoidance.FLAT:
+            acceleration[1] = 0.0  # stay in same horizontal plane.
+        elif self.mesh_avoidance_type == Mesh_Avoidance.NO_DOWN:
+            acceleration[1] = max(0.0, acceleration[1])  # make sure we don't move down.
+        elif self.mesh_avoidance_type == Mesh_Avoidance.NO_UP:
+            acceleration[1] = min(0.0, acceleration[1])  # make sure we don't move up
+        elif self.mesh_avoidance_type == Mesh_Avoidance.LAND:
+            acceleration = closest_point - location[agent_index]  # move onto the ground
+        elif self.mesh_avoidance_type == Mesh_Avoidance.OPPOSITE:
+            # default is opposite computed in acceleration assignment above.
+            pass
+
         self.cap_force_and_apply(acceleration, velocity, agent_index)
 
         """
@@ -237,7 +279,7 @@ class BoidsWorldAgent:
         # logger.debug(f"called with obs: {obs}")
         velocity = np.array(obs["agent_vel"])  # using ADP style
         location = np.array(obs["agent_loc"])
-        for i in range(self.num_agents):
+        for i in range(self.initialize_index, self.initialize_index + self.num_agents):
             """
             -- 072325 -- 03:29PM
             If we get too close to the ground, reverse direction. This will likely be too abrupt
@@ -314,6 +356,7 @@ class BoidsWorldAgent:
                 # and limit it to some maximum force.
 
                 total_force = np.zeros(3)
+                random_force = self.env.np_random.normal(0, 0.1, size=3)
                 align_force = np.zeros(3)
                 separation_force = np.zeros(3)
                 cohesion_force = np.zeros(3)
@@ -355,33 +398,6 @@ class BoidsWorldAgent:
                 This needs to be a separate configurable weight for each target 
                 """
                 target_force = self.calc_target_force(obs, agent_index=i)
-                # target_force = 0
-                # for t in range(self.num_targets):
-                #     if self.target_weight[t] > 0.0:
-                #         # -- 080625 9:55PM
-                #         # change this to use the closest point rather than center of target mesh
-                #         #
-                #         # steer = obs["target_loc"][t] - obs["agent_loc"][i]
-                #         steer = obs["target_closest_points"][i][t] - obs["agent_loc"][i]
-                #         logger.debug("target_loc = " + str(obs["target_loc"][t]))
-                #         logger.debug("steer " + str(steer))
-                #
-                #         """
-                #         -- 072925 10:10AM
-                #         Change this to just use the full force computed to steer rather than pushing it
-                #         to max_force, which doesn't make sense. We will limit to max_force when we
-                #         accumulate all of the forces. This is different from the way Shiffman does it --
-                #         not sure if he is doing it that way for pedagogical reasons.
-                #
-                #         -- 073125 8:58AM
-                #         I think Shiffman uses max_speed. We should probably treat the forces consistently and
-                #         make everyone move at max_speed and then limit the total steering force. This seem to
-                #         cause problems with everyone going to the walls, so took it out.
-                #         """
-                #         # target_force = steer / np.linalg.norm(steer) * self.max_speed
-                #         target_force += self.target_weight[t] * steer
-                #
-                #         logger.debug(f"target force {target_force}")
 
                 # ground
                 """
@@ -422,6 +438,7 @@ class BoidsWorldAgent:
                     + target_force  # weights are applied above
                     + self.separation_weight * separation_force
                     + self.ground_weight * ground_force
+                    + self.random_weight * random_force
                 )
                 logger.debug(f"total force: {total_force}")
 
@@ -432,27 +449,10 @@ class BoidsWorldAgent:
                 may be important. 
                 """
                 self.cap_force_and_apply(total_force, velocity, agent_index=i)
-                # norm_total_force = np.linalg.norm(total_force)
-                # if norm_total_force > self.max_force:
-                #     total_force = total_force / norm_total_force * self.max_force
-                #     logger.debug(f"adjusted total force: {total_force}")
-                #
-                # # apply force
-                # if np.linalg.norm(total_force) > 0:
-                #     """
-                #     -- 072225 10:29AM -- Why was this subtraction? Oops. That fixed a lot of problems.
-                #     """
-                #     velocity[i] = total_force + velocity[i]
-                #
-                # norm_velocity = np.linalg.norm(velocity[i])
-                # if norm_velocity > self.max_speed:
-                #     velocity[i] = velocity[i] / norm_velocity * self.max_speed
-                # elif norm_velocity < self.min_speed:
-                #     velocity[i] = velocity[i] / norm_velocity * self.min_speed
 
         logger.debug("returning velocity: " + str(velocity))
 
-        return velocity
+        return velocity[self.initialize_index : self.initialize_index + self.num_agents]
 
     """
     Returns the new velocity for each agent. 

@@ -27,7 +27,7 @@ visuals:
   video_codec: '*mpv4'
   video_fps: 30
   video_file_extension: 'mp4'
-  agent_shape: 'sphere'
+  agent_shape: [[20, 'sphere']]
   agent_color: [0, 0, 1]
   agent_scale: 5.0
   target_scale: 0.5
@@ -58,6 +58,7 @@ agent:
   ground_avoidance_max_speed: 0.1
   min_separation: 20.0
   neighborhood_dist: 80.0
+  random_weight: 0.0
   separation_weight: 15.0
   alignment_weight: 1.0
   cohesion_weight: 0.5
@@ -75,6 +76,7 @@ agent:
   height_init_min: 100
   height_init_max: 300
   random_walk: False
+  mesh_avoidance: 'no_down'
 
 meshes:
     # mesh_scene: ''

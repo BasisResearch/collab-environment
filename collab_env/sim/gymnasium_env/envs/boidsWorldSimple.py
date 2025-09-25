@@ -7,6 +7,7 @@ from gymnasium import spaces
 
 # from Boids.sim_utils import calc_angles
 from loguru import logger
+from scipy.spatial import cKDTree as KDTree
 
 from collab_env.data.file_utils import get_project_root, expand_path
 from collab_env.sim.boids.sim_utils import get_submesh_indices_from_ply
@@ -30,7 +31,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         moving_targets=False,
         walking=False,
         target_scale=1.0,
-        agent_shape="CONE",
+        agent_shape=None,
         agent_scale=2.0,
         agent_color=[1, 0, 0],
         agent_mean_init_velocity=0.0,
@@ -71,6 +72,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         color_tracks_by_time=False,
         number_track_color_groups=1,
         track_color_rate=4,
+        kd_workers=1,  # 1 seems to work better than -1 on Macbook Pro M4 MAX
     ):
         if target_mesh_color is None:
             target_mesh_color = [1, 0, 1]
@@ -95,8 +97,27 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.submesh_color = target_mesh_color
         self.mesh_scene = None  # initialized by reset()
         self.max_dist_from_center = 3
-        self.agent_shape = agent_shape.upper()
-        self.agent_color = agent_color
+        if agent_shape is None:
+            self.agent_shape = ["CONE"] * num_agents
+        else:
+            self.agent_shape = []
+            for n, shape in agent_shape:
+                self.agent_shape += [shape.upper()] * n
+
+        """ 
+        -- 091225 10:23AM
+        Make this a list so we can have different colors for each agent 
+        """
+        if agent_color == []:
+            self.agent_color = [
+                ColorMaps.turbo_colormap_data[
+                    int(i * len(ColorMaps.turbo_colormap_data) / num_agents)
+                ]
+                for i in range(num_agents)
+            ]
+        else:
+            self.agent_color = [agent_color] * num_agents
+
         self.target_scale = target_scale
         self.action_scale = agent_scale
         self.agent_mean_init_velocity = agent_mean_init_velocity
@@ -154,6 +175,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         self.terminated = False
         self.truncated = False
         self.raycasting_scene = None
+        self.kd_workers = kd_workers
 
         """
         -- 081225 3:58PM
@@ -173,11 +195,13 @@ class BoidsWorldSimpleEnv(gym.Env):
         #
         self.num_submesh_targets = 0
         self.submesh_vertex_indices = []
+        self.submesh_kdtree = []
         self.submesh_vertices = []
         if self.target_mesh_file is not None:
             self.num_submesh_targets = len(self.target_mesh_file)
             self.submesh_target = True
             self.submesh_vertices = [None] * self.num_submesh_targets
+            self.submesh_kdtree = [None] * self.num_submesh_targets
             for t in range(self.num_submesh_targets):
                 logger.debug(f"target mesh file {self.target_mesh_file[t]}")
                 self.submesh_vertex_indices.append(
@@ -194,6 +218,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             
             TAKE THIS OUT AFTER TESTING 
             """
+
             # self.submesh_vertex_indices[1] = list(range(121350, 121550))
 
         self.observation_space = spaces.Dict(
@@ -340,8 +365,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         # it here rather than making the call for no reason.
         #
         if self.mesh_scene is None:
-            scene_distances = -np.ones(self.num_agents)
-            scene_closest_points = -np.ones(self.num_agents)
+            scene_distances = -np.ones(self.num_agents)  # , dtype=np.float32)
+            scene_closest_points = -np.ones(self.num_agents)  # , dtype=np.float32)
         else:
             scene_distances, scene_closest_points = (
                 self.compute_distance_and_closest_points(
@@ -405,7 +430,7 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         if self.mesh_scene is None:
             distances = -np.ones(self.num_agents)
-            closest_points = -np.ones(self.num_agents)
+            closest_points = -np.ones((self.num_agents, 3))
         else:
             distances, closest_points = self.compute_distance_and_closest_points(
                 self.mesh_scene, self._agent_location
@@ -474,9 +499,25 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         """
 
-        d, c = self.compute_distance_and_closest_points_to_vertices(
-            self.submesh_vertices, self._agent_location
+        # d_v, c_v = self.compute_distance_and_closest_points_to_vertices(
+        #      self.submesh_vertices, self._agent_location
+        # )
+
+        d, c = self.compute_distance_and_closest_points_to_vertices_kdtree(
+            self.submesh_vertices, self.submesh_kdtree, self._agent_location
         )
+
+        """
+        -- 090625 7:20PM 
+        Tested kdtree to make sure it matched the norm calculation, which it does with negligible 
+        numerical differences. 
+        """
+        # diff_d = d - d_v
+        # indices = np.nonzero(diff_d)
+        # diff_c = c[indices]
+        # diff_cv = c_v[indices]
+        # logger.debug(f'diff c:\n {diff_c}')
+        # logger.debug(f'diff c_v:\n {diff_cv}')
         """
         -- 082425 1:15PM
         These are now coming back as lists, so no need to force that here. 
@@ -485,11 +526,13 @@ class BoidsWorldSimpleEnv(gym.Env):
         closest_points = np.array(c)
         distances = np.array(distances).transpose()
 
-        logger.debug(f"dist {distances}")
-        logger.debug(f"dist shape {distances.shape}")
+        # logger.debug(f"dist {distances}")
+        # logger.debug(f"dist shape {distances.shape}")
+
         closest_points = np.array(closest_points).transpose((1, 0, 2))
-        logger.debug(f"points {closest_points}")
-        logger.debug(f"points shape {closest_points.shape}")
+
+        # logger.debug(f"points {closest_points}")
+        # logger.debug(f"points shape {closest_points.shape}")
 
         return distances, closest_points
 
@@ -1254,6 +1297,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         # reward = prev_distance - distance # rewarded for gaining ground
         # reward = 1 if terminated else 0  # Binary sparse rewards
         observation = self._get_obs()
+        logger.debug(f"observation:\n{observation}")
 
         """
         -- 073125 2:51PM
@@ -1333,6 +1377,48 @@ class BoidsWorldSimpleEnv(gym.Env):
         colors = [[1, 0, 0] for _ in range(len(lines))]
         self.box_line_set.colors = open3d.utility.Vector3dVector(colors)
         self.vis.add_geometry(self.box_line_set)
+
+    def compute_distance_and_closest_points_to_vertices_kdtree(
+        self,
+        submesh_vertices,
+        submesh_kdtree,
+        locations,
+    ):
+        """
+
+        Args:
+            submesh_vertices:
+            submesh_kdtree:
+            locations:
+
+        Returns:
+
+        """
+
+        distances = np.zeros((self.num_submesh_targets, len(locations)))
+        closest_points = np.zeros((self.num_submesh_targets, len(locations), 3))
+
+        for t in range(self.num_submesh_targets):
+            logger.debug(f"t: {t}")
+            dist_kd, closest_indices = submesh_kdtree[t].query(
+                locations, workers=self.kd_workers
+            )
+            logger.debug(f"distances[t] shape: {distances[t].shape}")
+            logger.debug(f"dist_kd shape: {dist_kd.shape}")
+            logger.debug(f"closest indices shape: {closest_indices.shape}")
+            # logger.debug(f'closest indices: {closest_indices}')
+            logger.debug(f"closest points shape: {closest_points[t].shape}")
+            logger.debug(f"submesh_vertices[t] shape: {submesh_vertices[t].shape}")
+            logger.debug(
+                f"submesh_vertices[t][closest_indices] shape: {submesh_vertices[t][closest_indices].shape}"
+            )
+            # closest_points[t] = np.squeeze(submesh_vertices[t][closest_indices], axis=1)
+            # scipy doesn't require the squeeze, sklearn KDTree does.
+            closest_points[t] = submesh_vertices[t][closest_indices]
+            logger.debug(f"closest points: {closest_points[t]}")
+            # distances[t] = np.squeeze(dist_kd, axis=1)
+            distances[t] = dist_kd
+        return distances, closest_points
 
     def compute_distance_and_closest_points_to_vertices(
         self,
@@ -1639,15 +1725,21 @@ class BoidsWorldSimpleEnv(gym.Env):
             -- 080225 1:57PM 
             Have a config option to make this a sphere instead of a cone. 
             """
-            if self.agent_shape == "SPHERE":
+            if self.agent_shape[i] == "SPHERE":
                 self.mesh_agent[i] = open3d.geometry.TriangleMesh.create_sphere(
                     radius=0.4
                 )
 
-            elif self.agent_shape == "BUNNY":
+            elif self.agent_shape[i] == "BUNNY":
                 bunny = open3d.data.BunnyMesh()
                 self.mesh_agent[i] = open3d.io.read_triangle_mesh(bunny.path)
-            else:  # default to cone
+            elif self.agent_shape[i] == "BOX":
+                self.mesh_agent[i] = open3d.geometry.TriangleMesh.create_box(
+                    width=1.0,
+                    height=1.0,
+                    depth=1.0,
+                )
+            else:  # default to arrow
                 self.mesh_agent[i] = open3d.geometry.TriangleMesh.create_arrow(
                     cone_height=0.8,
                     cone_radius=0.4,
@@ -1656,7 +1748,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                 )
 
             self.mesh_agent[i].compute_vertex_normals()
-            self.mesh_agent[i].paint_uniform_color(self.agent_color)
+            self.mesh_agent[i].paint_uniform_color(self.agent_color[i])
             self.mesh_agent[i].translate(self._agent_location[i])
             self.mesh_agent[i].scale(
                 scale=self.agent_scale, center=self._agent_location[i]
@@ -1838,6 +1930,10 @@ class BoidsWorldSimpleEnv(gym.Env):
                     self.submesh_vertices[t] = np.array(self.mesh_scene.vertices)[
                         vertex_mask
                     ]  # + mesh.get_center()
+                    """
+                    -- 090625 4:39PM 
+                    """
+                    self.submesh_kdtree[t] = KDTree(self.submesh_vertices[t])
 
         if self.show_box:
             self.add_box()
