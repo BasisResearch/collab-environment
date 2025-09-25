@@ -19,6 +19,7 @@ def infer_with_yolo(
     output_video_path=None,
     show_window=True,
     verbose=True,
+    max_frames=None,
 ):
     model = YOLO(model_path)
     print("Model loaded successfully for inference!")
@@ -29,6 +30,8 @@ def infer_with_yolo(
         return
 
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    if max_frames is not None:
+        total_frames = min(total_frames, max_frames)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     fps = cap.get(cv2.CAP_PROP_FPS)
