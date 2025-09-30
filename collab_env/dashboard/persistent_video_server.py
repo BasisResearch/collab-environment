@@ -17,10 +17,14 @@ logger = logging.getLogger(__name__)
 # Create Flask app with proper template and static folders
 app = Flask(__name__, template_folder="templates", static_folder="static")
 
-# Thread-safe storage for videos and meshes
+# Thread-safe storage for videos, meshes, and simulations
 videos_data: dict[str, dict] = {}
 meshes_data: dict[str, dict] = {}
 data_lock = Lock()
+
+# Simulation mode support
+simulation_mode = False
+simulation_loader = None
 
 
 def convert_camera_params_to_json(params):
@@ -85,6 +89,14 @@ def mesh_viewer():
 def sync_viewer():
     """Synchronized 2D + 3D viewer."""
     return render_template("sync_viewer.html")
+
+
+@app.route("/simulation")
+def simulation_viewer():
+    """Simulation viewer with episode playback."""
+    if not simulation_mode:
+        return jsonify({"error": "Simulation mode not enabled"}), 404
+    return render_template("simulation_viewer.html")
 
 
 # API Routes for data management
@@ -336,8 +348,123 @@ def api_health():
             "videos_count": videos_count,
             "meshes_count": meshes_count,
             "server": "persistent_video_server",
+            "simulation_mode": simulation_mode,
         }
     )
+
+
+# Simulation API Routes (only available in simulation mode)
+@app.route("/api/add_simulation", methods=["POST"])
+def api_add_simulation():
+    """Add a simulation folder for viewing."""
+    if not simulation_mode or simulation_loader is None:
+        return jsonify({"error": "Simulation mode not enabled"}), 404
+
+    try:
+        data = request.get_json()
+        simulation_id = data.get("simulation_id")
+        folder_path = data.get("folder_path")
+        config_path = data.get("config_path")
+
+        if not all([simulation_id, folder_path, config_path]):
+            return jsonify({"error": "Missing required fields"}), 400
+
+        sim_info = simulation_loader.register_simulation(simulation_id, folder_path, config_path)
+        return jsonify({"success": True, "simulation": sim_info})
+
+    except Exception as e:
+        logger.error(f"Error adding simulation: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/simulations", methods=["GET"])
+def api_list_simulations():
+    """List all registered simulations."""
+    if not simulation_mode or simulation_loader is None:
+        return jsonify({"error": "Simulation mode not enabled"}), 404
+
+    try:
+        simulations = simulation_loader.get_simulations()
+        return jsonify(simulations)
+    except Exception as e:
+        logger.error(f"Error listing simulations: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/simulation/<simulation_id>/episodes", methods=["GET"])
+def api_list_episodes(simulation_id):
+    """List episodes for a simulation."""
+    if not simulation_mode or simulation_loader is None:
+        return jsonify({"error": "Simulation mode not enabled"}), 404
+
+    try:
+        episodes = simulation_loader.get_episodes(simulation_id)
+        return jsonify(episodes)
+    except Exception as e:
+        logger.error(f"Error listing episodes for {simulation_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/simulation/<simulation_id>/episode/<int:episode_id>", methods=["GET"])
+def api_get_episode_data(simulation_id, episode_id):
+    """Get episode track data."""
+    if not simulation_mode or simulation_loader is None:
+        return jsonify({"error": "Simulation mode not enabled"}), 404
+
+    try:
+        episode_data = simulation_loader.load_episode(simulation_id, episode_id)
+        return jsonify(episode_data)
+    except Exception as e:
+        logger.error(f"Error loading episode {episode_id} for {simulation_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/simulation/<simulation_id>/mesh/<mesh_type>")
+def api_get_simulation_mesh(simulation_id, mesh_type):
+    """Serve mesh files for simulation."""
+    if not simulation_mode or simulation_loader is None:
+        return jsonify({"error": "Simulation mode not enabled"}), 404
+
+    try:
+        if simulation_id not in simulation_loader.registered_simulations:
+            return jsonify({"error": "Simulation not found"}), 404
+
+        sim_info = simulation_loader.registered_simulations[simulation_id]
+        config = sim_info["config"]
+        meshes_config = config.get("meshes", {})
+
+        mesh_path = None
+        if mesh_type == "scene":
+            scene_mesh = meshes_config.get("mesh_scene")
+            if scene_mesh:
+                from collab_env.data.file_utils import expand_path, get_project_root
+                mesh_path = expand_path(scene_mesh, get_project_root())
+        elif mesh_type == "target":
+            sub_mesh_target = meshes_config.get("sub_mesh_target")
+            if sub_mesh_target:
+                from collab_env.data.file_utils import expand_path, get_project_root
+                if isinstance(sub_mesh_target, list) and len(sub_mesh_target) > 0:
+                    mesh_path = expand_path(sub_mesh_target[0], get_project_root())
+                elif isinstance(sub_mesh_target, str):
+                    mesh_path = expand_path(sub_mesh_target, get_project_root())
+
+        if not mesh_path or not Path(mesh_path).exists():
+            return jsonify({"error": f"{mesh_type} mesh not found"}), 404
+
+        mesh_path = Path(mesh_path)
+        return send_from_directory(mesh_path.parent, mesh_path.name)
+
+    except Exception as e:
+        logger.error(f"Error serving {mesh_type} mesh for {simulation_id}: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+def configure_simulation_mode():
+    """Configure simulation mode components."""
+    global simulation_mode, simulation_loader
+    from collab_env.dashboard.utils.simulation_loader import SimulationDataLoader
+    simulation_mode = True
+    simulation_loader = SimulationDataLoader()
 
 
 if __name__ == "__main__":
@@ -345,8 +472,19 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Persistent Video Server")
     parser.add_argument("--port", type=int, default=5050, help="Port to run server on")
+    parser.add_argument("--mode", choices=["default", "simulation"], default="default",
+                        help="Server mode: default or simulation")
+    parser.add_argument("--data-dir", help="Data directory for simulation mode")
     args = parser.parse_args()
 
+    # Configure simulation mode
+    if args.mode == "simulation":
+        configure_simulation_mode()
+        logger.info("Simulation mode enabled")
+
+        if args.data_dir:
+            logger.info(f"Simulation data directory: {args.data_dir}")
+
     port = args.port
-    logger.info(f"Starting persistent server on port {port}")
+    logger.info(f"Starting persistent server on port {port} (mode: {args.mode})")
     app.run(host="0.0.0.0", port=port, debug=True)

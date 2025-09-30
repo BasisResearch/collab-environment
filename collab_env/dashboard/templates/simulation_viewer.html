@@ -1,0 +1,189 @@
+{% extends "base.html" %}
+
+{% block title %}Simulation Viewer{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/mesh_viewer.css') }}">
+<style>
+.simulation-controls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(40, 44, 52, 0.95);
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 15px;
+    margin: 10px;
+    max-width: 350px;
+    z-index: 1000;
+}
+
+.control-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.simulation-select,
+.episode-select {
+    flex: 1;
+    padding: 5px;
+    border: 1px solid #666;
+    border-radius: 4px;
+    background: #333;
+    color: #fff;
+}
+
+.load-btn {
+    padding: 6px 12px;
+    background: #0066cc;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.load-btn:hover {
+    background: #0088ff;
+}
+
+.load-btn:disabled {
+    background: #666;
+    cursor: not-allowed;
+}
+
+.config-display {
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid #555;
+    border-radius: 4px;
+    padding: 8px;
+    margin-top: 10px;
+    font-size: 12px;
+}
+
+.mesh-status {
+    display: flex;
+    gap: 10px;
+    margin-top: 8px;
+    font-size: 11px;
+}
+
+.status-indicator {
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: bold;
+}
+
+.status-found {
+    background: #0a5d0a;
+    color: #00ff00;
+}
+
+.status-missing {
+    background: #5d0a0a;
+    color: #ff6666;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="mesh-container" id="container">
+    <div class="mesh-loader" id="loader">Loading Simulation Viewer...</div>
+    <div id="canvas" class="mesh-canvas"></div>
+
+    <!-- Simulation Controls -->
+    <div class="simulation-controls" id="simulationControls">
+        <h3>🎯 Simulation Viewer</h3>
+
+        <div class="control-row">
+            <label>Simulation:</label>
+            <select id="simulationSelect" class="simulation-select">
+                <option value="">Loading simulations...</option>
+            </select>
+            <button id="refreshBtn">🔄</button>
+        </div>
+
+        <div class="control-row">
+            <label>Episode:</label>
+            <select id="episodeSelect" class="episode-select" disabled>
+                <option value="">Select simulation first</option>
+            </select>
+            <button id="loadBtn" class="load-btn" disabled>Load</button>
+        </div>
+
+        <div class="config-display" id="configDisplay" style="display: none;">
+            <div id="configInfo"></div>
+            <div class="mesh-status" id="meshStatus"></div>
+        </div>
+    </div>
+
+    <!-- Standard Mesh Viewer Controls -->
+    <div class="mesh-controls" id="controls" style="display: none;">
+        <h3>🌍 Playback Controls</h3>
+
+        <div class="control-group">
+            <label>Playback:</label>
+            <button id="playBtn">▶️ Play</button>
+            <button id="resetBtn">⏮️ Reset</button>
+            <div class="frame-info" id="frameInfo">Frame: 0 / 0</div>
+
+            <div class="slider-container">
+                <label>Speed:</label>
+                <input type="range" id="speedSlider" min="0.1" max="3" step="0.1" value="1">
+                <span class="value-display" id="speedValue">1.0x</span>
+            </div>
+
+            <div class="slider-container">
+                <label>Frame:</label>
+                <input type="range" id="frameSlider" min="0" max="100" value="0">
+                <span class="value-display" id="frameValue">0</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <label>Display Options:</label>
+            <div class="checkbox-group">
+                <label>
+                    <input type="checkbox" id="showTrails">
+                    Show Trails
+                </label>
+                <label>
+                    <input type="checkbox" id="showIds" checked>
+                    Show Track IDs
+                </label>
+                <label>
+                    <input type="checkbox" id="showSceneMesh" checked>
+                    Show Scene Mesh
+                </label>
+                <label>
+                    <input type="checkbox" id="showTargetMesh" checked>
+                    Show Target Mesh
+                </label>
+            </div>
+
+            <div class="slider-container">
+                <label>Agent Size:</label>
+                <input type="range" id="sphereSizeSlider" min="0.001" max="0.05" step="0.001" value="0.01">
+                <span class="value-display" id="sphereSizeValue">0.01</span>
+            </div>
+        </div>
+
+        <div class="mesh-status" id="status">Ready</div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { SimulationViewer } from '{{ url_for('static', filename='js/viewers/simulation_viewer.js') }}';
+
+// Initialize simulation viewer when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    const viewer = new SimulationViewer();
+
+    // Make viewer available globally for debugging
+    window.simulationViewer = viewer;
+});
+</script>
+{% endblock %}
