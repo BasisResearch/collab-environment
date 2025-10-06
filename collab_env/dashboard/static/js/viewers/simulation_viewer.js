@@ -461,8 +461,7 @@ export class SimulationViewer {
                 sceneGeometry.computeBoundingBox();
                 const meshCenter = new THREE.Vector3();
                 sceneGeometry.boundingBox.getCenter(meshCenter);
-                const meshMin = new THREE.Vector3();
-                sceneGeometry.boundingBox.min.clone().copy(meshMin);
+                const meshMin = sceneGeometry.boundingBox.min.clone();
 
                 // Open3D transformation: scale(around center C) → rotate(around origin) → translate
                 // Combined: V_final = R * (C + scale*(V-C)) + position
@@ -493,12 +492,16 @@ export class SimulationViewer {
                     'XYZ'
                 ));
 
-                // Final position - add rotated Y min offset
+                // Final position - set Y so mesh min aligns with scene_position Y (env position)
+                console.log('Scene mesh - rotatedMin:', rotatedMin, 'scenePosition[1]/sceneScale:', scenePosition[1] / sceneScale);
+
                 this.sceneMesh.position.set(
                     scenePosition[0] / sceneScale + rotatedCenter.x * (1 - sceneScale) / sceneScale,
-                    scenePosition[1] / sceneScale + rotatedCenter.y * (1 - sceneScale) / sceneScale,
+                    scenePosition[1] / sceneScale - rotatedMin.y,
                     scenePosition[2] / sceneScale + rotatedCenter.z * (1 - sceneScale) / sceneScale
                 );
+
+                console.log('Scene mesh final position:', this.sceneMesh.position);
 
                 this.scene.add(this.sceneMesh);
 
@@ -550,17 +553,15 @@ export class SimulationViewer {
                 targetGeometry.computeBoundingBox();
                 const targetMeshCenter = new THREE.Vector3();
                 targetGeometry.boundingBox.getCenter(targetMeshCenter);
-                const targetMeshMin = new THREE.Vector3();
-                targetGeometry.boundingBox.min.clone().copy(targetMeshMin);
+                const targetMeshMin = targetGeometry.boundingBox.min.clone();
 
                 // NO rotation for target mesh
 
                 // Same position formula BUT without rotation (target vertices are pre-rotated)
-                // position = C*(1-scale)/scale + position/scale where C is NOT rotated
-                // Add original Y min offset (not rotated since target vertices are already rotated)
+                // Set Y so mesh min aligns with scene_position Y (env position)
                 this.targetMesh.position.set(
                     scenePosition[0] / sceneScale + targetMeshCenter.x * (1 - sceneScale) / sceneScale,
-                    scenePosition[1] / sceneScale + targetMeshCenter.y * (1 - sceneScale) / sceneScale,
+                    scenePosition[1] / sceneScale - targetMeshMin.y,
                     scenePosition[2] / sceneScale + targetMeshCenter.z * (1 - sceneScale) / sceneScale
                 );
 
