@@ -30,6 +30,7 @@ export class SimulationViewer {
         // Scene objects
         this.sceneMesh = null;
         this.targetMesh = null;
+        this.boundingBox = null;
         this.spheres = {}; // track_id -> sphere mesh
         this.trails = {}; // track_id -> line geometry
         this.labels = {}; // track_id -> CSS2D label
@@ -147,16 +148,19 @@ export class SimulationViewer {
         directionalLight.shadow.camera.bottom = -1;
         this.scene.add(directionalLight);
 
-        if (false) {
-            // Grid helper
-            const gridHelper = new THREE.GridHelper(2, 20, 0x444444, 0x222222);
-            gridHelper.rotation.x = Math.PI / 2;
-            this.scene.add(gridHelper);
+        // Axes helper at origin
+        const axesHelper = new THREE.AxesHelper(0.5);
+        this.scene.add(axesHelper);
 
-            // Axes helper
-            const axesHelper = new THREE.AxesHelper(0.2);
-            this.scene.add(axesHelper);
-        }
+        // Add axis labels using CSS2D
+        const xLabel = this.createAxisLabel('X', 0.6, 0, 0, '#ff0000');
+        const yLabel = this.createAxisLabel('Y', 0, 0.6, 0, '#00ff00');
+        const zLabel = this.createAxisLabel('Z', 0, 0, 0.6, '#0000ff');
+        this.scene.add(xLabel);
+        this.scene.add(yLabel);
+        this.scene.add(zLabel);
+
+        // Bounding box will be added when episode is loaded with box_size from config
 
         // Handle window resize
         window.addEventListener('resize', () => this.onWindowResize());
@@ -165,6 +169,19 @@ export class SimulationViewer {
         this.loader.style.display = 'none';
 
         console.log('✅ Scene initialized');
+    }
+
+    createAxisLabel(text, x, y, z, color) {
+        const labelDiv = document.createElement('div');
+        labelDiv.textContent = text;
+        labelDiv.style.color = color;
+        labelDiv.style.fontSize = '16px';
+        labelDiv.style.fontWeight = 'bold';
+        labelDiv.style.textShadow = '1px 1px 2px rgba(0,0,0,0.8)';
+
+        const label = new CSS2DObject(labelDiv);
+        label.position.set(x, y, z);
+        return label;
     }
 
     setupEventListeners() {
@@ -367,6 +384,9 @@ export class SimulationViewer {
             // Load meshes
             await this.loadMeshes(simulationId, data.config.meshes);
 
+            // Create bounding box
+            this.createBoundingBox();
+
             // Initialize spheres
             this.initializeTrackSpheres(data.num_tracks);
 
@@ -398,6 +418,8 @@ export class SimulationViewer {
 
     async loadMeshes(simulationId, meshPaths) {
         const plyLoader = new PLYLoader();
+
+        console.log('Loading meshes:', meshPaths);
 
         // Load scene mesh
         if (meshPaths.scene_path) {
@@ -435,27 +457,48 @@ export class SimulationViewer {
                 const scenePosition = this.episodeConfig?.scene_position || [0, 0, 0];
                 const sceneAngle = this.episodeConfig?.scene_angle || [0, 0, 0];
 
-                // Apply inverse rotation to scene mesh (same as target mesh)
-                // Both meshes need inverse rotation to align with tracks
-                // this.sceneMesh.rotation.set(
-                //     THREE.MathUtils.degToRad(-sceneAngle[0]),
-                //     THREE.MathUtils.degToRad(-sceneAngle[1]),
-                //     THREE.MathUtils.degToRad(-sceneAngle[2])
-                // );
+                // Compute mesh center in original coordinates
+                sceneGeometry.computeBoundingBox();
+                const meshCenter = new THREE.Vector3();
+                sceneGeometry.boundingBox.getCenter(meshCenter);
+                const meshMin = new THREE.Vector3();
+                sceneGeometry.boundingBox.min.clone().copy(meshMin);
 
-                // 2. Translation (divide by scale to match agent coordinate system)
-                this.sceneMesh.position.set(
-                    scenePosition[0] / sceneScale,
-                    scenePosition[1] / sceneScale,
-                    scenePosition[2] / sceneScale
+                // Open3D transformation: scale(around center C) → rotate(around origin) → translate
+                // Combined: V_final = R * (C + scale*(V-C)) + position
+                //                   = scale*R*V + R*C*(1-scale) + position
+                // Viewer (normalized by scale): V_viewer = R*V + R*C*(1-scale)/scale + position/scale
+
+                // Step 1: Rotation around origin
+                this.sceneMesh.rotation.set(
+                    THREE.MathUtils.degToRad(sceneAngle[0]),
+                    THREE.MathUtils.degToRad(sceneAngle[1]),
+                    THREE.MathUtils.degToRad(sceneAngle[2])
                 );
 
-                console.log('Scene mesh transformations applied:', {
-                    rotation: [-sceneAngle[0], -sceneAngle[1], -sceneAngle[2]],
-                    scale: sceneScale,
-                    position: [scenePosition[0] / sceneScale, scenePosition[1] / sceneScale, scenePosition[2] / sceneScale],
-                    hasVertexColors: hasVertexColors
-                });
+                // Step 2: Compute position = R*C*(1-scale)/scale + position/scale
+                // Rotate the mesh center
+                const rotatedCenter = meshCenter.clone().applyEuler(new THREE.Euler(
+                    THREE.MathUtils.degToRad(sceneAngle[0]),
+                    THREE.MathUtils.degToRad(sceneAngle[1]),
+                    THREE.MathUtils.degToRad(sceneAngle[2]),
+                    'XYZ'
+                ));
+
+                // Rotate the mesh min point to get rotated Y min
+                const rotatedMin = meshMin.clone().applyEuler(new THREE.Euler(
+                    THREE.MathUtils.degToRad(sceneAngle[0]),
+                    THREE.MathUtils.degToRad(sceneAngle[1]),
+                    THREE.MathUtils.degToRad(sceneAngle[2]),
+                    'XYZ'
+                ));
+
+                // Final position - add rotated Y min offset
+                this.sceneMesh.position.set(
+                    scenePosition[0] / sceneScale + rotatedCenter.x * (1 - sceneScale) / sceneScale,
+                    scenePosition[1] / sceneScale + rotatedCenter.y * (1 - sceneScale) / sceneScale,
+                    scenePosition[2] / sceneScale + rotatedCenter.z * (1 - sceneScale) / sceneScale
+                );
 
                 this.scene.add(this.sceneMesh);
 
@@ -502,27 +545,24 @@ export class SimulationViewer {
                 const scenePosition = this.episodeConfig?.scene_position || [0, 0, 0];
                 const sceneAngle = this.episodeConfig?.scene_angle || [0, 0, 0];
 
-                // Apply inverse rotation to target mesh for alignment
-                // The target mesh needs inverse rotation relative to scene mesh
-                this.targetMesh.rotation.set(
-                    THREE.MathUtils.degToRad(-sceneAngle[0]),
-                    THREE.MathUtils.degToRad(-sceneAngle[1]),
-                    THREE.MathUtils.degToRad(-sceneAngle[2])
-                );
+                // Target mesh: same position as scene mesh, no rotation
+                // Target mesh: NO rotation (vertices already rotated), but same position offset
+                targetGeometry.computeBoundingBox();
+                const targetMeshCenter = new THREE.Vector3();
+                targetGeometry.boundingBox.getCenter(targetMeshCenter);
+                const targetMeshMin = new THREE.Vector3();
+                targetGeometry.boundingBox.min.clone().copy(targetMeshMin);
 
-                // 2. Translation (divide by scale to match agent coordinate system)
+                // NO rotation for target mesh
+
+                // Same position formula BUT without rotation (target vertices are pre-rotated)
+                // position = C*(1-scale)/scale + position/scale where C is NOT rotated
+                // Add original Y min offset (not rotated since target vertices are already rotated)
                 this.targetMesh.position.set(
-                    scenePosition[0] / sceneScale,
-                    scenePosition[1] / sceneScale,
-                    scenePosition[2] / sceneScale
+                    scenePosition[0] / sceneScale + targetMeshCenter.x * (1 - sceneScale) / sceneScale,
+                    scenePosition[1] / sceneScale + targetMeshCenter.y * (1 - sceneScale) / sceneScale,
+                    scenePosition[2] / sceneScale + targetMeshCenter.z * (1 - sceneScale) / sceneScale
                 );
-
-                console.log('Target mesh transformations applied:', {
-                    rotation: [-sceneAngle[0], -sceneAngle[1], -sceneAngle[2]],
-                    scale: sceneScale,
-                    position: [scenePosition[0] / sceneScale, scenePosition[1] / sceneScale, scenePosition[2] / sceneScale],
-                    hasVertexColors: hasVertexColors
-                });
 
                 this.scene.add(this.targetMesh);
 
@@ -535,6 +575,39 @@ export class SimulationViewer {
 
         // Calculate combined bounding box for camera positioning
         this.calculateSceneBounds();
+    }
+
+    createBoundingBox() {
+        // Remove existing bounding box if any
+        if (this.boundingBox) {
+            this.scene.remove(this.boundingBox);
+            this.boundingBox.geometry.dispose();
+            this.boundingBox.material.dispose();
+        }
+
+        // Get box_size from config (simulation box boundary)
+        const boxSize = this.episodeConfig?.box_size || 1500;
+        const sceneScale = this.episodeConfig?.scene_scale || 300.0;
+
+        // Normalize to viewer coordinates
+        const normalizedSize = boxSize / sceneScale;
+
+        // Create wireframe box centered at origin
+        const boxGeometry = new THREE.BoxGeometry(normalizedSize, normalizedSize, normalizedSize);
+        const boxMaterial = new THREE.LineBasicMaterial({ color: 0x00ff00, opacity: 0.3, transparent: true });
+        const boxEdges = new THREE.EdgesGeometry(boxGeometry);
+        this.boundingBox = new THREE.LineSegments(boxEdges, boxMaterial);
+
+        // Position box so origin is at corner (0,0,0) and box extends to (boxSize, boxSize, boxSize)
+        this.boundingBox.position.set(normalizedSize / 2, normalizedSize / 2, normalizedSize / 2);
+
+        this.scene.add(this.boundingBox);
+
+        console.log('Bounding box created:', {
+            boxSize: boxSize,
+            normalizedSize: normalizedSize,
+            position: [normalizedSize / 2, normalizedSize / 2, normalizedSize / 2]
+        });
     }
 
     calculateSceneBounds() {
@@ -604,6 +677,8 @@ export class SimulationViewer {
         // Clear existing spheres
         Object.values(this.spheres).forEach(sphere => {
             if (sphere) {
+                if (sphere.geometry) sphere.geometry.dispose();
+                if (sphere.material) sphere.material.dispose();
                 this.scene.remove(sphere);
             }
         });
@@ -641,6 +716,12 @@ export class SimulationViewer {
         this.frameInfo.textContent = `Frame: ${frame} / ${this.maxFrame}`;
         this.frameSlider.value = frame;
 
+        // Debug: log first frame track data
+        if (frame === 0) {
+            console.log('Frame 0 tracks:', tracks);
+            console.log('Number of spheres:', Object.keys(this.spheres).length);
+        }
+
         // Update spheres and trails
         tracks.forEach(track => {
             this.updateTrack(track, frame);
@@ -648,20 +729,39 @@ export class SimulationViewer {
 
         // Hide inactive tracks
         Object.keys(this.spheres).forEach(trackId => {
-            const trackFound = tracks.some(t => t.track_id.toString() === trackId);
+            const trackFound = tracks.some(t => {
+                const tId = t.type ? `${t.type}:${t.track_id}` : t.track_id.toString();
+                return tId === trackId;
+            });
             if (!trackFound && this.spheres[trackId]) {
                 this.spheres[trackId].visible = false;
                 if (this.labels[trackId]) {
                     this.labels[trackId].visible = false;
+                }
+                // Clear trail for inactive track to prevent red rays
+                if (this.trails[trackId]) {
+                    this.scene.remove(this.trails[trackId]);
+                    this.trails[trackId] = null;
+                }
+                if (this.trailPositions[trackId]) {
+                    this.trailPositions[trackId] = [];
                 }
             }
         });
     }
 
     updateTrack(track, frame) {
-        const trackId = track.track_id.toString();
+        // Create unique key that includes type to avoid collisions (e.g., agent:1 vs env:1)
+        const trackId = track.type ? `${track.type}:${track.track_id}` : track.track_id.toString();
 
-        // Divide track coordinates by scene_scale (but NOT relative to scene_position)
+        // Validate track coordinates
+        if (track.x === undefined || track.y === undefined || track.z === undefined ||
+            isNaN(track.x) || isNaN(track.y) || isNaN(track.z)) {
+            console.warn(`Track ${trackId} frame ${frame}: Invalid coordinates`, track);
+            return;
+        }
+
+        // Divide track coordinates by scene_scale
         const sceneScale = this.episodeConfig?.scene_scale || 300.0;
         const position = new THREE.Vector3(
             track.x / sceneScale,
@@ -669,18 +769,34 @@ export class SimulationViewer {
             track.z / sceneScale
         );
 
-        // Create or update sphere
-        if (!this.spheres[trackId]) {
-            const sphereGeometry = new THREE.SphereGeometry(parseFloat(this.sphereSizeSlider.value), 16, 12);
-            const color = this.trackColors.getColor(track.track_id);
-            const sphereMaterial = new THREE.MeshStandardMaterial({ color: color });
+        // Additional validation after division
+        if (isNaN(position.x) || isNaN(position.y) || isNaN(position.z)) {
+            console.warn(`Track ${trackId} frame ${frame}: Invalid position after scaling`, position);
+            return;
+        }
 
-            this.spheres[trackId] = new THREE.Mesh(sphereGeometry, sphereMaterial);
+        const isAgent = track.type === "agent";
+
+        // Create or update mesh (sphere for agents, star for env)
+        if (!this.spheres[trackId]) {
+            let geometry;
+            if (isAgent) {
+                geometry = new THREE.SphereGeometry(parseFloat(this.sphereSizeSlider.value), 16, 12);
+            } else {
+                // Create a star shape for non-agent tracks
+                const starSize = parseFloat(this.sphereSizeSlider.value) * 3;
+                geometry = new THREE.OctahedronGeometry(starSize, 0);
+            }
+
+            const color = isAgent ? this.trackColors.getColor(track.track_id) : 0xffff00; // Yellow for env
+            const material = new THREE.MeshStandardMaterial({ color: color });
+
+            this.spheres[trackId] = new THREE.Mesh(geometry, material);
             this.scene.add(this.spheres[trackId]);
 
             // Create label
             const labelDiv = document.createElement('div');
-            labelDiv.textContent = trackId;
+            labelDiv.textContent = isAgent ? trackId : track.type;
             labelDiv.style.color = `#${color.toString(16).padStart(6, '0')}`;
             labelDiv.style.fontSize = '12px';
             labelDiv.style.fontWeight = 'bold';
@@ -690,8 +806,10 @@ export class SimulationViewer {
             this.labels[trackId].position.set(0, 0.05, 0);
             this.spheres[trackId].add(this.labels[trackId]);
 
-            // Initialize trail
-            this.trailPositions[trackId] = [];
+            // Initialize trail only for agents
+            if (isAgent) {
+                this.trailPositions[trackId] = [];
+            }
         }
 
         // Update position
@@ -702,8 +820,8 @@ export class SimulationViewer {
             this.labels[trackId].visible = this.showIds.checked;
         }
 
-        // Update trail
-        if (this.showTrails.checked) {
+        // Update trail only for agents
+        if (isAgent && this.showTrails.checked) {
             this.updateTrail(trackId, position);
         }
     }
@@ -716,7 +834,8 @@ export class SimulationViewer {
         // Only add valid positions (avoid NaN/undefined that could cause rays from origin)
         if (position && !isNaN(position.x) && !isNaN(position.y) && !isNaN(position.z)) {
             // Also check that position is not at origin (0,0,0) which could cause rays
-            if (position.length() > 0.001) {
+            const posLength = Math.sqrt(position.x*position.x + position.y*position.y + position.z*position.z);
+            if (posLength > 0.001) {
                 this.trailPositions[trackId].push(position.clone());
             }
         }
@@ -727,40 +846,71 @@ export class SimulationViewer {
             this.trailPositions[trackId].shift();
         }
 
-        // Update trail line
+        // Remove existing trail
         if (this.trails[trackId]) {
             this.scene.remove(this.trails[trackId]);
+            this.trails[trackId].geometry.dispose();
+            this.trails[trackId].material.dispose();
+            this.trails[trackId] = null;
         }
 
+        // Only create trail if we have at least 2 valid positions
         if (this.trailPositions[trackId].length > 1) {
-            const lineGeometry = new THREE.BufferGeometry().setFromPoints(this.trailPositions[trackId]);
-            const color = this.trackColors.getColor(parseInt(trackId));
-            const lineMaterial = new THREE.LineBasicMaterial({ color: color, opacity: 0.6, transparent: true });
+            // Additional validation: ensure all positions are valid before creating line
+            const validPositions = this.trailPositions[trackId].filter(pos => {
+                if (!pos || isNaN(pos.x) || isNaN(pos.y) || isNaN(pos.z)) return false;
+                const len = Math.sqrt(pos.x*pos.x + pos.y*pos.y + pos.z*pos.z);
+                return len > 0.001;
+            });
 
-            this.trails[trackId] = new THREE.Line(lineGeometry, lineMaterial);
-            this.scene.add(this.trails[trackId]);
+            // Need at least 2 valid positions to draw a line
+            if (validPositions.length >= 2) {
+                const lineGeometry = new THREE.BufferGeometry().setFromPoints(validPositions);
+                const color = this.trackColors.getColor(parseInt(trackId));
+                const lineMaterial = new THREE.LineBasicMaterial({ color: color, opacity: 0.6, transparent: true });
+
+                this.trails[trackId] = new THREE.Line(lineGeometry, lineMaterial);
+                this.scene.add(this.trails[trackId]);
+            }
         }
     }
 
     updateSphereSize(size) {
-        Object.values(this.spheres).forEach(sphere => {
+        Object.entries(this.spheres).forEach(([trackId, sphere]) => {
             if (sphere && sphere.geometry) {
                 sphere.geometry.dispose();
-                sphere.geometry = new THREE.SphereGeometry(size, 16, 12);
+
+                // Check if this is an env track (octahedron) or agent track (sphere)
+                const isEnvTrack = trackId.startsWith('env:');
+
+                if (isEnvTrack) {
+                    // Recreate octahedron with new size
+                    sphere.geometry = new THREE.OctahedronGeometry(size * 3, 0);
+                } else {
+                    // Recreate sphere with new size
+                    sphere.geometry = new THREE.SphereGeometry(size, 16, 12);
+                }
             }
         });
     }
 
     setTrailsVisible(visible) {
-        Object.values(this.trails).forEach(trail => {
-            if (trail) {
-                trail.visible = visible;
-            }
-        });
-
         if (!visible) {
-            // Clear trail positions
+            // Clear trail positions and remove from scene
+            Object.values(this.trails).forEach(trail => {
+                if (trail) {
+                    this.scene.remove(trail);
+                }
+            });
+            this.trails = {};
             this.trailPositions = {};
+        } else {
+            // Just make trails visible
+            Object.values(this.trails).forEach(trail => {
+                if (trail) {
+                    trail.visible = visible;
+                }
+            });
         }
     }
 
