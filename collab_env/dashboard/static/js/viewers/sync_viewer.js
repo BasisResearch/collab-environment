@@ -11,6 +11,8 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 import { ApiClient } from '../utils/api_client.js';
 // Removed FrameManager import - using natural video playback instead
 import { TrackColors } from '../utils/track_colors.js';
+import { TrackTransformer } from '../utils/track_transformer.js';
+import { TransformUI } from '../utils/transform_ui.js';
 
 export class SyncViewer {
     constructor() {
@@ -20,6 +22,8 @@ export class SyncViewer {
         this.api = new ApiClient();
         // Natural video playback - no FrameManager needed
         this.trackColors = new TrackColors();
+        this.trackTransformer = new TrackTransformer();
+        this.transformUI = null;
         
         // Video viewer components
         this.videoPlayer = document.getElementById('videoPlayer');
@@ -90,9 +94,10 @@ export class SyncViewer {
     async init() {
         this.init3DScene();
         this.setupEventListeners();
+        this.initTransformUI();
         await this.refreshDataLists();
         this.animate(0);
-        
+
         console.log('✅ Synchronized Viewer ready');
     }
     
@@ -237,7 +242,7 @@ export class SyncViewer {
             this.sphereSizeValue.textContent = size.toFixed(4);
             this.updateSphereSize(size);
         });
-        
+
         // Video metadata loaded
         this.videoPlayer.addEventListener('loadedmetadata', () => {
             this.onVideoMetadataLoaded();
@@ -247,6 +252,31 @@ export class SyncViewer {
         this.videoPlayer.addEventListener('timeupdate', () => {
             this.onVideoTimeUpdate();
         });
+    }
+
+    initTransformUI() {
+        // Initialize transform UI in the sync controls panel
+        const transformContainer = document.createElement('div');
+        transformContainer.id = 'transformControls3D';
+        transformContainer.className = 'control-group';
+
+        // Find the sync controls panel and append
+        const syncControlsPanel = document.querySelector('.sync-controls-panel');
+        if (syncControlsPanel) {
+            syncControlsPanel.appendChild(transformContainer);
+
+            this.transformUI = new TransformUI(this.trackTransformer, transformContainer);
+
+            // Listen for transform changes and trigger 3D frame update
+            transformContainer.addEventListener('transform-changed', () => {
+                // Clear existing trails to force rebuild with new transformation
+                this.rebuildAll3DTrails();
+                // Get current video frame and update 3D
+                const fps = 30;
+                const currentFrame = Math.floor(this.videoPlayer.currentTime * fps);
+                this.update3DFrame(currentFrame);
+            });
+        }
     }
     
     async refreshDataLists() {
@@ -868,36 +898,79 @@ export class SyncViewer {
             if (track.x !== null && track.y !== null && track.z !== null) {
                 const sphere = this.spheres[track.track_id];
                 if (sphere) {
-                    sphere.position.set(track.x, track.y, track.z);
+                    // Apply transformation if enabled
+                    const pos = this.trackTransformer.applyTransform(track.x, track.y, track.z);
+
+                    sphere.position.set(pos.x, pos.y, pos.z);
                     sphere.visible = true;
-                    
+
                     // Update label
                     const label = this.labels[track.track_id];
                     if (label) {
                         const sphereSize = parseFloat(this.sphereSizeSlider.value);
-                        label.position.set(track.x, track.y + sphereSize * 2, track.z);
+                        label.position.set(pos.x, pos.y + sphereSize * 2, pos.z);
                         label.visible = this.showIds3D.checked;
                     }
-                    
-                    // Update trail
+
+                    // Update trail (with ORIGINAL untransformed position)
                     if (this.showTrails3D.checked) {
                         this.update3DTrail(track.track_id, track.x, track.y, track.z, frame);
                     }
                 }
             }
         });
+
+        // Clean up trails for invisible tracks
+        const visibleTrackIds = new Set(frameData.filter(t => t.x !== null && t.y !== null && t.z !== null).map(t => t.track_id));
+
+        // Remove trails for tracks that are not visible in this frame
+        Object.keys(this.trails3D).forEach(trackId => {
+            if (!visibleTrackIds.has(parseInt(trackId))) {
+                if (this.trails3D[trackId]) {
+                    this.scene.remove(this.trails3D[trackId]);
+                    this.trails3D[trackId].geometry.dispose();
+                    this.trails3D[trackId].material.dispose();
+                    delete this.trails3D[trackId];
+                }
+            }
+        });
     }
     
+    rebuildAll3DTrails() {
+        // Remove all trail geometries from scene
+        Object.values(this.trails3D).forEach(trail => {
+            if (trail) {
+                this.scene.remove(trail);
+                trail.geometry.dispose();
+                trail.material.dispose();
+            }
+        });
+        this.trails3D = {};
+
+        // Trail positions are kept (they contain original coordinates)
+        // They will be rebuilt with new transformation on next frame update
+    }
+
     update3DTrail(trackId, x, y, z, frame) {
         // Similar to mesh viewer trail logic
         const maxTrailLength = 100;
-        
+
         if (!this.trailPositions[trackId]) {
             this.trailPositions[trackId] = [];
         }
-        
-        this.trailPositions[trackId].push({x, y, z, frame});
-        
+
+        // Check if we already have this frame (avoid duplicates)
+        const lastPos = this.trailPositions[trackId][this.trailPositions[trackId].length - 1];
+        if (lastPos && lastPos.frame === frame) {
+            // Update existing position instead of adding duplicate
+            lastPos.x = x;
+            lastPos.y = y;
+            lastPos.z = z;
+        } else {
+            // Add new position
+            this.trailPositions[trackId].push({x, y, z, frame});
+        }
+
         if (this.trailPositions[trackId].length > maxTrailLength) {
             this.trailPositions[trackId].shift();
         }
@@ -909,14 +982,18 @@ export class SyncViewer {
                 this.trails3D[trackId].geometry.dispose();
                 this.trails3D[trackId].material.dispose();
             }
-            
+
             // Create new trail
             const currentSphereSize = parseFloat(this.sphereSizeSlider.value);
             const trailRadius = Math.max(0.001, currentSphereSize / 3);
-            
-            const curve = new THREE.CatmullRomCurve3(
-                this.trailPositions[trackId].map(pos => new THREE.Vector3(pos.x, pos.y, pos.z))
-            );
+
+            // Apply transformation to trail positions when creating geometry
+            const transformedPositions = this.trailPositions[trackId].map(pos => {
+                const transformed = this.trackTransformer.applyTransform(pos.x, pos.y, pos.z);
+                return new THREE.Vector3(transformed.x, transformed.y, transformed.z);
+            });
+
+            const curve = new THREE.CatmullRomCurve3(transformedPositions);
             const tubeGeometry = new THREE.TubeGeometry(curve, 32, trailRadius, 8, false);
             const material = new THREE.MeshBasicMaterial({
                 color: this.trackColors.getColorHex(trackId),

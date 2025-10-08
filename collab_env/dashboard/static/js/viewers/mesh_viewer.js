@@ -10,6 +10,8 @@ import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer
 import { ApiClient } from '../utils/api_client.js';
 import { FrameManager } from '../utils/frame_manager.js';
 import { TrackColors } from '../utils/track_colors.js';
+import { TrackTransformer } from '../utils/track_transformer.js';
+import { TransformUI } from '../utils/transform_ui.js';
 
 export class MeshViewer {
     constructor() {
@@ -19,6 +21,8 @@ export class MeshViewer {
         this.api = new ApiClient();
         this.frameManager = null;
         this.trackColors = new TrackColors();
+        this.trackTransformer = new TrackTransformer();
+        this.transformUI = null;
         
         // Three.js components
         this.scene = null;
@@ -75,9 +79,10 @@ export class MeshViewer {
     async init() {
         this.initScene();
         this.setupEventListeners();
+        this.initTransformUI();
         await this.refreshMeshList();
         this.animate(0);
-        
+
         console.log('✅ 3D Track Viewer ready');
     }
     
@@ -219,6 +224,31 @@ export class MeshViewer {
         this.showCamera.addEventListener('change', () => {
             this.updateCameraVisibility();
         });
+    }
+
+    initTransformUI() {
+        // Initialize transform UI in the controls panel
+        const transformContainer = document.createElement('div');
+        transformContainer.id = 'transformControls';
+        transformContainer.className = 'control-group';
+
+        // Insert after display options control group
+        const meshControls = document.getElementById('meshControls');
+        if (meshControls) {
+            meshControls.appendChild(transformContainer);
+
+            this.transformUI = new TransformUI(this.trackTransformer, transformContainer);
+
+            // Listen for transform changes and trigger frame update
+            transformContainer.addEventListener('transform-changed', () => {
+                if (this.frameManager) {
+                    // Clear existing trails to force rebuild with new transformation
+                    this.rebuildAllTrails();
+                    // Update current frame
+                    this.updateFrame(this.frameManager.currentFrame);
+                }
+            });
+        }
     }
     
     onWindowResize() {
@@ -484,19 +514,22 @@ export class MeshViewer {
             if (track.x !== null && track.y !== null && track.z !== null) {
                 const sphere = this.spheres[track.track_id];
                 if (sphere) {
-                    sphere.position.set(track.x, track.y, track.z);
+                    // Apply transformation if enabled
+                    const pos = this.trackTransformer.applyTransform(track.x, track.y, track.z);
+
+                    sphere.position.set(pos.x, pos.y, pos.z);
                     sphere.visible = true;
                     visibleTracks++;
-                    
+
                     // Update label position to be slightly above the sphere
                     const label = this.labels[track.track_id];
                     if (label) {
                         const sphereSize = parseFloat(this.sphereSizeSlider.value);
-                        label.position.set(track.x, track.y + sphereSize * 2, track.z);
+                        label.position.set(pos.x, pos.y + sphereSize * 2, pos.z);
                         label.visible = this.showIds.checked;
                     }
-                    
-                    // Update trail for this track
+
+                    // Update trail for this track (with ORIGINAL untransformed position)
                     this.updateTrail(track.track_id, track.x, track.y, track.z, frame);
                 } else {
                     console.warn(`No sphere found for track_id: ${track.track_id}`);
@@ -504,14 +537,17 @@ export class MeshViewer {
             }
         });
         
-        // Hide trails for invisible tracks and clean up old trail data
+        // Clean up trails for invisible tracks
         const visibleTrackIds = new Set(frameData.filter(t => t.x !== null && t.y !== null && t.z !== null).map(t => t.track_id));
-        
-        // Hide trails for tracks that are not visible in this frame
+
+        // Remove trails for tracks that are not visible in this frame
         Object.keys(this.trails).forEach(trackId => {
             if (!visibleTrackIds.has(parseInt(trackId))) {
                 if (this.trails[trackId]) {
-                    this.trails[trackId].visible = false;
+                    this.scene.remove(this.trails[trackId]);
+                    this.trails[trackId].geometry.dispose();
+                    this.trails[trackId].material.dispose();
+                    delete this.trails[trackId];
                 }
             }
         });
@@ -550,17 +586,41 @@ export class MeshViewer {
         this.frameInfo.textContent = `Frame: ${frame} / ${this.maxFrame} | Tracks: ${frameData.length} | Visible: ${visibleTracks}`;
     }
     
+    rebuildAllTrails() {
+        // Remove all trail geometries from scene
+        Object.values(this.trails).forEach(trail => {
+            if (trail) {
+                this.scene.remove(trail);
+                trail.geometry.dispose();
+                trail.material.dispose();
+            }
+        });
+        this.trails = {};
+
+        // Trail positions are kept (they contain original coordinates)
+        // They will be rebuilt with new transformation on next frame update
+    }
+
     updateTrail(trackId, x, y, z, frame) {
         const maxTrailLength = 100; // Keep last 100 positions for longer trails
-        
+
         // Initialize trail data if needed
         if (!this.trailPositions[trackId]) {
             this.trailPositions[trackId] = [];
         }
-        
-        // Add new position
-        this.trailPositions[trackId].push({x, y, z, frame});
-        
+
+        // Check if we already have this frame (avoid duplicates)
+        const lastPos = this.trailPositions[trackId][this.trailPositions[trackId].length - 1];
+        if (lastPos && lastPos.frame === frame) {
+            // Update existing position instead of adding duplicate
+            lastPos.x = x;
+            lastPos.y = y;
+            lastPos.z = z;
+        } else {
+            // Add new position
+            this.trailPositions[trackId].push({x, y, z, frame});
+        }
+
         // Keep only recent positions
         if (this.trailPositions[trackId].length > maxTrailLength) {
             this.trailPositions[trackId].shift();
@@ -568,26 +628,25 @@ export class MeshViewer {
         
         // Update or create trail geometry
         if (this.trailPositions[trackId].length > 1) {
-            const positions = [];
-            this.trailPositions[trackId].forEach(pos => {
-                positions.push(pos.x, pos.y, pos.z);
-            });
-            
             // Remove old trail
             if (this.trails[trackId]) {
                 this.scene.remove(this.trails[trackId]);
                 this.trails[trackId].geometry.dispose();
                 this.trails[trackId].material.dispose();
             }
-            
+
             // Get current sphere size for proportional trail width (1/3 of sphere radius)
             const currentSphereSize = parseFloat(this.sphereSizeSlider.value);
             const trailRadius = Math.max(0.001, currentSphereSize / 3); // 1/3 of sphere radius
-            
+
+            // Apply transformation to trail positions when creating geometry
+            const transformedPositions = this.trailPositions[trackId].map(pos => {
+                const transformed = this.trackTransformer.applyTransform(pos.x, pos.y, pos.z);
+                return new THREE.Vector3(transformed.x, transformed.y, transformed.z);
+            });
+
             // Use TubeGeometry instead of Line for visible width
-            const curve = new THREE.CatmullRomCurve3(
-                this.trailPositions[trackId].map(pos => new THREE.Vector3(pos.x, pos.y, pos.z))
-            );
+            const curve = new THREE.CatmullRomCurve3(transformedPositions);
             const tubeGeometry = new THREE.TubeGeometry(curve, 32, trailRadius, 8, false);
             const material = new THREE.MeshBasicMaterial({
                 color: this.trackColors.getColorHex(trackId),
