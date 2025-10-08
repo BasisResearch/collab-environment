@@ -20,7 +20,7 @@ class FileViewerRegistry:
     """Registry for file viewers by file extension."""
 
     def __init__(self, rclone_client: Optional[RcloneClient] = None):
-        self.viewers = {}
+        self.viewers: Dict[str, Any] = {}
         self.rclone_client = rclone_client
         self._register_default_viewers()
 

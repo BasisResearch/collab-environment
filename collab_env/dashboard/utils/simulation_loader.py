@@ -27,20 +27,20 @@ class SimulationDataLoader:
     ) -> Dict[str, Any]:
         """Register a simulation folder and parse its config."""
         try:
-            folder_path = Path(folder_path)
-            config_path = Path(config_path)
+            folder_path_obj = Path(folder_path)
+            config_path_obj = Path(config_path)
 
-            if not folder_path.exists():
+            if not folder_path_obj.exists():
                 raise FileNotFoundError(f"Simulation folder not found: {folder_path}")
-            if not config_path.exists():
+            if not config_path_obj.exists():
                 raise FileNotFoundError(f"Config file not found: {config_path}")
 
             # Parse config.yaml
-            with open(config_path, "r") as f:
+            with open(config_path_obj, "r") as f:
                 config = yaml.safe_load(f)
 
             # Discover episode files
-            episode_files = self._discover_episodes(folder_path)
+            episode_files = self._discover_episodes(folder_path_obj)
 
             # Resolve mesh paths
             mesh_status = self._check_mesh_files(config)
@@ -48,7 +48,7 @@ class SimulationDataLoader:
             # Extract key parameters
             sim_info = {
                 "id": simulation_id,
-                "name": self._generate_name(folder_path.name),
+                "name": self._generate_name(folder_path_obj.name),
                 "folder_path": str(folder_path),
                 "config_path": str(config_path),
                 "config": config,
@@ -213,7 +213,7 @@ class SimulationDataLoader:
 
     def _get_mesh_paths(self, config: Dict[str, Any]) -> Dict[str, Optional[str]]:
         """Get resolved mesh file paths."""
-        mesh_paths = {"scene_path": None, "target_path": None}
+        mesh_paths: Dict[str, Optional[str]] = {"scene_path": None, "target_path": None}
 
         try:
             meshes_config = config.get("meshes", {})
@@ -242,9 +242,9 @@ class SimulationDataLoader:
 
         return mesh_paths
 
-    def _convert_to_tracks(self, df: pd.DataFrame) -> Dict[str, List[Dict[str, Any]]]:
+    def _convert_to_tracks(self, df: pd.DataFrame) -> Dict[int, List[Dict[str, Any]]]:
         """Convert parquet DataFrame to track format compatible with mesh viewer."""
-        tracks_by_frame = {}
+        tracks_by_frame: Dict[int, List[Dict[str, Any]]] = {}
 
         for _, row in df.iterrows():
             frame = int(row["time"])  # "time" column contains frame number

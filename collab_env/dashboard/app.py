@@ -853,7 +853,7 @@ class DataDashboard(param.Parameterized):
                     # Show and expand the VTK container FIRST to ensure proper sizing
                     logger.info("📦 EXPANDING VTK container before VTK pane creation")
                     self.persistent_vtk_container.height = 600
-                    self.persistent_vtk_container.margin = 5  # type: ignore[assignment]
+                    self.persistent_vtk_container.margin = 5
                     self.persistent_vtk_container.styles = {"display": "block"}
 
                     # Create VTK pane on demand if it doesn't exist
