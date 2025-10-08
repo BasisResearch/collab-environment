@@ -19,8 +19,9 @@ from .rclone_client import RcloneClient
 class FileViewerRegistry:
     """Registry for file viewers by file extension."""
 
-    def __init__(self):
+    def __init__(self, rclone_client: Optional[RcloneClient] = None):
         self.viewers = {}
+        self.rclone_client = rclone_client
         self._register_default_viewers()
 
     def _register_default_viewers(self):
@@ -36,13 +37,13 @@ class FileViewerRegistry:
         for ext in [".csv", ".parquet"]:
             self.viewers[ext] = table_viewer
 
-        # Video viewer
-        video_viewer = VideoViewer()
+        # Video viewer - pass rclone_client
+        video_viewer = VideoViewer(rclone_client=self.rclone_client)
         for ext in [".mp4", ".avi", ".mov", ".mkv"]:
             self.viewers[ext] = video_viewer
 
-        # PLY 3D mesh viewer
-        ply_viewer = PLYViewer()
+        # PLY 3D mesh viewer - pass rclone_client
+        ply_viewer = PLYViewer(rclone_client=self.rclone_client)
         self.viewers[".ply"] = ply_viewer
 
         # PKL pickle file viewer
@@ -240,14 +241,13 @@ class TableViewer(BaseViewer):
 class VideoViewer(BaseViewer):
     """Viewer for video files."""
 
-    def __init__(self):
+    def __init__(self, rclone_client: Optional[RcloneClient] = None):
         self._current_bucket = None
-        self._rclone_client = None
+        self._rclone_client = rclone_client
 
     def _find_bbox_csv_files_with_bucket(self, bucket: str, video_path: str) -> list:
         """Find matching bbox CSV files in the same directory as the video, and for thermal videos, also check corresponding rgb folders."""
         try:
-            from .rclone_client import RcloneClient
             import re
 
             # Get directory path from video_path (without bucket)
@@ -256,8 +256,8 @@ class VideoViewer(BaseViewer):
                 str(video_path_obj.parent) if video_path_obj.parent != Path(".") else ""
             )
 
-            # Use rclone to list files in the same directory
-            rclone_client = RcloneClient()
+            # Use the provided rclone client, or create a default one if not available
+            rclone_client = self._rclone_client or RcloneClient()
 
             bbox_csvs = []
             directories_to_search = [dir_path]  # Always search the same directory first
@@ -344,12 +344,11 @@ class VideoViewer(BaseViewer):
     def _is_bbox_csv_with_bucket(self, bucket: str, csv_path: str) -> bool:
         """Check if a CSV file contains bbox/tracking data."""
         try:
-            from .rclone_client import RcloneClient
             import pandas as pd
             import tempfile
             import os
 
-            rclone_client = RcloneClient()
+            rclone_client = self._rclone_client or RcloneClient()
 
             # Download a small sample of the CSV to check columns
             with tempfile.NamedTemporaryFile(suffix=".csv", delete=False) as temp_file:
@@ -687,10 +686,12 @@ class PLYViewer(BaseViewer):
     # Track if VTK has been used - only allow one VTK viewer per session
     _vtk_used = False
 
+    def __init__(self, rclone_client: Optional[RcloneClient] = None):
+        self._rclone_client = rclone_client
+
     def _find_3d_csv_files_with_bucket(self, bucket: str, ply_path: str) -> list:
         """Find matching 3D centroids CSV files by searching the entire session folder."""
         try:
-            from .rclone_client import RcloneClient
             from pathlib import Path
 
             # Extract session folder from PLY path
@@ -706,8 +707,8 @@ class PLYViewer(BaseViewer):
             # Session folder is typically the first part of the path
             session_folder = path_parts[0]
 
-            # Use rclone to recursively search the session folder for 3D CSV files
-            rclone_client = RcloneClient()
+            # Use the provided rclone client, or create a default one if not available
+            rclone_client = self._rclone_client or RcloneClient()
 
             csv_3d_files = []
 
@@ -796,8 +797,8 @@ class PLYViewer(BaseViewer):
             session_folder = path_parts[0]
             aligned_splat_folder = f"{session_folder}/aligned_splat"
 
-            # Use rclone to list camera subfolders in aligned_splat
-            rclone_client = RcloneClient()
+            # Use the provided rclone client, or create a default one if not available
+            rclone_client = self._rclone_client or RcloneClient()
 
             logger.info(
                 f"Searching for camera params in subfolders of: {aligned_splat_folder}"
@@ -1000,7 +1001,7 @@ class FileContentManager:
 
     def __init__(self, rclone_client: RcloneClient, cache_dir: Optional[str] = None):
         self.client = rclone_client
-        self.viewer_registry = FileViewerRegistry()
+        self.viewer_registry = FileViewerRegistry(rclone_client=rclone_client)
 
         # Setup cache directory
         if cache_dir is None:
