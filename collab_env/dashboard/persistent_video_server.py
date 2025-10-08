@@ -369,7 +369,9 @@ def api_add_simulation():
         if not all([simulation_id, folder_path, config_path]):
             return jsonify({"error": "Missing required fields"}), 400
 
-        sim_info = simulation_loader.register_simulation(simulation_id, folder_path, config_path)
+        sim_info = simulation_loader.register_simulation(
+            simulation_id, folder_path, config_path
+        )
         return jsonify({"success": True, "simulation": sim_info})
 
     except Exception as e:
@@ -438,11 +440,13 @@ def api_get_simulation_mesh(simulation_id, mesh_type):
             scene_mesh = meshes_config.get("mesh_scene")
             if scene_mesh:
                 from collab_env.data.file_utils import expand_path, get_project_root
+
                 mesh_path = expand_path(scene_mesh, get_project_root())
         elif mesh_type == "target":
             sub_mesh_target = meshes_config.get("sub_mesh_target")
             if sub_mesh_target:
                 from collab_env.data.file_utils import expand_path, get_project_root
+
                 if isinstance(sub_mesh_target, list) and len(sub_mesh_target) > 0:
                     mesh_path = expand_path(sub_mesh_target[0], get_project_root())
                 elif isinstance(sub_mesh_target, str):
@@ -463,6 +467,7 @@ def configure_simulation_mode():
     """Configure simulation mode components."""
     global simulation_mode, simulation_loader
     from collab_env.dashboard.utils.simulation_loader import SimulationDataLoader
+
     simulation_mode = True
     simulation_loader = SimulationDataLoader()
 
@@ -472,8 +477,12 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Persistent Video Server")
     parser.add_argument("--port", type=int, default=5050, help="Port to run server on")
-    parser.add_argument("--mode", choices=["default", "simulation"], default="default",
-                        help="Server mode: default or simulation")
+    parser.add_argument(
+        "--mode",
+        choices=["default", "simulation"],
+        default="default",
+        help="Server mode: default or simulation",
+    )
     parser.add_argument("--data-dir", help="Data directory for simulation mode")
     args = parser.parse_args()
 

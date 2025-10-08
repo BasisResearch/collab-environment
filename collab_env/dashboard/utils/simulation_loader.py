@@ -18,9 +18,13 @@ class SimulationDataLoader:
 
     def __init__(self):
         self.registered_simulations: Dict[str, Dict[str, Any]] = {}
-        self.loaded_episodes: Dict[str, Dict[str, Any]] = {}  # simulation_id -> episode_data
+        self.loaded_episodes: Dict[
+            str, Dict[str, Any]
+        ] = {}  # simulation_id -> episode_data
 
-    def register_simulation(self, simulation_id: str, folder_path: str, config_path: str) -> Dict[str, Any]:
+    def register_simulation(
+        self, simulation_id: str, folder_path: str, config_path: str
+    ) -> Dict[str, Any]:
         """Register a simulation folder and parse its config."""
         try:
             folder_path = Path(folder_path)
@@ -32,7 +36,7 @@ class SimulationDataLoader:
                 raise FileNotFoundError(f"Config file not found: {config_path}")
 
             # Parse config.yaml
-            with open(config_path, 'r') as f:
+            with open(config_path, "r") as f:
                 config = yaml.safe_load(f)
 
             # Discover episode files
@@ -52,7 +56,7 @@ class SimulationDataLoader:
                 "num_episodes": len(episode_files),
                 "num_agents": config.get("simulator", {}).get("num_agents", 0),
                 "num_frames": config.get("simulator", {}).get("num_frames", 0),
-                "mesh_status": mesh_status
+                "mesh_status": mesh_status,
             }
 
             self.registered_simulations[simulation_id] = sim_info
@@ -77,12 +81,14 @@ class SimulationDataLoader:
         episodes = []
 
         for i, episode_file in enumerate(sim_info["episode_files"]):
-            episodes.append({
-                "id": i,
-                "name": f"Episode {i}",
-                "filename": Path(episode_file).name,
-                "path": episode_file
-            })
+            episodes.append(
+                {
+                    "id": i,
+                    "name": f"Episode {i}",
+                    "filename": Path(episode_file).name,
+                    "path": episode_file,
+                }
+            )
 
         return episodes
 
@@ -101,7 +107,9 @@ class SimulationDataLoader:
         try:
             # Load parquet file
             df = pd.read_parquet(episode_file)
-            logger.info(f"Loaded episode {episode_id} from {Path(episode_file).name}: {df.shape}")
+            logger.info(
+                f"Loaded episode {episode_id} from {Path(episode_file).name}: {df.shape}"
+            )
 
             # Convert to track format
             tracks_by_frame = self._convert_to_tracks(df)
@@ -115,12 +123,18 @@ class SimulationDataLoader:
                     "num_agents": sim_info["num_agents"],
                     "num_frames": sim_info["num_frames"],
                     "meshes": mesh_paths,
-                    "scene_scale": sim_info["config"].get("environment", {}).get("scene_scale", 300.0),
-                    "scene_position": sim_info["config"].get("environment", {}).get("scene_position", [0, 0, 0]),
-                    "scene_angle": sim_info["config"].get("meshes", {}).get("scene_angle", [0, 0, 0])
+                    "scene_scale": sim_info["config"]
+                    .get("environment", {})
+                    .get("scene_scale", 300.0),
+                    "scene_position": sim_info["config"]
+                    .get("environment", {})
+                    .get("scene_position", [0, 0, 0]),
+                    "scene_angle": sim_info["config"]
+                    .get("meshes", {})
+                    .get("scene_angle", [0, 0, 0]),
                 },
                 "num_frames": len(tracks_by_frame),
-                "num_tracks": len(df["id"].unique()) if "id" in df.columns else 0
+                "num_tracks": len(df["id"].unique()) if "id" in df.columns else 0,
             }
 
             # Cache the loaded episode
@@ -207,15 +221,21 @@ class SimulationDataLoader:
             # Scene mesh
             scene_mesh = meshes_config.get("mesh_scene")
             if scene_mesh:
-                mesh_paths["scene_path"] = str(expand_path(scene_mesh, get_project_root()))
+                mesh_paths["scene_path"] = str(
+                    expand_path(scene_mesh, get_project_root())
+                )
 
             # Target submesh
             sub_mesh_target = meshes_config.get("sub_mesh_target")
             if sub_mesh_target:
                 if isinstance(sub_mesh_target, list) and len(sub_mesh_target) > 0:
-                    mesh_paths["target_path"] = str(expand_path(sub_mesh_target[0], get_project_root()))
+                    mesh_paths["target_path"] = str(
+                        expand_path(sub_mesh_target[0], get_project_root())
+                    )
                 elif isinstance(sub_mesh_target, str):
-                    mesh_paths["target_path"] = str(expand_path(sub_mesh_target, get_project_root()))
+                    mesh_paths["target_path"] = str(
+                        expand_path(sub_mesh_target, get_project_root())
+                    )
 
         except Exception as e:
             logger.warning(f"Error resolving mesh paths: {e}")
@@ -237,7 +257,7 @@ class SimulationDataLoader:
                 "x": float(row["x"]),
                 "y": float(row["y"]),
                 "z": float(row["z"]),
-                "type": str(row.get("type", "agent"))
+                "type": str(row.get("type", "agent")),
             }
 
             # Add velocity if available
