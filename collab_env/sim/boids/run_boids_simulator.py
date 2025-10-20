@@ -9,6 +9,7 @@ them seem to stop -- not sure why that is happening.
 
 import argparse
 import os
+from importlib.metadata import distributions
 
 from datetime import datetime
 
@@ -24,7 +25,7 @@ import pyarrow as pa
 import shutil
 
 
-from collab_env.sim.boids.boidsAgents import BoidsWorldAgent
+from collab_env.sim.boids.boidsAgents import BoidsWorldAgent, Mesh_Avoidance
 import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
 from collab_env.data.file_utils import get_project_root, expand_path
 from collab_env.sim.boids.sim_utils import (
@@ -96,6 +97,20 @@ def run_simulator(config_filename):
     copied_config_file_path = expand_path("config.yaml", new_run_folder)
     shutil.copy(config_filename, copied_config_file_path)
 
+    package_list_file_path = expand_path("package_list.txt", new_run_folder)
+    with open(package_list_file_path, "w") as f:
+        pairs = sorted(
+            (
+                (dist.metadata.get("Name") or dist.name).lower(),
+                f"{dist.metadata.get('Name') or dist.name}=={dist.version}",
+            )
+            for dist in distributions()
+        )
+        result = ""
+        for _, line in pairs:
+            result += line + "\n"
+        f.write(result)
+
     # -- 080225
     # Find the path for the video in the run folder.
     video_file_path = expand_path(
@@ -162,50 +177,97 @@ def run_simulator(config_filename):
         saved_image_path=new_run_folder,
     )
 
-    agent = BoidsWorldAgent(
-        env=env,
-        num_agents=config["simulator"]["num_agents"],
-        num_targets=config["simulator"]["num_targets"],
-        walking=config["simulator"]["walking"],
-        has_mesh_scene=(config["meshes"]["mesh_scene"] != ""),
-        min_ground_separation=config["agent"]["min_ground_separation"],
-        min_separation=config["agent"]["min_separation"],
-        neighborhood_dist=config["agent"]["neighborhood_dist"],
-        ground_weight=config["agent"]["ground_weight"],
-        separation_weight=config["agent"]["separation_weight"],
-        alignment_weight=config["agent"]["alignment_weight"],
-        cohesion_weight=config["agent"]["cohesion_weight"],
-        target_weight=[0.0]
-        * config["simulator"][
-            "num_targets"
-        ],  # start at all 0's and add weights when created -- not a great design.
-        max_speed=config["agent"]["max_speed"],
-        min_speed=config["agent"]["min_speed"],
-        max_force=config["agent"]["max_force"],
-        random_walk=config["agent"]["random_walk"],
-    )
+    if "agent_variants" not in config["agent"]:
+        agent = BoidsWorldAgent(
+            env=env,
+            num_agents=config["simulator"]["num_agents"],
+            num_targets=config["simulator"]["num_targets"],
+            walking=config["simulator"]["walking"],
+            has_mesh_scene=(config["meshes"]["mesh_scene"] != ""),
+            min_ground_separation=config["agent"]["min_ground_separation"],
+            min_separation=config["agent"]["min_separation"],
+            neighborhood_dist=config["agent"]["neighborhood_dist"],
+            random_weight=config["agent"]["random_weight"],
+            ground_weight=config["agent"]["ground_weight"],
+            separation_weight=config["agent"]["separation_weight"],
+            alignment_weight=config["agent"]["alignment_weight"],
+            cohesion_weight=config["agent"]["cohesion_weight"],
+            target_weight=[0.0]
+            * config["simulator"][
+                "num_targets"
+            ],  # start at all 0's and add weights when created -- not a great design.
+            max_speed=config["agent"]["max_speed"],
+            min_speed=config["agent"]["min_speed"],
+            max_force=config["agent"]["max_force"],
+            random_walk=config["agent"]["random_walk"],
+            mesh_avoidance_type=Mesh_Avoidance[
+                config["agent"]["mesh_avoidance"].upper()
+            ],
+        )
+        agent_variant_list = [agent]
+        agent_variants = []
+    else:
+        agent_variants = config.get("agent", {}).get("agent_variants", [])
+        agent_variant_list = []
+        num_agents_so_far = 0
+        for variant in agent_variants:
+            agent = BoidsWorldAgent(
+                env=env,
+                num_agents=variant["num_agents_of_type"],
+                initialize_index=num_agents_so_far,
+                num_targets=config["simulator"]["num_targets"],
+                walking=config["simulator"]["walking"],
+                has_mesh_scene=(config["meshes"]["mesh_scene"] != ""),
+                min_ground_separation=config["agent"]["min_ground_separation"]
+                if "min_ground_separation"
+                else variant["min_ground_separation"],
+                min_separation=config["agent"]["min_separation"]
+                if "min_separation" not in variant
+                else variant["min_separation"],
+                neighborhood_dist=config["agent"]["neighborhood_dist"]
+                if "neighborhood_dist" not in variant
+                else variant["neighborhood_dist"],
+                random_weight=config["agent"]["random_weight"]
+                if "random_weight" not in variant
+                else variant["random_weight"],
+                ground_weight=config["agent"]["ground_weight"]
+                if "ground_weight" not in variant
+                else variant["ground_weight"],
+                separation_weight=config["agent"]["separation_weight"]
+                if "separation_weight" not in variant
+                else variant["separation_weight"],
+                alignment_weight=config["agent"]["alignment_weight"]
+                if "alignment_weight" not in variant
+                else variant["alignment_weight"],
+                cohesion_weight=config["agent"]["cohesion_weight"]
+                if "cohesion_weight" not in variant
+                else variant["cohesion_weight"],
+                target_weight=[0.0]
+                * config["simulator"][
+                    "num_targets"
+                ],  # start at all 0's and add weights when created -- not a great design.
+                max_speed=config["agent"]["max_speed"]
+                if "max_speed" not in variant
+                else variant["max_speed"],
+                min_speed=config["agent"]["min_speed"]
+                if "min_speed" not in variant
+                else variant["min_speed"],
+                max_force=config["agent"]["max_force"]
+                if "max_force" not in variant
+                else variant["max_force"],
+                random_walk=config["agent"]["random_walk"]
+                if "random_walk" not in variant
+                else variant["random_walk"],
+                mesh_avoidance_type=Mesh_Avoidance[
+                    config["agent"]["mesh_avoidance"].upper()
+                ]
+                if "mesh_avoidance" not in variant
+                else variant["mesh_avoidance"],
+            )
+            num_agents_so_far += variant["num_agents_of_type"]
+            agent_variant_list.append(agent)
 
     num_targets = config["simulator"]["num_targets"]
-    # distance_columns = [f"distance_target_center_{t}" for t in range(1, num_targets + 1)]
-    # distance_target_mesh = [f"distances_to_target_mesh_closest_point_{t}" for t in range(1, num_targets + 1)]
-    # closest_point_columns = [
-    #     f"closest_point_target_{t}" for t in range(1, num_targets + 1)
-    # ]
-    # pandas_columns = (
-    #     [
-    #         "id",
-    #         "type",
-    #         "time",
-    #         "x",
-    #         "y",
-    #         "z",
-    #         "v_x",
-    #         "v_y",
-    #         "v_z",
-    #     ]
-    #     + distance_columns
-    #     + closest_point_columns
-    # )
 
     #
     # There should be one seed for each episode
@@ -234,7 +296,9 @@ def run_simulator(config_filename):
         #
         # MAIN LOOP
         #
-        agent.set_target_weight(0.0, 0)
+        for agent in agent_variant_list:
+            agent.set_target_weight(0.0, 0)
+
         for time_step in tqdm(range(config["simulator"]["num_frames"])):
             for t in range(num_targets):
                 if time_step == target_creation_time[t]:
@@ -244,9 +308,20 @@ def run_simulator(config_filename):
                     needs to be fixed with multiple targets. 
                     
                     -- 082525 2:03PM 
-                    This was fixed. 
+                    This was fixed.
+                    
+                    -- 091825 4:50PM
+                    Need to differentiate between variants. It would make sense to move this into the Agent class. 
+                    The original design of having it here was always bad.  
                     """
-                    agent.set_target_weight(config["agent"]["target_weight"][t], t)
+                    for v in range(len(agent_variant_list)):
+                        agent_variant_list[v].set_target_weight(
+                            config["agent"]["target_weight"][t]
+                            if len(agent_variants) == 0
+                            or "target_weight" not in agent_variants[v]
+                            else agent_variants[v]["target_weight"],
+                            t,
+                        )
 
                     """
                     -- 080425 2:40PM
@@ -256,7 +331,10 @@ def run_simulator(config_filename):
                     # env.create_target()
 
             # Agent chooses action
-            action = agent.get_action(obs)
+            action_list = []
+            for agent in agent_variant_list:
+                action_list.append(agent.get_action(obs))
+            action = np.concatenate([np.asarray(a) for a in action_list])
 
             # Take the action in the environment and observe the result
             next_obs, reward, terminated, truncated, info = env.step(action)

@@ -28,7 +28,7 @@ visuals:
   video_codec: '*mpv4'
   video_fps: 20
   video_file_extension: 'mp4'
-  agent_shape: 'cone'
+  agent_shape: [[20, 'cone']]
   agent_color: [0, 1, 0]
   agent_scale: 2.0
   target_scale: 2.0
@@ -55,6 +55,7 @@ agent:
   min_ground_separation: 3.0
   min_separation: 4.0
   neighborhood_dist: 20.0
+  random_weight: 0.0
   separation_weight: 3.0
   alignment_weight: 0.5
   cohesion_weight: 0.1
@@ -72,6 +73,7 @@ agent:
   height_init_min: 200
   height_init_max: 500
   random_walk: False
+  mesh_avoidance: 'no_down'
 
 meshes:
     # mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
