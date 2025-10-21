@@ -213,7 +213,25 @@ def train_single_config(params):
         worker_logger.debug(f"Rolling out or not: {rollout}")
 
         # Create model
-        in_node_dim = 20 if "food" in data_name else 19
+        """
+        TOC -- 101325 10:00AM
+        Fixed this to deal with more than 2D physical space. Also not sure 
+        it originally dealt with multiple species correctly. 
+        """
+        # in_node_dim = 20 if "food" in data_name else 19
+        num_species = len(species_configs.keys())
+        num_time_steps = 3  # this should be configurable
+        numbers_in_feature = (
+            3  # also needs to be configurable or computed from something else
+        )
+        position_dim = dataset.sequences[0][0].shape[2]
+        in_node_dim = position_dim * num_time_steps * numbers_in_feature + num_species
+        logger.debug(
+            f"train_single_config(): shape = {dataset.sequences[0][0].shape[2]}"
+        )
+        logger.debug(f"train_single_config(): in_node_dim = {in_node_dim}")
+        # if "food" in data_name:
+        #     in_node_dim += 1 # 1 for the flag indicating food maybe
 
         worker_logger.debug(f"Creating model {model_name}")
 
@@ -239,12 +257,21 @@ def train_single_config(params):
                 "in_node_dim": in_node_dim,
                 "start_frame": 3,
                 "heads": heads,
+                "output_dim": position_dim,  # TOC -- 101525 need this to handle both 2D and 3D
             }
             model = GNN(**model_spec)
+            logger.debug(f"model keys {model.state_dict().keys()}")
             lr = 1e-4
             training = True
+            logger.debug(f"model {model}")
 
         # need to overwrite for rolling out operation.
+        """
+        TOC -- 101425 8:54PM 
+        Why do we create the GNN model above if we are just loading 
+        one for the rollout? Seems like this check should have happened 
+        earlier. 
+        """
         if rollout > 0:
             training = False
             lr = None
@@ -255,11 +282,28 @@ def train_single_config(params):
                 f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
             )
             folder = f"trained_models/runpod/{data_name}/trained_models/"
+            folder = "trained_models"
             model_path = expand_path(
                 f"{folder}/{file_name}.pt",
                 get_project_root(),
             )
-            model.load_state_dict(torch.load(model_path, map_location="cuda:0"))
+            """
+            TOC -- 101425
+            This load fails when running CPU only. Updated to set device to cpu
+            if cuda is not available. 
+            """
+            worker_logger.debug(
+                f"train_single_config(): loading state dict for rollout from {model_path}"
+            )
+            model.load_state_dict(
+                torch.load(
+                    model_path,
+                    map_location="cuda:0" if torch.cuda.is_available() else "cpu",
+                )
+            )
+            worker_logger.debug(
+                "train_single_config(): finished loading state dict for rollout"
+            )
             collect_debug = True  # Disable debug to avoid CPU transfers
             if ablate == 1:
                 print("ablating attention layer")
@@ -353,12 +397,20 @@ def train_single_config(params):
                 f"{folder}/{save_name}.pkl",
                 get_project_root(),
             )
+            """
+            TOC -- 101525 
+            Create the parent directories if they don't exist. 
+            """
+            logger.debug(f"rollout path {rollout_path}")
+            rollout_path.parent.parent.mkdir(exist_ok=True)
+            rollout_path.parent.mkdir(exist_ok=True)
 
             # rollout_path = expand_path(
             #    f"trained_models/{save_name}.pkl",
             #    get_project_root()
             # )
 
+            logger.debug(f"writing rollout to {rollout_path}")
             with open(rollout_path, "wb") as f:  # 'wb' for write binary
                 pickle.dump(debug_result, f)
 
@@ -418,7 +470,7 @@ def train_single_config(params):
         }
 
 
-def main():
+def main(dataset_arg=None, remaining_args=None):
     # Set multiprocessing start method - 'spawn' is safer for CUDA, but 'fork' can be faster for CPU
     import multiprocessing
 
@@ -464,7 +516,7 @@ def main():
         "--epochs",
         type=int,
         default=10,
-        help="Number of epochs for training (default: 1)",
+        help="Number of epochs for training (default: 10)",
     )
     parser.add_argument(
         "--early-stopping-patience",
@@ -518,8 +570,15 @@ def main():
     )
     parser.add_argument("--ablate", type=int, default=0, help="ablate attention layer")
 
-    args = parser.parse_args()
+    if remaining_args is not None:
+        args = parser.parse_args(remaining_args)
+    else:
+        args = parser.parse_args()
 
+    if dataset_arg is None:
+        dataset_arg = args.dataset
+
+    # print('dataset: ', dataset_arg)
     # Configure main logger with thread-safe output
     logger.remove()
     logger.add(
@@ -538,7 +597,7 @@ def main():
     main_log_file.parent.mkdir(exist_ok=True)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     results_file = expand_path(
-        f"results/results_{args.dataset[1:]}_{timestamp}.json", get_project_root()
+        f"results/results_{dataset_arg[1:]}_{timestamp}.json", get_project_root()
     )
     # Ensure results directory exists
     results_file.parent.mkdir(exist_ok=True)
@@ -574,7 +633,7 @@ def main():
     else:
         logger.info("GPU UTILIZATION MAXIMIZER")
     logger.info("=" * 60)
-    logger.info(f"Dataset: {args.dataset}")
+    logger.info(f"Dataset: {dataset_arg}")
     logger.info(f"Batch size: {args.batch_size}")
     logger.info(f"Epochs: {args.epochs}")
     logger.info(f"GPUs available: {gpu_count}")
@@ -598,7 +657,11 @@ def main():
                 f"CPU workers: {max_workers} (each using all cores via PyTorch)"
             )
         else:
-            max_workers = 1
+            """
+            TOC -- 101625 
+            This should be configurable. 
+            """
+            max_workers = 16  # TOC changed this from 1 for my Mac
             logger.warning("Running on CPU (single worker)")
 
     if gpu_count > 0:
@@ -632,7 +695,7 @@ def main():
                     for seed in seeds:
                         all_params.append(
                             (
-                                args.dataset,
+                                dataset_arg,
                                 model,
                                 noise,
                                 head,
@@ -793,6 +856,10 @@ def main():
         logger.success(f"  Heads: {best['heads']}")
         logger.success(f"  Visual Range: {best['visual_range']}")
         logger.success(f"  Loss: {best['final_loss']:.6f}")
+
+        return best
+    else:
+        return None
 
 
 if __name__ == "__main__":

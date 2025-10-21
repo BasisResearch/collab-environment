@@ -341,17 +341,23 @@ def run_gnn_frame_pyg(model, pyg_batch, v_minushalf, delta_t, device=None):
     N = pyg_batch.batch.bincount()[0].item()  # Nodes per graph (assuming same size)
 
     pred_pos, pred_vel, pred_vplushalf, pred_acc = None, None, None, None
-
+    output_dim = pred.shape[1]
     if node_prediction == "position":
-        pred_pos = pred.view(B, N, 2)
+        pred_pos = pred.view(B, N, output_dim)
 
     elif node_prediction == "acc":
-        pred_acc = pred.view(B, N, 2)
-        pred_acc = clip_acc(pred_acc, clip=1)
+        pred_acc = pred.view(B, N, output_dim)
+        # logger.debug(f'run_gnn_frame_pyg(): pred_acc = {pred_acc}')
+        """
+        TOC -- 101825 8:58AM
+        An acceleration of 1 is extremely large, so I changed this to 0.01 to see if I
+        can get these agents to stop hitting the boundary so quickly. 
+        """
+        pred_acc = clip_acc(pred_acc, clip=0.01)
 
         # Extract initial positions and velocities from PyG batch
-        init_p = pyg_batch.init_pos.view(B, N, 2)
-        init_v = pyg_batch.init_vel.view(B, N, 2)
+        init_p = pyg_batch.init_pos.view(B, N, output_dim)
+        init_v = pyg_batch.init_vel.view(B, N, output_dim)
 
         if v_minushalf is not None:
             v_minushalf = torch.as_tensor(v_minushalf, device=device)
@@ -367,8 +373,8 @@ def run_gnn_frame_pyg(model, pyg_batch, v_minushalf, delta_t, device=None):
             pred_pos = init_p + pred_vel * delta_t
 
     elif node_prediction == "velocity":
-        pred_vel = pred.view(B, N, 2)
-        init_p = pyg_batch.init_pos.view(B, N, 2)
+        pred_vel = pred.view(B, N, output_dim)
+        init_p = pyg_batch.init_pos.view(B, N, output_dim)
         pred_pos = init_p + pred_vel
 
     return pred_pos, pred_vel, pred_acc, pred_vplushalf, W
@@ -532,15 +538,27 @@ def run_gnn(
         # print("pred_pos.shape", pred_pos.shape)
 
         # Loss
+        """
+        TOC -- 101525 10:01PM
+         why isn't this used? 
+        """
         edge_index, edge_weight = W
         pred_pos_ = pred_pos.detach().clone().to(device)
         if pred_vel is not None:
             pred_vel_ = pred_vel.detach().clone().to(device)
         if pred_acc is not None:
             pred_acc_ = pred_acc.detach().clone().to(device)
-        loss = functional.mse_loss(
-            pred_acc, target_acc
-        )  # + 0.1 * torch.sum(edge_weight)
+        # logger.debug(f'run_gnn(): shape pred_acc = {pred_acc}')
+
+        if model.node_prediction == "position":
+            loss = functional.mse_loss(
+                pred_pos, target_pos
+            )  # + 0.1 * torch.sum(edge_weight)
+        else:
+            loss = functional.mse_loss(
+                pred_acc, target_acc
+            )  # + 0.1 * torch.sum(edge_weight)
+        # logger.debug(f'run_gnn(): len pred_pos_ = {len(pred_pos_)}')
 
         if lr is not None:
             optimizer.zero_grad()
@@ -556,8 +574,8 @@ def run_gnn(
             a = pred_acc_
             vminushalf = pred_vel_
             if training:  # protect transient training dynamics
-                delat_p = bound_location(p, B=2)  # prevent blowing up
-                p += delat_p
+                delta_p = bound_location(p, B=2)  # prevent blowing up
+                p += delta_p
         else:
             v = vel[:, frame_next]  # 1 step ahead
             p = pos[:, frame_next]  # 1 step ahead
@@ -662,7 +680,7 @@ def train_rules_gnn(
                 )
 
             S, Frame, N, _ = position.shape
-
+            train_logger.debug(f"Position shape {position.shape}")
             (loss, debug_result_all[ep][batch_idx], model) = run_gnn(
                 model,
                 position,
@@ -681,6 +699,7 @@ def train_rules_gnn(
                 collect_debug=collect_debug,
             )
 
+            train_logger.debug(f"loss: {loss}")
             train_losses_by_batch.append(loss)
 
         train_losses.append(train_losses_by_batch)
@@ -738,13 +757,22 @@ def train_rules_gnn(
                     )
                     # Restore best model
                     if best_model_state is not None:
+                        train_logger.debug(
+                            f"train_rules_gnn(): loading best model state{best_model_state}"
+                        )
                         model.load_state_dict(best_model_state)
+                        train_logger.debug(
+                            f"train_rules_gnn(): finished loading best model state{best_model_state}"
+                        )
                     break
 
             model.train()  # Set back to train mode
 
     # If we have a best model state and we did early stopping, use it
     if best_model_state is not None and training and val_dataloader is not None:
+        train_logger.debug(
+            f"train_rules_gnn(): loading best model state {best_model_state}"
+        )
         model.load_state_dict(best_model_state)
         train_logger.info(
             f"Restored best model with validation loss: {best_val_loss:.4f}"
@@ -1018,6 +1046,7 @@ def load_model(name, folder, file_name):
 
     # load model
     # Load the state dictionary
+    logger.debug(f"load_model(): loading model {model_path}")
     gnn_model.load_state_dict(torch.load(model_path, map_location="cpu"))
     logger.debug("Loaded model.")
 
@@ -1032,6 +1061,10 @@ def save_model(model, model_spec, train_spec, file_name):
     model_output = expand_path(
         f"trained_models/{file_name}.pt",
         get_project_root(),
+    )
+    logger.debug(f"save_model(): saving model to {model_output}")
+    logger.debug(
+        f"save_model(): saving model state dictionary with keys {model.state_dict().keys()}"
     )
     torch.save(model.state_dict(), model_output)
 

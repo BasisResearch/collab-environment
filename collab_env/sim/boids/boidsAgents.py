@@ -294,7 +294,8 @@ class BoidsWorldAgent:
 
             """
             if (
-                (not self.walking)
+                self.ground_weight != 0.0
+                and (not self.walking)
                 and self.env_has_mesh_scene
                 and (obs["mesh_scene_distance"][i] < self.min_ground_separation)
             ):
@@ -356,6 +357,10 @@ class BoidsWorldAgent:
                 # and limit it to some maximum force.
 
                 total_force = np.zeros(3)
+                """
+                -- 100125 
+                Make variance configurable
+                """
                 random_force = self.env.np_random.normal(0, 0.1, size=3)
                 align_force = np.zeros(3)
                 separation_force = np.zeros(3)
@@ -389,7 +394,9 @@ class BoidsWorldAgent:
 
                 # separation
                 if (num_close > 0) and (self.separation_weight > 0.0):
-                    separation_force = self.separation_weight * avg_sep_vector
+                    separation_force = (
+                        avg_sep_vector  # self.separation_weight * avg_sep_vector
+                    )
                     logger.debug(f"separation {avg_sep_vector}")
 
                 # target
@@ -408,25 +415,26 @@ class BoidsWorldAgent:
                 if (
                     self.ground_weight > 0.0
                     and not self.walking
+                    and self.env_has_mesh_scene
                     and obs["mesh_scene_distance"][i] < self.min_ground_separation
                 ):
                     logger.debug(f"mesh distance {obs['mesh_scene_distance'][i]}")
 
                     ground_diff_vector = location[i] - obs["mesh_closest_points"][i]
-                    # if np.linalg.norm(ground_diff_vector) < 0.00001:
-                    #    ground_force = ground_diff_vector * self.max_force
-                    # else:
-                    """
-                    -- 072925 -- 10:06AM
-                    Not sure why I was making all of these go at maximum force. Shiffman goes at max_speed 
-                    but limits the total steering force. Try this without max_speed and do the maximum force
-                    below. No, no, no, this is dividing by the square of the norm. The closer we get to the 
-                    ground the faster we are trying to move away. 
-                    """
-                    # ground_force = ground_diff_vector / (np.linalg.norm(ground_diff_vector) ** 2) * self.max_force
-                    ground_force = ground_diff_vector / (
-                        np.linalg.norm(ground_diff_vector) ** 2
-                    )
+                    if np.linalg.norm(ground_diff_vector) < 0.00001:
+                        ground_force = ground_diff_vector * self.max_force
+                    else:
+                        """
+                        -- 072925 -- 10:06AM
+                        Not sure why I was making all of these go at maximum force. Shiffman goes at max_speed 
+                        but limits the total steering force. Try this without max_speed and do the maximum force
+                        below. No, no, no, this is dividing by the square of the norm. The closer we get to the 
+                        ground the faster we are trying to move away. 
+                        """
+                        # ground_force = ground_diff_vector / (np.linalg.norm(ground_diff_vector) ** 2) * self.max_force
+                        ground_force = ground_diff_vector / (
+                            np.linalg.norm(ground_diff_vector) ** 2
+                        )
                     logger.debug(f"ground_diff_vector {ground_diff_vector}")
                     logger.debug(f"ground force {ground_force}")
 

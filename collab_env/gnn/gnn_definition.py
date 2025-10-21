@@ -2,7 +2,7 @@
 
 import torch
 import torch.nn.functional as functional
-from torch_geometric.nn import GCNConv, GATConv
+from torch_geometric.nn import GCNConv, GATv2Conv
 from torch_geometric.nn.inits import glorot, zeros
 from torch.nn import Parameter
 
@@ -35,13 +35,16 @@ class GNN(torch.nn.Module):
         # In this case, we start training at frame 3.
 
         # Two graph convolutional layers
-        self.gcn1 = GCNConv(in_node_dim, hidden_dim, add_self_loops=False)
+        # self.gcn1 = GCNConv(in_node_dim, hidden_dim, add_self_loops=False)
         """
         GAT v2 is supposedly better. Instead of sigma(AHW), it is Asigma(HW)
         Here we use GAT just because GATv2Conv have not been fully tested out by Shijie.
         However, preliminary testing shows that simply swapping GATConv to GATv2Conv works though!
         """
-        self.gatn = GATConv(
+        # self.gatn1 = GATConv(
+        #     in_node_dim, hidden_dim, edge_dim=1, heads=heads, add_self_loops=False
+        # )
+        self.gatn = GATv2Conv(
             in_node_dim, hidden_dim, edge_dim=1, heads=heads, add_self_loops=False
         )
         # self.gatn = GATv2Conv(in_node_dim, hidden_dim, edge_dim=1,
@@ -71,7 +74,8 @@ class GNN(torch.nn.Module):
 
         # the 2nd layer is simple convolutional later.
         # Note that we use the updated graph from the attention network
-        h = functional.relu(self.gcn2(h, edge_index, torch.mean(edge_weight, 1)))
+        h = self.gcn2(h, edge_index, torch.mean(edge_weight, 1))
+        h = functional.relu(h)
         return self.out(h), W
 
     def ablate_attention(self):

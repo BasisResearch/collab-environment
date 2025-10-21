@@ -119,7 +119,7 @@ The parquet file contains a dataframe with the following columns:
 
 * id : the id of the object
 * type : currently either 'agent' for an agent or 'env' for an environment object
-* timestep : the timestep for which this data applies
+* time : the timestep for which this data applies
 * x : the x position of the object (x is horizontal)
 * y : the y position of the object (y is vertical)
 * z : the z position of the object (z is front and back)
