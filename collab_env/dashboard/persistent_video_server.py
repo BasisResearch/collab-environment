@@ -70,25 +70,25 @@ def convert_camera_params_to_json(params):
 @app.route("/")
 def index():
     """Main page showing available viewers."""
-    return render_template("index.html")
+    return render_template("index.html", simulation_mode=simulation_mode)
 
 
 @app.route("/video")
 def video_viewer():
     """2D video viewer with bbox overlays."""
-    return render_template("video_viewer.html")
+    return render_template("video_viewer.html", simulation_mode=simulation_mode)
 
 
 @app.route("/3d")
 def mesh_viewer():
     """3D mesh viewer with track animations."""
-    return render_template("mesh_viewer.html")
+    return render_template("mesh_viewer.html", simulation_mode=simulation_mode)
 
 
 @app.route("/sync")
 def sync_viewer():
     """Synchronized 2D + 3D viewer."""
-    return render_template("sync_viewer.html")
+    return render_template("sync_viewer.html", simulation_mode=simulation_mode)
 
 
 @app.route("/simulation")
@@ -342,13 +342,20 @@ def api_health():
         videos_count = len(videos_data)
         meshes_count = len(meshes_data)
 
+    # Get simulations count if in simulation mode
+    simulations_count = 0
+    if simulation_mode and simulation_loader is not None:
+        simulations_count = len(simulation_loader.get_simulations())
+
     return jsonify(
         {
             "status": "healthy",
             "videos_count": videos_count,
             "meshes_count": meshes_count,
             "server": "persistent_video_server",
-            "simulation_mode": simulation_mode,
+            "mode": "simulation" if simulation_mode else "video",
+            "simulation_mode": simulation_mode,  # Keep for backward compatibility
+            "simulations_count": simulations_count,
         }
     )
 

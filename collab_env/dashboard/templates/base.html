@@ -29,6 +29,9 @@
                 <h1 class="nav-title">Track Viewer</h1>
                 <div class="nav-links">
                     <a href="/" class="nav-link">Home</a>
+                    {% if simulation_mode %}
+                    <a href="/simulation" class="nav-link">🎯 Simulations</a>
+                    {% endif %}
                     <a href="/video" class="nav-link">2D Video</a>
                     <a href="/3d" class="nav-link">3D Mesh</a>
                     <a href="/sync" class="nav-link">Sync View</a>
