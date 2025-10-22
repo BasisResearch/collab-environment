@@ -463,13 +463,57 @@ def api_get_simulation_mesh(simulation_id, mesh_type):
         return jsonify({"error": str(e)}), 500
 
 
-def configure_simulation_mode():
-    """Configure simulation mode components."""
+def configure_simulation_mode(data_dir=None):
+    """Configure simulation mode components and optionally auto-register simulations.
+
+    Args:
+        data_dir: Optional directory to scan for simulation folders. If provided,
+                 automatically discovers and registers all simulations found.
+    """
     global simulation_mode, simulation_loader
     from collab_env.dashboard.utils.simulation_loader import SimulationDataLoader
 
     simulation_mode = True
     simulation_loader = SimulationDataLoader()
+
+    # Auto-discover and register simulations if data_dir provided
+    if data_dir:
+        try:
+            data_path = Path(data_dir)
+            if not data_path.exists():
+                logger.error(f"Data directory does not exist: {data_dir}")
+                return
+
+            logger.info(f"Auto-discovering simulations in: {data_dir}")
+            registered_count = 0
+
+            # Look for simulation folders (those containing config.yaml)
+            for folder in sorted(data_path.iterdir()):
+                if not folder.is_dir():
+                    continue
+
+                config_file = folder / "config.yaml"
+                if not config_file.exists():
+                    continue
+
+                # Generate simulation ID from folder name
+                simulation_id = folder.name
+
+                try:
+                    sim_info = simulation_loader.register_simulation(
+                        simulation_id=simulation_id,
+                        folder_path=str(folder),
+                        config_path=str(config_file)
+                    )
+                    logger.info(f"✅ Registered: {sim_info['name']} ({sim_info['num_episodes']} episodes)")
+                    registered_count += 1
+                except Exception as e:
+                    logger.warning(f"⚠️  Failed to register {folder.name}: {e}")
+
+            logger.info(f"📊 Auto-registered {registered_count} simulations")
+
+        except Exception as e:
+            logger.error(f"Error during auto-discovery: {e}")
 
 
 if __name__ == "__main__":
@@ -488,11 +532,8 @@ if __name__ == "__main__":
 
     # Configure simulation mode
     if args.mode == "simulation":
-        configure_simulation_mode()
+        configure_simulation_mode(data_dir=args.data_dir)
         logger.info("Simulation mode enabled")
-
-        if args.data_dir:
-            logger.info(f"Simulation data directory: {args.data_dir}")
 
     port = args.port
     logger.info(f"Starting persistent server on port {port} (mode: {args.mode})")
