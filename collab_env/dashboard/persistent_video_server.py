@@ -510,9 +510,11 @@ def configure_simulation_mode(data_dir=None):
                     sim_info = simulation_loader.register_simulation(
                         simulation_id=simulation_id,
                         folder_path=str(folder),
-                        config_path=str(config_file)
+                        config_path=str(config_file),
                     )
-                    logger.info(f"✅ Registered: {sim_info['name']} ({sim_info['num_episodes']} episodes)")
+                    logger.info(
+                        f"✅ Registered: {sim_info['name']} ({sim_info['num_episodes']} episodes)"
+                    )
                     registered_count += 1
                 except Exception as e:
                     logger.warning(f"⚠️  Failed to register {folder.name}: {e}")
