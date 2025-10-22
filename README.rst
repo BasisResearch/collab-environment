@@ -139,7 +139,7 @@ Install `rclone <https://rclone.org/>`_ and `ffmpeg` for your platform:
 
 .. code:: sh
 
-    # Basic usage
+    # Basic usage (GCS buckets via rclone remote)
     python -m collab_env.dashboard.cli
 
     # Custom port and buckets
@@ -156,6 +156,26 @@ Install `rclone <https://rclone.org/>`_ and `ffmpeg` for your platform:
 
     # Show all available options
     python -m collab_env.dashboard.cli --help
+
+**Local Filesystem Mode:**
+
+The dashboard can browse local directories using rclone's local backend:
+
+.. code:: sh
+
+    # First, configure an rclone local remote (one-time setup)
+    rclone config create local-data local
+
+    # Then browse local directories as if they were buckets
+    python -m collab_env.dashboard.cli --remote-name local-data --curated-bucket /path/to/data/curated --processed-bucket /path/to/data/processed
+
+    # Example with absolute paths
+    python -m collab_env.dashboard.cli --remote-name local-data --curated-bucket /Users/username/research/curated --processed-bucket /Users/username/research/processed
+
+    # Or use relative paths from current directory
+    python -m collab_env.dashboard.cli --remote-name local-data --curated-bucket ./data/curated --processed-bucket ./data/processed
+
+**Note:** In local mode, the dashboard works the same way as with GCS - it can browse, view, edit, cache, and manage files. All features (video conversion, 3D visualization, etc.) work with local files.
 
 **Development with Autoreload:**
 
@@ -239,6 +259,56 @@ The dashboard includes advanced 3D visualization capabilities for PLY meshes and
 4. Click button → Opens 3D track viewer with mesh and animated tracks
 5. Use playback controls to visualize movement patterns over time
 6. Toggle display options: mesh visibility, track IDs, trails, camera frustum
+
+**Simulation Viewer Mode:**
+
+The dashboard includes a specialized simulation viewing mode for boid simulation outputs:
+
+**Simulation Viewer Features:**
+
+* **Episode Management**: Browse and playback multiple simulation episodes from parquet files
+* **Multi-Mesh Visualization**: Simultaneous display of scene mesh and target submesh with configurable rendering
+* **Agent Tracking**: Color-coded agent spheres with movement trails visualizing agent behavior over time
+* **Configuration Display**: Shows simulation parameters from config.yaml (num_agents, num_frames, weights)
+* **Path Resolution**: Automatically resolves mesh paths relative to project root from config files
+* **Local Filesystem**: Works exclusively with local simulation data directories (no cloud dependency)
+* **Auto-Discovery**: Automatically discovers and registers all simulations in a data directory
+
+**Simulation Mode Usage:**
+
+.. code:: sh
+
+    # Start persistent server in simulation mode
+    python -m collab_env.dashboard.persistent_video_server --mode simulation --data-dir simulated_data/hackathon --port 5051
+
+    # Then open browser to http://localhost:5051/simulation
+    # The server will auto-discover and register all simulations in the data directory
+
+**Simulation Data Structure:**
+
+Simulation folders must contain:
+
+* ``config.yaml`` - Configuration file with mesh paths (relative to project root) and simulation parameters
+
+  * Required fields: ``meshes.mesh_scene``, ``meshes.sub_mesh_target``, ``meshes.scene_angle``
+  * Simulation params: ``simulator.num_agents``, ``simulator.num_frames``, ``simulator.num_episodes``
+
+* ``episode-*.parquet`` - Episode data files with required columns:
+
+  * ``id``: Agent ID
+  * ``type``: Agent type (e.g., 'agent' or 'env')
+  * ``time``: Frame number
+  * ``x``, ``y``, ``z``: 3D position coordinates
+  * ``v_x``, ``v_y``, ``v_z``: Velocity components
+
+**Simulation Viewer Workflow:**
+
+1. Start persistent server in simulation mode with ``--data-dir`` pointing to simulation folder
+2. Server auto-discovers all simulation runs containing ``config.yaml``
+3. Open browser to ``http://localhost:5051/simulation``
+4. Select simulation from dropdown → Choose episode → Load data
+5. Use playback controls to visualize agent behavior with mesh context
+6. Toggle visibility options: scene mesh, target mesh, trails, agent IDs, grid
 
 Usage
 -----

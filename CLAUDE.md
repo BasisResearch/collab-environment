@@ -110,18 +110,22 @@ Key external dependencies:
 
 ### Dashboard (`dashboard/`)
 
-Web-based data browser for GCS buckets via rclone integration:
+Web-based data browser for GCS buckets and local simulation data via rclone integration:
 
 **Core Features:**
 
 - **Session Discovery**: Automatically discovers matching sessions across `fieldwork_curated` and `fieldwork_processed` buckets
 - **Smart File Filtering**: Only displays files that can be viewed/edited by the dashboard
-- **Multi-Format Viewer**: Text (YAML/XML/JSON/MD), tables (CSV/Parquet), video (MP4/AVI/MOV/MKV)
+- **Multi-Format Viewer**: Text (YAML/XML/JSON/MD), tables (CSV/Parquet), video (MP4/AVI/MOV/MKV), 3D meshes (PLY)
 - **Video Bbox Overlay Viewer**: Interactive video player with synchronized bounding box/tracking overlays from CSV data
+- **3D Mesh Viewer**: Interactive PLY file viewer with VTK-based rendering, automatic camera positioning from pickle parameters
+- **3D Track Viewer**: View 3D tracking data overlaid on meshes with playback controls and camera frustum display
+- **Simulation Viewer**: Specialized mode for viewing boid simulation outputs with episode playback and multi-mesh support
 - **Video Conversion**: Convert incompatible videos to browser-compatible H.264 format with upload
 - **File Editing**: Edit and save text-based files directly back to GCS
 - **Local Caching**: Automatic file caching with cache management UI
 - **Progress Indicators**: Visual feedback during file loading with cache status icons
+- **Read-Only Mode**: Optional mode that disables all upload/delete operations
 
 **Development Setup:**
 
@@ -142,9 +146,10 @@ pip install -e ".[dev]"
 
 **Entry Points:**
 
-- **Production**: `python -m collab_env.dashboard.cli`
-- **Development (recommended)**: `./scripts/dev_dashboard.sh`
-- **Alternative**: `python -m collab_env.dashboard.run_dashboard`
+- **Dashboard (GCS Mode)**: `python -m collab_env.dashboard.cli`
+- **Dashboard (Read-Only Mode)**: `python -m collab_env.dashboard.cli --read-only`
+- **Development with Autoreload**: `./scripts/dev_dashboard.sh`
+- **Simulation Viewer**: `python -m collab_env.dashboard.persistent_video_server --mode simulation --data-dir simulated_data/hackathon --port 5051`
 
 **Development with Autoreload:**
 
@@ -178,7 +183,7 @@ panel serve dashboard_app.py --dev --show --port 5007
 Advanced video analysis feature for viewing tracking data overlays:
 
 - **Auto-Detection**: Automatically detects `*_bboxes.csv` files in same directory as videos
-- **Smart Activation**: "View with Overlays" button appears when tracking data is available  
+- **Smart Activation**: "View with Overlays" button appears when tracking data is available
 - **Persistent Server**: Single Flask server efficiently handles multiple video/CSV combinations
 - **Interactive Controls**: Toggle track IDs, movement trails, opacity, coordinate debugging
 - **Multi-Format Support**: Handles both bounding box (x1,y1,x2,y2) and centroid (x,y) CSV formats
@@ -186,13 +191,41 @@ Advanced video analysis feature for viewing tracking data overlays:
 - **Resource Efficient**: One server process regardless of number of videos viewed
 - **Clean Lifecycle**: Start/stop server management integrated with dashboard
 
+**Simulation Viewer Mode:**
+
+The dashboard includes a specialized simulation viewer for boid simulation outputs:
+
+- **Episode Management**: Browse and playback multiple simulation episodes from parquet files
+- **Multi-Mesh Visualization**: Simultaneous display of scene mesh and target submesh
+- **Agent Tracking**: Color-coded agent spheres with movement trails over time
+- **Configuration Display**: Shows simulation parameters from config.yaml
+- **Path Resolution**: Automatically resolves mesh paths relative to project root
+- **Local Filesystem**: Works exclusively with local simulation data (no GCS)
+
+**Simulation Mode Usage:**
+
+```bash
+# Start persistent server in simulation mode
+python -m collab_env.dashboard.persistent_video_server --mode simulation --data-dir simulated_data/hackathon --port 5051
+
+# Then open browser to http://localhost:5051/simulation
+# The server will auto-discover and register all simulations in the data directory
+```
+
+**Data Structure Requirements:**
+
+Simulation folders should contain:
+- `config.yaml` - Configuration with mesh paths (relative to project root) and simulation parameters
+- `episode-*.parquet` - Episode data files with columns: id, type, time, x, y, z, v_x, v_y, v_z
+
 **Architecture Components:**
 
-- `RcloneClient`: Interface to rclone for GCS operations
+- `RcloneClient`: Interface to rclone for GCS operations and local filesystem access
 - `SessionManager`: Session discovery and management across buckets
 - `FileContentManager`: File viewing/editing with pluggable viewer registry
 - `DataDashboard`: Main Panel/HoloViz reactive UI application
-- `PersistentVideoServer`: Flask server for video bbox overlay viewing
+- `PersistentVideoServer`: Flask server for video/mesh viewing and simulation mode support
+- `SimulationDataLoader`: Parquet episode loader and config parser for simulation mode
 
 ### Notebook Testing
 

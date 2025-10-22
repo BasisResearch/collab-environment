@@ -2114,11 +2114,8 @@ class DataDashboard(param.Parameterized):
             self.session_select,
             self.bucket_type_toggle,
             self.file_tree,
-            # "---",
             "### Cache Management",
             cache_controls,
-            # width=850,  # Wider navigation panel to accommodate file tree
-            # height=500  # Reduced height
         )
 
         # Video controls (conversion, bbox viewer, and stop buttons)
@@ -2155,23 +2152,10 @@ class DataDashboard(param.Parameterized):
             self.file_management_controls,
             viewer_tabs,
             self.persistent_vtk_container,  # VTK container outside tabs to avoid DOM issues
-            # sizing_mode="stretch_both"
         )
 
         # Status panel at the bottom with loading indicator
-        status_panel = pn.Row(
-            self.status_pane,
-            # pn.Spacer(),
-            # sizing_mode="stretch_width"
-        )
-
-        # Main layout (unused - kept for potential future use)
-        # main_layout = pn.Row(
-        #     nav_panel,
-        #     content_panel,
-        #     sizing_mode="stretch_width",
-        #     height=700
-        # )
+        status_panel = pn.Row(self.status_pane)
 
         # Create a simple modal dialog using Panel's overlay approach
         self.modal_message = pn.pane.HTML("")

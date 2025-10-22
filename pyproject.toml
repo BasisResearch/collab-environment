@@ -53,7 +53,6 @@ dependencies = [
   "param",
   "rich",
   "pyarrow",
-  "types-PyYAML",
   "starbars",
   "importlib-metadata"
 ]
@@ -103,6 +102,7 @@ dev = [
   "isort",
   "flake8>=6.0",
   "types-requests",
+  "types-PyYAML",
 ]
 
 [build-system]
