@@ -55,7 +55,6 @@ dependencies = [
   "pyarrow",
   "types-PyYAML",
   "starbars",
-  "rich",
   "importlib-metadata"
 ]
 
