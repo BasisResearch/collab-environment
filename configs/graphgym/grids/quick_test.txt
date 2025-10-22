@@ -1,0 +1,19 @@
+# Quick test grid for GraphGym - small search space for testing
+
+# Layer type comparison (USE GATv2 NOT GAT!)
+gnn.layer_type layer ['gcnconv','gatv2conv','ginconv']
+
+# Small dimension search
+gnn.dim_inner dim [64,128]
+
+# Depth search
+gnn.layers_mp l_mp [2,3]
+
+# Attention heads (only for gatv2conv)
+gnn.heads heads [1,2]
+
+# Architecture pattern
+gnn.stage_type stage ['stack','skipsum']
+
+# Single seed for quick testing
+seed seed [0]

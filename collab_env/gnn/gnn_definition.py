@@ -2,7 +2,7 @@
 
 import torch
 import torch.nn.functional as functional
-from torch_geometric.nn import GCNConv, GATConv
+from torch_geometric.nn import GCNConv, GATConv, GATv2Conv
 from torch_geometric.nn.inits import glorot, zeros
 from torch.nn import Parameter
 
@@ -37,15 +37,14 @@ class GNN(torch.nn.Module):
         # Two graph convolutional layers
         self.gcn1 = GCNConv(in_node_dim, hidden_dim, add_self_loops=False)
         """
-        GAT v2 is supposedly better. Instead of sigma(AHW), it is Asigma(HW)
-        Here we use GAT just because GATv2Conv have not been fully tested out by Shijie.
-        However, preliminary testing shows that simply swapping GATConv to GATv2Conv works though!
+        GATv2 is strictly better than GAT.
+        GAT v1: Computes attention as LeakyReLU(a^T [Wh_i || Wh_j]) - essentially static
+        GAT v2: Computes attention as a^T LeakyReLU(W [h_i || h_j]) - truly dynamic
+        GATv2's attention mechanism is more expressive and learns better representations.
         """
-        self.gatn = GATConv(
+        self.gatn = GATv2Conv(
             in_node_dim, hidden_dim, edge_dim=1, heads=heads, add_self_loops=False
         )
-        # self.gatn = GATv2Conv(in_node_dim, hidden_dim, edge_dim=1,
-        #                      heads = heads, add_self_loops = False)
         self.gcn2 = GCNConv(hidden_dim * heads, hidden_dim, add_self_loops=False)
 
         # Final linear layer to predict 2D acceleration

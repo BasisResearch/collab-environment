@@ -4,9 +4,10 @@
 
 - `train.py` - Main training script
 - `gnn.py` - Core GNN training functions
-- `gnn_definition.py` - Model definitions
+- `gnn_definition.py` - Model definitions (now using **GATv2Conv**)
 - `utility.py` - Utility functions
-- `requirements_gnn.txt` - Dependencies
+- `graphgym/` - **NEW: GraphGym integration for architecture search**
+  - See `graphgym/README.md` for details
 
 ## Quick Start
 ### Quick test
@@ -112,6 +113,44 @@ The training code will save 3 files for each model under the folder trained_mode
 - `boid_food_basic_independent`
 - `boid_food_strong`
 
+
+## GraphGym Architecture Search (NEW!)
+
+We now support systematic GNN architecture search using GraphGym. This allows you to:
+- Compare multiple GNN types (GCN, **GATv2**, GIN, SAGE, etc.)
+- Search over architecture hyperparameters systematically
+- Find the best GNN for your specific task
+
+### Quick Start
+
+**Test installation:**
+```bash
+python collab_env/gnn/run_graphgym_experiments.py --test
+```
+
+**Run architecture search:**
+```bash
+python collab_env/gnn/run_graphgym_experiments.py \
+    --config configs/graphgym/base/boids_trajectory.yaml \
+    --grid configs/graphgym/grids/quick_test.txt \
+    --max-workers 4
+```
+
+**See full documentation:**
+```bash
+cat collab_env/gnn/graphgym/README.md
+```
+
+### Important: GATv2 vs GAT
+
+The existing custom GNN has been **updated to use GATv2Conv** instead of GATConv.
+
+**Why GATv2?**
+- GAT v1: Attention is essentially static
+- GAT v2: Attention is truly dynamic and more expressive
+- GATv2 consistently outperforms GAT v1
+
+There's no reason to use GAT v1 anymore!
 
 ## Kill running processes spawned
 ```

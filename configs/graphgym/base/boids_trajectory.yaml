@@ -1,0 +1,94 @@
+# GraphGym configuration for boids trajectory prediction
+# Based on GraphGym's recommended design space (NeurIPS 2020)
+# Task: Node-level regression to predict agent accelerations
+
+out_dir: results/graphgym
+metric_best: loss  # Lower is better for regression
+
+dataset:
+  format: BoidsTrajectory
+  name: boid_single_species_basic
+  task: node
+  task_type: regression
+  transductive: False
+  split: [0.7, 0.15, 0.15]  # train/val/test
+  # Boids-specific parameters
+  visual_range: 0.1
+  start_frame: 3
+  input_differentiation: finite
+
+train:
+  mode: custom
+  batch_size: 16
+  eval_period: 1
+  ckpt_period: 50
+  enable_ckpt: True
+  # Early stopping
+  early_stopping: True
+  early_stopping_patience: 3
+  early_stopping_min_delta: 1.0e-6
+
+model:
+  type: gnn
+  loss_fun: mse  # Mean squared error for regression
+  edge_decoding: none  # Node-level prediction
+  graph_pooling: none  # No graph-level pooling needed
+
+# GNN architecture (GraphGym recommended design space)
+gnn:
+  # Layer structure
+  layers_pre_mp: 1       # Pre-message passing layers
+  layers_mp: 2           # Message passing layers (will be searched)
+  layers_post_mp: 1      # Post-message passing layers
+
+  # Architecture choices
+  dim_inner: 128         # Hidden dimension (will be searched)
+  layer_type: gatv2conv  # GNN layer type (will be searched) - USE GATv2!
+  stage_type: stack      # Skip connections (will be searched)
+  agg: add               # Aggregation function (will be searched)
+
+  # Attention-specific (for GATv2Conv)
+  heads: 1               # Number of attention heads (will be searched)
+  head_mode: concat      # How to combine multi-head attention
+
+  # Regularization
+  batchnorm: True        # Batch normalization (will be searched)
+  act: prelu             # Activation function
+  dropout: 0.0           # Dropout rate (will be searched)
+  normalize_adj: False
+
+  # Custom: output dimension for acceleration prediction
+  out_dim: 2
+
+# Optimizer
+optim:
+  optimizer: adam
+  base_lr: 0.0001        # Learning rate
+  weight_decay: 0.0
+  max_epoch: 50
+  scheduler: reduce_on_plateau
+  reduce_factor: 0.5
+  schedule_patience: 5
+  min_lr: 1.0e-6
+
+# Reproducibility
+seed: 0
+num_threads: 4
+device: auto  # auto-detect cuda/cpu
+
+# Logging
+print_freq: 10
+tensorboard_each_run: False
+tensorboard_agg: True
+
+# Custom metrics for trajectory prediction
+custom:
+  # Rollout evaluation
+  rollout: True
+  rollout_start_frame: 5
+  rollout_total_frames: 100
+
+  # Additional metrics
+  compute_mae: True
+  compute_r2: True
+  compute_per_timestep_acc: True

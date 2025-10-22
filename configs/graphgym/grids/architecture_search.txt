@@ -1,0 +1,34 @@
+# GraphGym grid search for GNN architecture on boids trajectory prediction
+# Format: config_path; alias; values_to_search
+# Based on GraphGym recommended design space, adapted for trajectory prediction
+
+# Depth search
+gnn.layers_pre_mp l_pre [1]
+gnn.layers_mp l_mp [2,3,4]
+gnn.layers_post_mp l_post [1,2]
+
+# Hidden dimension search
+gnn.dim_inner dim [64,128,256]
+
+# Layer type search (USE GATv2 NOT GAT!)
+gnn.layer_type layer ['gcnconv','gatv2conv','ginconv','sageconv']
+
+# Attention heads (only affects gatv2conv)
+gnn.heads heads [1,2,3]
+
+# Architecture pattern search
+gnn.stage_type stage ['stack','skipsum','skipconcat']
+gnn.agg agg ['add','mean','max']
+
+# Regularization search
+gnn.batchnorm bn [True,False]
+gnn.dropout drop [0.0,0.1]
+
+# Visual range (boids-specific)
+dataset.visual_range vr [0.1,0.5]
+
+# Learning rate search
+optim.base_lr lr [0.0001,0.0005,0.001]
+
+# Seeds for statistical significance
+seed seed [0,1,2,3,4]
