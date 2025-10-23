@@ -1,6 +1,9 @@
 """
-InteractionParticles model training for boids data.
+InteractionParticle model training for 2D boids data.
 Adapted from https://github.com/saalfeldlab/decomp-gnn
+
+Quick start:
+    python -m collab_env.gnn.interaction_particles.train_2d_boids
 """
 
 from .model import InteractionParticle

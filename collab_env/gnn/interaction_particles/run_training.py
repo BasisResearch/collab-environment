@@ -38,7 +38,7 @@ def parse_args():
         '--dataset',
         type=str,
         default='simulated_data/boid_single_species_basic.pt',
-        help='Path to dataset .pt file (2D or 3D boids)'
+        help='Path to 2D boids dataset .pt file (AnimalTrajectoryDataset)'
     )
     parser.add_argument(
         '--config',

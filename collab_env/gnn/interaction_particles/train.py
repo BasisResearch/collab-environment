@@ -1,5 +1,5 @@
 """
-Training script for InteractionParticle model on boids data.
+Training script for InteractionParticle model on 2D boids data.
 """
 
 import torch
@@ -155,7 +155,7 @@ def train_interaction_particle(
     seed=42
 ):
     """
-    Train InteractionParticle model on boids data.
+    Train InteractionParticle model on 2D boids data.
 
     Parameters
     ----------
