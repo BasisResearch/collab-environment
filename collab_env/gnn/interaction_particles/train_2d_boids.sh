@@ -70,6 +70,16 @@ python -m collab_env.gnn.interaction_particles.run_training \
 #     --model-path trained_models/interaction_particle_2d_basic/best_model.pt \
 #     --dataset simulated_data/boid_single_species_basic.pt
 
+# Full training with rollout evaluation (multi-step prediction)
+# python -m collab_env.gnn.interaction_particles.run_training \
+#     --dataset simulated_data/boid_single_species_basic.pt \
+#     --epochs 100 \
+#     --batch-size 32 \
+#     --visual-range 0.104 \
+#     --evaluate-rollout \
+#     --n-rollout-steps 50 \
+#     --save-dir trained_models/interaction_particle_2d_with_rollout
+
 # Notes:
 # - visual_range: 0.104 ≈ 50px / 480px (boid visual_range / scene_size)
 # - All datasets are in simulated_data/ directory

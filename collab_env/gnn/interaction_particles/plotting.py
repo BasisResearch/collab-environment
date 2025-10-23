@@ -385,3 +385,212 @@ def plot_training_history(history, save_path=None):
         logger.info(f"Saved training history plot to {save_path}")
 
     return fig
+
+
+def plot_rollout_comparison(ground_truth, predicted, trajectory_idx=0, n_particles=None, save_path=None):
+    """
+    Create side-by-side comparison of ground truth vs predicted trajectories.
+
+    Parameters
+    ----------
+    ground_truth : np.ndarray
+        Ground truth positions [T, N, 2]
+    predicted : np.ndarray
+        Predicted positions [T, N, 2]
+    trajectory_idx : int
+        Index identifier for the trajectory
+    n_particles : int, optional
+        Number of particles to plot (default: all)
+    save_path : str, optional
+        Path to save figure
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        Figure object
+    """
+    T, N, D = ground_truth.shape
+
+    if n_particles is None:
+        n_particles = N
+    else:
+        n_particles = min(n_particles, N)
+
+    # Create figure with two subplots side by side
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+
+    # Plot ground truth
+    ax = axes[0]
+    for i in range(n_particles):
+        ax.plot(ground_truth[:, i, 0], ground_truth[:, i, 1],
+                alpha=0.6, linewidth=1.5)
+        # Mark start and end
+        ax.scatter(ground_truth[0, i, 0], ground_truth[0, i, 1],
+                  c='green', s=100, marker='o', zorder=5, edgecolors='black', linewidth=1)
+        ax.scatter(ground_truth[-1, i, 0], ground_truth[-1, i, 1],
+                  c='red', s=100, marker='s', zorder=5, edgecolors='black', linewidth=1)
+
+    ax.set_xlabel('X Position', fontsize=12)
+    ax.set_ylabel('Y Position', fontsize=12)
+    ax.set_title('Ground Truth', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.set_aspect('equal')
+    ax.set_xlim([0, 1])
+    ax.set_ylim([0, 1])
+
+    # Plot predicted
+    ax = axes[1]
+    for i in range(n_particles):
+        ax.plot(predicted[:, i, 0], predicted[:, i, 1],
+                alpha=0.6, linewidth=1.5)
+        # Mark start and end
+        ax.scatter(predicted[0, i, 0], predicted[0, i, 1],
+                  c='green', s=100, marker='o', zorder=5, edgecolors='black', linewidth=1)
+        ax.scatter(predicted[-1, i, 0], predicted[-1, i, 1],
+                  c='red', s=100, marker='s', zorder=5, edgecolors='black', linewidth=1)
+
+    ax.set_xlabel('X Position', fontsize=12)
+    ax.set_ylabel('Y Position', fontsize=12)
+    ax.set_title('Predicted (Model)', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.set_aspect('equal')
+    ax.set_xlim([0, 1])
+    ax.set_ylim([0, 1])
+
+    # Add legend
+    from matplotlib.patches import Patch
+    legend_elements = [
+        Patch(facecolor='green', edgecolor='black', label='Start'),
+        Patch(facecolor='red', edgecolor='black', label='End')
+    ]
+    fig.legend(handles=legend_elements, loc='upper center', ncol=2, fontsize=11)
+
+    plt.suptitle(f'Trajectory Comparison (Sample {trajectory_idx})',
+                 fontsize=16, fontweight='bold', y=0.98)
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        logger.info(f"Saved rollout comparison to {save_path}")
+
+    return fig
+
+
+def plot_rollout_error_over_time(ground_truth_list, predicted_list, save_path=None):
+    """
+    Plot position error as a function of time for multiple rollouts.
+
+    Parameters
+    ----------
+    ground_truth_list : list of np.ndarray
+        List of ground truth trajectories, each [T, N, 2]
+    predicted_list : list of np.ndarray
+        List of predicted trajectories, each [T, N, 2]
+    save_path : str, optional
+        Path to save figure
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        Figure object
+    """
+    # Compute errors for each trajectory
+    errors_over_time = []
+
+    for gt, pred in zip(ground_truth_list, predicted_list):
+        # Compute per-particle error at each timestep
+        error = np.linalg.norm(gt - pred, axis=-1)  # [T, N]
+        # Average over particles
+        mean_error = np.mean(error, axis=1)  # [T]
+        errors_over_time.append(mean_error)
+
+    # Convert to array
+    errors_over_time = np.array(errors_over_time)  # [n_trajectories, T]
+
+    # Compute statistics
+    mean_error = np.mean(errors_over_time, axis=0)
+    std_error = np.std(errors_over_time, axis=0)
+
+    # Create figure
+    fig, ax = plt.subplots(1, 1, figsize=(10, 6))
+
+    timesteps = np.arange(len(mean_error))
+
+    # Plot mean and std
+    ax.plot(timesteps, mean_error, 'b-', linewidth=2, label='Mean Error')
+    ax.fill_between(timesteps,
+                     mean_error - std_error,
+                     mean_error + std_error,
+                     alpha=0.3, color='b', label='±1 Std')
+
+    ax.set_xlabel('Time Step', fontsize=12)
+    ax.set_ylabel('Position Error', fontsize=12)
+    ax.set_title('Rollout Position Error Over Time', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        logger.info(f"Saved error over time plot to {save_path}")
+
+    return fig
+
+
+def create_rollout_report(results, save_dir=None):
+    """
+    Create comprehensive rollout evaluation report with all visualizations.
+
+    Parameters
+    ----------
+    results : dict
+        Results from evaluate_rollout()
+    save_dir : str, optional
+        Directory to save figures
+
+    Returns
+    -------
+    figures : dict
+        Dictionary of matplotlib figures
+    """
+    import os
+
+    figures = {}
+
+    # Extract data
+    gt_positions = results['ground_truth_positions']
+    pred_positions = results['predicted_positions']
+    metrics = results['metrics']
+
+    logger.info(f"Creating rollout report for {len(gt_positions)} trajectories")
+
+    # 1. Plot first few trajectory comparisons
+    n_examples = min(3, len(gt_positions))
+    for i in range(n_examples):
+        fig = plot_rollout_comparison(
+            gt_positions[i],
+            pred_positions[i],
+            trajectory_idx=i,
+            save_path=os.path.join(save_dir, f'rollout_comparison_{i}.png') if save_dir else None
+        )
+        figures[f'comparison_{i}'] = fig
+        plt.close(fig)
+
+    # 2. Plot error over time
+    fig = plot_rollout_error_over_time(
+        gt_positions,
+        pred_positions,
+        save_path=os.path.join(save_dir, 'rollout_error_over_time.png') if save_dir else None
+    )
+    figures['error_over_time'] = fig
+    plt.close(fig)
+
+    # 3. Print metrics summary
+    logger.info("=" * 60)
+    logger.info("ROLLOUT EVALUATION METRICS")
+    logger.info("=" * 60)
+    logger.info(f"Number of trajectories: {metrics['n_trajectories']}")
+    logger.info(f"Mean position error: {metrics['mean_position_error']:.6f} ± {metrics['std_position_error']:.6f}")
+    logger.info(f"Mean velocity error: {metrics['mean_velocity_error']:.6f} ± {metrics['std_velocity_error']:.6f}")
+    logger.info("=" * 60)
+
+    return figures

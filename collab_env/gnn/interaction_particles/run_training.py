@@ -21,8 +21,13 @@ import torch
 import yaml
 from loguru import logger
 
-from .train import train_interaction_particle, evaluate_model
-from .plotting import plot_interaction_functions, compare_with_true_boids, plot_training_history
+from .train import train_interaction_particle, evaluate_model, evaluate_rollout
+from .plotting import (
+    plot_interaction_functions,
+    compare_with_true_boids,
+    plot_training_history,
+    create_rollout_report
+)
 from collab_env.data.file_utils import expand_path
 
 
@@ -74,6 +79,8 @@ def parse_args():
     # Evaluation
     parser.add_argument('--eval-only', action='store_true', help='Only evaluate a saved model')
     parser.add_argument('--model-path', type=str, default=None, help='Path to saved model for evaluation')
+    parser.add_argument('--evaluate-rollout', action='store_true', help='Evaluate model with multi-step rollout')
+    parser.add_argument('--n-rollout-steps', type=int, default=50, help='Number of steps for rollout evaluation')
 
     return parser.parse_args()
 
@@ -263,6 +270,26 @@ def main():
 
         logger.info(f"Plots saved to {save_dir}")
 
+    # Rollout evaluation
+    if args.evaluate_rollout:
+        logger.info("\nEvaluating model with multi-step rollout...")
+        rollout_results = evaluate_rollout(
+            model,
+            dataset_path,
+            visual_range=args.visual_range,
+            n_rollout_steps=args.n_rollout_steps,
+            device=device
+        )
+
+        # Create rollout report
+        rollout_dir = os.path.join(save_dir, 'rollout_evaluation')
+        os.makedirs(rollout_dir, exist_ok=True)
+
+        logger.info(f"Creating rollout visualizations...")
+        create_rollout_report(rollout_results, save_dir=rollout_dir)
+
+        logger.info(f"Rollout evaluation saved to {rollout_dir}")
+
     logger.info("\n" + "=" * 60)
     logger.info("Training pipeline completed successfully!")
     logger.info("=" * 60)
@@ -271,6 +298,8 @@ def main():
     logger.info(f"  - Plots: *.png")
     logger.info(f"  - Log: training.log")
     logger.info(f"  - Info: model_info.yaml")
+    if args.evaluate_rollout:
+        logger.info(f"  - Rollout evaluation: rollout_evaluation/*.png")
 
 
 if __name__ == '__main__':

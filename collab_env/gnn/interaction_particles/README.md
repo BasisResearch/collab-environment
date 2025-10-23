@@ -256,6 +256,57 @@ Predicted 2D acceleration for each particle:
 [acc_x, acc_y]
 ```
 
+## Rollout Evaluation
+
+The model supports multi-step autoregressive rollout evaluation to test its ability to predict trajectories over time:
+
+```bash
+# Train with rollout evaluation
+python -m collab_env.gnn.interaction_particles.run_training \
+    --dataset simulated_data/boid_single_species_basic.pt \
+    --epochs 100 \
+    --evaluate-rollout \
+    --n-rollout-steps 50 \
+    --save-dir trained_models/with_rollout
+```
+
+### What is Rollout?
+
+Instead of predicting just one step ahead, rollout uses the model's own predictions as input for the next step, generating entire trajectories. This tests whether the model has learned dynamics that are stable and accurate over time.
+
+### Rollout Outputs
+
+When `--evaluate-rollout` is enabled, the following are generated in `rollout_evaluation/`:
+
+1. **Side-by-side trajectory comparisons** (`rollout_comparison_*.png`):
+   - Left: Ground truth trajectories
+   - Right: Model predicted trajectories
+   - Shows first 3 validation samples
+   - Green markers = start, Red markers = end
+
+2. **Error over time** (`rollout_error_over_time.png`):
+   - Position error as a function of time step
+   - Shows mean and ±1 standard deviation across all validation trajectories
+   - Helps identify if error accumulates over time
+
+3. **Metrics** (logged to console):
+   - Mean position error: Average Euclidean distance between predicted and true positions
+   - Mean velocity error: Average velocity deviation
+   - Statistics computed over all validation trajectories
+
+### Expected Results
+
+For well-trained models on 2D boids:
+- Position error should remain relatively stable over ~50 timesteps
+- Trajectories should maintain flock structure (not drift apart or collapse)
+- Mean position error typically < 0.05 for first 20 steps, then gradually increases
+
+### Validation Dataset
+
+Rollout evaluation uses the **validation split** (last 20% of the dataset by default). This ensures the model is tested on trajectories it hasn't seen during training.
+
+The split matches the training validation split (80/20 by default, configurable via `--train-split`).
+
 ## API Usage
 
 You can also use the module programmatically:
@@ -265,8 +316,11 @@ from collab_env.gnn.interaction_particles import (
     InteractionParticle,
     train_interaction_particle,
     evaluate_model,
+    evaluate_rollout,
+    generate_rollout,
     plot_interaction_functions,
-    compare_with_true_boids
+    compare_with_true_boids,
+    create_rollout_report
 )
 
 # Training
@@ -281,9 +335,27 @@ model, history = train_interaction_particle(
 plot_interaction_functions(model, save_path='interaction.png')
 compare_with_true_boids(model, save_path='comparison.png')
 
-# Evaluation
+# One-step evaluation
 metrics = evaluate_model(model, 'test_data.pt')
 print(f"Test RMSE: {metrics['rmse']}")
+
+# Multi-step rollout evaluation
+rollout_results = evaluate_rollout(
+    model,
+    dataset_path='test_data.pt',
+    visual_range=0.104,
+    n_rollout_steps=50
+)
+print(f"Mean position error: {rollout_results['metrics']['mean_position_error']:.6f}")
+
+# Create rollout visualizations
+create_rollout_report(rollout_results, save_dir='rollout_results')
+
+# Generate single rollout
+import torch
+initial_pos = torch.randn(20, 2)  # 20 particles
+initial_vel = torch.randn(20, 2)
+pred_pos, pred_vel = generate_rollout(model, initial_pos, initial_vel, n_steps=100)
 ```
 
 ## Performance Tips

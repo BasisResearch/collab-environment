@@ -380,3 +380,203 @@ def evaluate_model(model, dataset_path, visual_range=0.5, device=None):
     logger.info(f"Evaluation: MSE = {mse:.6f}, RMSE = {rmse:.6f}")
 
     return metrics
+
+
+def generate_rollout(model, initial_positions, initial_velocities, n_steps, visual_range=0.5, device=None):
+    """
+    Generate autoregressive rollout predictions.
+
+    Parameters
+    ----------
+    model : InteractionParticle
+        Trained model
+    initial_positions : torch.Tensor
+        Initial positions [N, 2]
+    initial_velocities : torch.Tensor
+        Initial velocities [N, 2]
+    n_steps : int
+        Number of steps to predict
+    visual_range : float
+        Maximum distance for edges
+    device : str or torch.device, optional
+        Device to use
+
+    Returns
+    -------
+    predicted_positions : torch.Tensor
+        Predicted positions [n_steps, N, 2]
+    predicted_velocities : torch.Tensor
+        Predicted velocities [n_steps, N, 2]
+    """
+    if device is None:
+        device = next(model.parameters()).device
+
+    model.eval()
+
+    # Initialize
+    pos = initial_positions.clone().to(device)
+    vel = initial_velocities.clone().to(device)
+
+    predicted_positions = [pos.cpu()]
+    predicted_velocities = [vel.cpu()]
+
+    dt = 1.0  # Time step
+
+    with torch.no_grad():
+        for step in range(n_steps - 1):
+            # Build graph from current state
+            N = pos.shape[0]
+            dist = torch.cdist(pos, pos, p=2)
+            adj = (dist < visual_range).to(torch.bool)
+            adj.fill_diagonal_(False)
+            edge_index = adj.nonzero(as_tuple=False).T
+
+            # Create node features
+            particle_ids = torch.arange(N, dtype=torch.float32, device=device).unsqueeze(1)
+            node_features = torch.cat([particle_ids, pos, vel], dim=1)
+
+            # Create dummy accelerations (won't be used)
+            dummy_acc = torch.zeros_like(pos)
+
+            # Create graph
+            data = Data(
+                x=node_features,
+                edge_index=edge_index,
+                y=dummy_acc,
+                pos=pos
+            )
+
+            # Predict acceleration
+            pred_acc = model(data)
+
+            # Update velocity and position (Euler integration)
+            vel = vel + pred_acc * dt
+            pos = pos + vel * dt
+
+            # Store predictions
+            predicted_positions.append(pos.cpu())
+            predicted_velocities.append(vel.cpu())
+
+    predicted_positions = torch.stack(predicted_positions, dim=0)
+    predicted_velocities = torch.stack(predicted_velocities, dim=0)
+
+    return predicted_positions, predicted_velocities
+
+
+def evaluate_rollout(model, dataset_path, visual_range=0.5, n_rollout_steps=50, device=None):
+    """
+    Evaluate model with multi-step rollout on validation data.
+
+    Parameters
+    ----------
+    model : InteractionParticle
+        Trained model
+    dataset_path : str
+        Path to dataset
+    visual_range : float
+        Maximum distance for edges
+    n_rollout_steps : int
+        Number of steps for rollout
+    device : str or torch.device, optional
+        Device to use
+
+    Returns
+    -------
+    results : dict
+        Dictionary containing:
+        - ground_truth_positions: list of [T, N, 2]
+        - predicted_positions: list of [T, N, 2]
+        - ground_truth_velocities: list of [T, N, 2]
+        - predicted_velocities: list of [T, N, 2]
+        - metrics: dict of aggregate metrics
+    """
+    if device is None:
+        device = next(model.parameters()).device
+
+    logger.info(f"Loading dataset for rollout evaluation from {dataset_path}")
+
+    # Load dataset
+    dataset = torch.load(dataset_path, weights_only=False)
+
+    # Use validation split (last 20%)
+    n_train = int(len(dataset) * 0.8)
+    val_dataset = [dataset[i] for i in range(n_train, len(dataset))]
+
+    logger.info(f"Evaluating rollout on {len(val_dataset)} validation samples")
+
+    all_gt_positions = []
+    all_pred_positions = []
+    all_gt_velocities = []
+    all_pred_velocities = []
+
+    position_errors = []
+    velocity_errors = []
+
+    model.eval()
+
+    for idx, (positions, species) in enumerate(tqdm(val_dataset, desc="Generating rollouts")):
+        # positions: [T, N, 2]
+        T, N, D = positions.shape
+
+        # Skip if trajectory too short
+        if T < n_rollout_steps + 1:
+            continue
+
+        # Extract ground truth trajectory
+        gt_positions = positions[:n_rollout_steps].numpy()
+
+        # Compute ground truth velocities
+        gt_velocities = np.diff(gt_positions, axis=0)
+        gt_velocities = np.concatenate([gt_velocities, gt_velocities[-1:]], axis=0)  # Repeat last
+
+        # Get initial conditions
+        initial_pos = positions[0]  # [N, 2]
+        initial_vel = positions[1] - positions[0]  # [N, 2]
+
+        # Generate rollout
+        pred_pos, pred_vel = generate_rollout(
+            model, initial_pos, initial_vel,
+            n_steps=n_rollout_steps,
+            visual_range=visual_range,
+            device=device
+        )
+
+        # Convert to numpy
+        pred_pos = pred_pos.numpy()
+        pred_vel = pred_vel.numpy()
+
+        # Store results
+        all_gt_positions.append(gt_positions)
+        all_pred_positions.append(pred_pos)
+        all_gt_velocities.append(gt_velocities)
+        all_pred_velocities.append(pred_vel)
+
+        # Compute errors for this trajectory
+        pos_error = np.mean(np.linalg.norm(gt_positions - pred_pos, axis=-1))  # Mean over time and particles
+        vel_error = np.mean(np.linalg.norm(gt_velocities - pred_vel, axis=-1))
+
+        position_errors.append(pos_error)
+        velocity_errors.append(vel_error)
+
+    # Aggregate metrics
+    metrics = {
+        'mean_position_error': np.mean(position_errors),
+        'std_position_error': np.std(position_errors),
+        'mean_velocity_error': np.mean(velocity_errors),
+        'std_velocity_error': np.std(velocity_errors),
+        'n_trajectories': len(position_errors)
+    }
+
+    logger.info(f"Rollout evaluation complete:")
+    logger.info(f"  Mean position error: {metrics['mean_position_error']:.6f} ± {metrics['std_position_error']:.6f}")
+    logger.info(f"  Mean velocity error: {metrics['mean_velocity_error']:.6f} ± {metrics['std_velocity_error']:.6f}")
+
+    results = {
+        'ground_truth_positions': all_gt_positions,
+        'predicted_positions': all_pred_positions,
+        'ground_truth_velocities': all_gt_velocities,
+        'predicted_velocities': all_pred_velocities,
+        'metrics': metrics
+    }
+
+    return results
