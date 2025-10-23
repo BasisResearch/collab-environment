@@ -41,25 +41,40 @@ class MLP(nn.Module):
 
 class InteractionParticle(pyg.nn.MessagePassing):
     """
-    Interaction Network as proposed in:
-    https://proceedings.neurips.cc/paper/2016/hash/3147da8ab4a0437c15ef51a5cc7f2dc4-Abstract.html
+    Interaction Network for learning particle dynamics.
 
-    Model learning the acceleration of particles as a function of their relative distance and relative velocities.
-    The interaction function is defined by a MLP self.lin_edge
-    The particle embedding is defined by a table self.a
+    Based on: https://proceedings.neurips.cc/paper/2016/hash/3147da8ab4a0437c15ef51a5cc7f2dc4-Abstract.html
+
+    This model learns pairwise interaction forces between particles using edge features.
+    The interaction function is a MLP (self.lin_edge) that maps edge features to forces.
+    Each particle has a learnable embedding (self.a).
+
+    Edge Features (NOT normalized):
+    --------------------------------
+    For an edge from particle j to particle i:
+    - delta_pos: Relative position (pos_j - pos_i) [2D vector]
+    - r: Distance ||delta_pos|| [scalar]
+    - delta_vel: Relative velocity (vel_j - vel_i) [2D vector]
+    - embedding_i: Particle i's learnable embedding [embedding_dim vector]
+
+    Total input size: 2 (delta_pos) + 1 (r) + 2 (delta_vel) + embedding_dim = 5 + embedding_dim
+
+    Output:
+    -------
+    - Force from j acting on i [2D vector]
 
     Parameters
     ----------
     config : dict
         Configuration dictionary with keys:
-        - n_particles: number of particles
-        - n_particle_types: number of particle types
-        - max_radius: maximum interaction radius
-        - hidden_dim: hidden dimension for MLP
-        - embedding_dim: dimension of particle embeddings
-        - n_mp_layers: number of message passing layers
-        - input_size: input size for MLP
-        - output_size: output size (typically 2 for 2D acceleration)
+        - n_particles: Number of particles
+        - n_particle_types: Number of particle types
+        - max_radius: Maximum interaction radius (not used for normalization)
+        - hidden_dim: Hidden dimension for MLP
+        - embedding_dim: Dimension of particle embeddings
+        - n_mp_layers: Number of MLP layers
+        - input_size: Input size for MLP (should be 5 for delta_pos + r + delta_vel)
+        - output_size: Output size (2 for 2D forces)
     device : torch.device
         Device to run the model on
     aggr_type : str, optional
@@ -72,7 +87,8 @@ class InteractionParticle(pyg.nn.MessagePassing):
         super(InteractionParticle, self).__init__(aggr=aggr_type)
 
         self.device = device
-        self.input_size = config.get('input_size', 7)  # delta_pos(2) + r(1) + velocities(4)
+        # New input features: delta_pos(2) + r(1) + delta_vel(2) = 5
+        self.input_size = config.get('input_size', 5)
         self.output_size = config.get('output_size', 2)  # 2D acceleration
         self.hidden_dim = config.get('hidden_dim', 128)
         self.n_layers = config.get('n_mp_layers', 3)
@@ -136,6 +152,11 @@ class InteractionParticle(pyg.nn.MessagePassing):
         """
         Construct messages from j to i.
 
+        Edge features (NOT normalized):
+        - Relative position: delta_pos = pos_j - pos_i
+        - Relative distance: r = ||delta_pos||
+        - Relative velocity: delta_vel = vel_j - vel_i
+
         Parameters
         ----------
         pos_i, pos_j : torch.Tensor
@@ -148,25 +169,22 @@ class InteractionParticle(pyg.nn.MessagePassing):
         Returns
         -------
         out : torch.Tensor
-            Messages to send
+            Messages to send (force from j to i)
         """
-        # Compute relative position and distance
+        # Compute relative position and distance (NO normalization)
         delta_pos = pos_j - pos_i
-        r = torch.sqrt(torch.sum(delta_pos ** 2, dim=1, keepdim=True)) / self.max_radius
-        delta_pos_norm = delta_pos / self.max_radius
+        r = torch.sqrt(torch.sum(delta_pos ** 2, dim=1, keepdim=True))
 
-        # Normalize velocities
-        vel_i_norm = vel_i / (torch.norm(vel_i, dim=1, keepdim=True) + 1e-8)
-        vel_j_norm = vel_j / (torch.norm(vel_j, dim=1, keepdim=True) + 1e-8)
+        # Compute relative velocity (NO normalization)
+        delta_vel = vel_j - vel_i
 
         # Construct input features
-        # Format: [delta_pos(2), r(1), vel_i(2), vel_j(2), embedding_i(embedding_dim)]
+        # Format: [delta_pos(2), r(1), delta_vel(2), embedding_i(embedding_dim)]
         in_features = torch.cat([
-            delta_pos_norm,  # Normalized relative position
-            r,  # Normalized distance
-            vel_i_norm,  # Normalized velocity of i
-            vel_j_norm,  # Normalized velocity of j
-            embedding_i  # Particle embedding
+            delta_pos,    # Relative position (2D)
+            r,            # Distance (1D)
+            delta_vel,    # Relative velocity (2D)
+            embedding_i   # Particle embedding
         ], dim=-1)
 
         # Apply edge MLP
@@ -178,67 +196,42 @@ class InteractionParticle(pyg.nn.MessagePassing):
         """Update node features (identity function)."""
         return aggr_out
 
-    def get_interaction_function(self, embedding_idx=0):
+    def evaluate_interaction(self, delta_pos, delta_vel, embedding_idx=0):
         """
-        Get the learned interaction function for a specific particle embedding.
+        Evaluate the learned interaction function.
 
         Parameters
         ----------
+        delta_pos : torch.Tensor
+            Relative positions [N, 2]
+        delta_vel : torch.Tensor
+            Relative velocities [N, 2]
         embedding_idx : int
             Index of particle embedding to use
 
         Returns
         -------
-        function : callable
-            Function that takes (distance, relative_velocity) and returns force
+        forces : torch.Tensor
+            Interaction forces [N, 2]
         """
-        def interaction_fn(distances, rel_vel=None):
-            """
-            Evaluate interaction function.
+        with torch.no_grad():
+            n = delta_pos.shape[0]
 
-            Parameters
-            ----------
-            distances : np.ndarray
-                Array of distances
-            rel_vel : np.ndarray, optional
-                Relative velocities (not used in basic version)
+            # Compute distance
+            r = torch.sqrt(torch.sum(delta_pos ** 2, dim=1, keepdim=True))
 
-            Returns
-            -------
-            forces : np.ndarray
-                Interaction forces
-            """
-            with torch.no_grad():
-                # Convert to tensor
-                distances_t = torch.tensor(distances, dtype=torch.float32, device=self.device)
-                n = len(distances_t)
+            # Get embedding
+            embedding = self.a[embedding_idx].unsqueeze(0).repeat(n, 1)
 
-                # Create dummy features
-                delta_pos = torch.zeros((n, 2), device=self.device)
-                delta_pos[:, 0] = distances_t / self.max_radius  # Put distance in x direction
-                r = distances_t.unsqueeze(1) / self.max_radius
+            # Construct input features
+            in_features = torch.cat([
+                delta_pos,   # Relative position (2D)
+                r,           # Distance (1D)
+                delta_vel,   # Relative velocity (2D)
+                embedding    # Embedding
+            ], dim=-1)
 
-                # Dummy velocities (unit vector in x direction)
-                vel_i = torch.zeros((n, 2), device=self.device)
-                vel_j = torch.zeros((n, 2), device=self.device)
-                vel_i[:, 0] = 1.0
-                vel_j[:, 0] = 1.0
+            # Evaluate MLP
+            forces = self.lin_edge(in_features)
 
-                # Get embedding
-                embedding = self.a[embedding_idx].unsqueeze(0).repeat(n, 1)
-
-                # Construct input
-                in_features = torch.cat([
-                    delta_pos,
-                    r,
-                    vel_i,
-                    vel_j,
-                    embedding
-                ], dim=-1)
-
-                # Evaluate MLP
-                forces = self.lin_edge(in_features)
-
-                return forces.cpu().numpy()
-
-        return interaction_fn
+            return forces

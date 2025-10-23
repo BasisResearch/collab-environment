@@ -77,15 +77,18 @@ def finite_diff(time, position, query=None):
 
 def finite_diff_data(position):
     """Like upgrade_data, but no smoothing, just upgrade_data_finite_diff"""
-    B, F, N, dim = np.shape(position)
-    # time = np.arange(F)
+    # Ensure position is a torch tensor
+    if not isinstance(position, torch.Tensor):
+        position = torch.from_numpy(position)
+
+    B, F, N, dim = position.shape
 
     v = torch.zeros_like(position)
     a = torch.zeros_like(position)
     # v_function = {}
 
-    v[:, 1:, :, :] = torch.diff(position, axis=1)
-    a[:, :-1, :, :] = torch.diff(v, axis=1)
+    v[:, 1:, :, :] = torch.diff(position, dim=1)
+    a[:, :-1, :, :] = torch.diff(v, dim=1)
 
     return position, v, a, None
 

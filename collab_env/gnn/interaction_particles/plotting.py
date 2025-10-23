@@ -7,6 +7,13 @@ import matplotlib.pyplot as plt
 import torch
 from loguru import logger
 
+# Import actual boid functions for ground truth comparison
+from collab_env.sim.boids_gnn_temp.boid import (
+    fly_towards_center,
+    avoid_others,
+    match_velocity
+)
+
 
 def boid_separation_force(distances, min_distance=15.0, avoid_factor=0.05):
     """
@@ -106,10 +113,14 @@ def plot_interaction_functions(
     save_path=None,
     distances=None,
     particle_idx=0,
-    config=None
+    config=None,
+    velocity_slice='stationary'
 ):
     """
-    Plot learned interaction functions from the model.
+    Plot learned 2D interaction functions from the model as vector field and heatmaps.
+
+    Since boid separation/cohesion depend only on position (not velocity), we visualize
+    the interaction function for a specific velocity configuration (slice through 4D space).
 
     Parameters
     ----------
@@ -123,41 +134,171 @@ def plot_interaction_functions(
         Particle index to use for embedding
     config : dict, optional
         Configuration dict with boid parameters
+    velocity_slice : str
+        Which velocity configuration to visualize:
+        - 'stationary': Both particles stationary (v=0)
+        - 'aligned': Both particles moving right →
+        - 'opposing': Particles moving toward each other
+        - 'perpendicular': Velocities at right angles
 
     Returns
     -------
     fig : matplotlib.figure.Figure
         Figure object
     """
-    if distances is None:
-        # Use normalized distances from 0 to 1 (will be multiplied by max_radius)
-        distances = np.linspace(0.01, 1.0, 200)
+    import torch
 
-    # Get interaction function from model
-    interaction_fn = model.get_interaction_function(embedding_idx=particle_idx)
-    forces = interaction_fn(distances * model.max_radius)
+    # Create a 2D grid of relative positions
+    grid_size = 50
+    max_dist = model.max_radius
+    x = np.linspace(-max_dist, max_dist, grid_size)
+    y = np.linspace(-max_dist, max_dist, grid_size)
+    X, Y = np.meshgrid(x, y)
 
-    # Plot
-    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    # Flatten grid for batch processing
+    positions = np.stack([X.flatten(), Y.flatten()], axis=-1)  # [N, 2]
+    n_points = len(positions)
 
-    # Plot X component
-    axes[0].plot(distances * model.max_radius, forces[:, 0], 'b-', linewidth=2, label='Learned Force (X)')
-    axes[0].axhline(y=0, color='k', linestyle='--', alpha=0.3)
-    axes[0].set_xlabel('Distance', fontsize=12)
-    axes[0].set_ylabel('Force (X component)', fontsize=12)
-    axes[0].set_title('Learned Interaction Function (X)', fontsize=14)
-    axes[0].grid(True, alpha=0.3)
-    axes[0].legend()
+    # Compute distances
+    distances = np.linalg.norm(positions, axis=1)
 
-    # Plot Y component
-    axes[1].plot(distances * model.max_radius, forces[:, 1], 'r-', linewidth=2, label='Learned Force (Y)')
-    axes[1].axhline(y=0, color='k', linestyle='--', alpha=0.3)
-    axes[1].set_xlabel('Distance', fontsize=12)
-    axes[1].set_ylabel('Force (Y component)', fontsize=12)
-    axes[1].set_title('Learned Interaction Function (Y)', fontsize=14)
-    axes[1].grid(True, alpha=0.3)
-    axes[1].legend()
+    # Evaluate interaction function with specified velocity configuration
+    with torch.no_grad():
+        # Convert to tensor
+        delta_pos_t = torch.tensor(positions, dtype=torch.float32, device=model.device)
 
+        # Compute distances
+        distances_t = torch.sqrt(torch.sum(delta_pos_t ** 2, dim=1, keepdim=True))
+
+        # Set velocity configuration based on slice
+        # vel_i = 0 (particle i is stationary)
+        # vel_j depends on the slice
+        vel_j = torch.zeros((n_points, 2), device=model.device)
+
+        if velocity_slice == 'stationary':
+            # Both stationary - vel_j stays zero
+            pass
+        elif velocity_slice == 'aligned':
+            # vel_j moving right
+            vel_j[:, 0] = 1.0
+        elif velocity_slice == 'opposing':
+            # vel_j pointing toward i (opposite of position vector)
+            vel_j = -delta_pos_t / (distances_t + 1e-8)
+        elif velocity_slice == 'perpendicular':
+            # vel_j perpendicular to position vector
+            vel_j[:, 0] = -delta_pos_t[:, 1]
+            vel_j[:, 1] = delta_pos_t[:, 0]
+            vel_j = vel_j / (torch.norm(vel_j, dim=1, keepdim=True) + 1e-8)
+
+        # Compute delta_vel = vel_j - vel_i (vel_i = 0, so delta_vel = vel_j)
+        delta_vel = vel_j
+
+        # Use model's evaluate_interaction method
+        forces = model.evaluate_interaction(delta_pos_t, delta_vel, embedding_idx=particle_idx).cpu().numpy()
+
+    # Reshape forces back to grid
+    force_x = forces[:, 0].reshape(grid_size, grid_size)
+    force_y = forces[:, 1].reshape(grid_size, grid_size)
+    force_magnitude = np.sqrt(force_x**2 + force_y**2)
+
+    # Compute radial and tangential components
+    # Radial: component in direction of delta_pos
+    # Tangential: component perpendicular to delta_pos
+    radial_force = np.zeros_like(force_magnitude)
+    tangential_force = np.zeros_like(force_magnitude)
+
+    for i in range(grid_size):
+        for j in range(grid_size):
+            dx, dy = X[i, j], Y[i, j]
+            dist = np.sqrt(dx**2 + dy**2)
+            if dist > 1e-8:
+                # Unit vector in radial direction
+                r_hat = np.array([dx, dy]) / dist
+                # Unit vector in tangential direction (perpendicular)
+                t_hat = np.array([-dy, dx]) / dist
+
+                force_vec = np.array([force_x[i, j], force_y[i, j]])
+                radial_force[i, j] = np.dot(force_vec, r_hat)
+                tangential_force[i, j] = np.dot(force_vec, t_hat)
+
+    # Create figure with 6 subplots (2 rows x 3 cols)
+    fig = plt.figure(figsize=(18, 11))
+
+    # Velocity mode description
+    vel_desc = {
+        'stationary': 'Stationary particles (v≈0)',
+        'aligned': 'Both particles moving right →',
+        'opposing': 'Particles moving toward each other ← →',
+        'perpendicular': 'Perpendicular velocities (→ and ↑)'
+    }
+
+    # 1. Vector field plot
+    ax1 = plt.subplot(2, 3, 1)
+    skip = 3
+    quiver = ax1.quiver(X[::skip, ::skip], Y[::skip, ::skip],
+                        force_x[::skip, ::skip], force_y[::skip, ::skip],
+                        force_magnitude[::skip, ::skip],
+                        cmap='viridis', scale=None, scale_units='xy')
+    ax1.set_xlabel('Relative Position X', fontsize=10)
+    ax1.set_ylabel('Relative Position Y', fontsize=10)
+    ax1.set_title('Force Vector Field', fontsize=11, fontweight='bold')
+    ax1.set_aspect('equal')
+    ax1.grid(True, alpha=0.3)
+    plt.colorbar(quiver, ax=ax1, label='Magnitude')
+
+    # 2. Force magnitude heatmap
+    ax2 = plt.subplot(2, 3, 2)
+    im2 = ax2.contourf(X, Y, force_magnitude, levels=20, cmap='hot')
+    ax2.set_xlabel('Relative Position X', fontsize=10)
+    ax2.set_ylabel('Relative Position Y', fontsize=10)
+    ax2.set_title('Force Magnitude', fontsize=11, fontweight='bold')
+    ax2.set_aspect('equal')
+    plt.colorbar(im2, ax=ax2, label='Magnitude')
+
+    # 3. Radial component (repulsion/attraction)
+    ax3 = plt.subplot(2, 3, 3)
+    vmax = np.max(np.abs(radial_force))
+    im3 = ax3.contourf(X, Y, radial_force, levels=20, cmap='RdBu_r',
+                       vmin=-vmax, vmax=vmax)
+    ax3.set_xlabel('Relative Position X', fontsize=10)
+    ax3.set_ylabel('Relative Position Y', fontsize=10)
+    ax3.set_title('Radial Component\n(+: repulsion, -: attraction)', fontsize=11, fontweight='bold')
+    ax3.set_aspect('equal')
+    plt.colorbar(im3, ax=ax3, label='Force')
+
+    # 4. Force X component heatmap
+    ax4 = plt.subplot(2, 3, 4)
+    im4 = ax4.contourf(X, Y, force_x, levels=20, cmap='RdBu_r',
+                       vmin=-np.max(np.abs(force_x)), vmax=np.max(np.abs(force_x)))
+    ax4.set_xlabel('Relative Position X', fontsize=10)
+    ax4.set_ylabel('Relative Position Y', fontsize=10)
+    ax4.set_title('Force X Component', fontsize=11, fontweight='bold')
+    ax4.set_aspect('equal')
+    plt.colorbar(im4, ax=ax4, label='Force X')
+
+    # 5. Force Y component heatmap
+    ax5 = plt.subplot(2, 3, 5)
+    im5 = ax5.contourf(X, Y, force_y, levels=20, cmap='RdBu_r',
+                       vmin=-np.max(np.abs(force_y)), vmax=np.max(np.abs(force_y)))
+    ax5.set_xlabel('Relative Position X', fontsize=10)
+    ax5.set_ylabel('Relative Position Y', fontsize=10)
+    ax5.set_title('Force Y Component', fontsize=11, fontweight='bold')
+    ax5.set_aspect('equal')
+    plt.colorbar(im5, ax=ax5, label='Force Y')
+
+    # 6. Tangential component
+    ax6 = plt.subplot(2, 3, 6)
+    vmax_tan = np.max(np.abs(tangential_force))
+    im6 = ax6.contourf(X, Y, tangential_force, levels=20, cmap='RdBu_r',
+                       vmin=-vmax_tan, vmax=vmax_tan)
+    ax6.set_xlabel('Relative Position X', fontsize=10)
+    ax6.set_ylabel('Relative Position Y', fontsize=10)
+    ax6.set_title('Tangential Component\n(perpendicular to radial)', fontsize=11, fontweight='bold')
+    ax6.set_aspect('equal')
+    plt.colorbar(im6, ax=ax6, label='Force')
+
+    plt.suptitle(f'Learned 2D Interaction Function (Particle {particle_idx})\nVelocity slice: {vel_desc.get(velocity_slice, velocity_slice)}',
+                 fontsize=13, fontweight='bold', y=0.995)
     plt.tight_layout()
 
     if save_path:
@@ -165,6 +306,506 @@ def plot_interaction_functions(
         logger.info(f"Saved interaction function plot to {save_path}")
 
     return fig
+
+
+def plot_true_boid_rules_2d(config=None, scene_size=480.0, save_path=None):
+    """
+    Visualize true 2D boid rules as 2D heatmaps.
+
+    Separation and cohesion depend only on position (radially symmetric).
+    Alignment depends on relative velocity (not visualized here as it's velocity-dependent).
+
+    Parameters
+    ----------
+    config : dict, optional
+        Boid configuration dict
+    scene_size : float
+        Scene size in pixels
+    save_path : str, optional
+        Path to save plot
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+        Figure object
+    """
+    # Default config
+    if config is None:
+        config = {
+            'visual_range': 50.0,
+            'min_distance': 15.0,
+            'avoid_factor': 0.05,
+            'matching_factor': 0.5,
+            'centering_factor': 0.005,
+        }
+
+    # Create 2D grid in pixel space
+    grid_size = 100
+    visual_range_normalized = config['visual_range'] / scene_size
+    x = np.linspace(-visual_range_normalized, visual_range_normalized, grid_size)
+    y = np.linspace(-visual_range_normalized, visual_range_normalized, grid_size)
+    X, Y = np.meshgrid(x, y)
+
+    # Compute distances in pixels
+    distances_px = np.sqrt(X**2 + Y**2) * scene_size
+
+    # Compute true boid forces
+    separation = np.zeros_like(distances_px)
+    cohesion = np.zeros_like(distances_px)
+
+    # Separation (repulsion within min_distance)
+    mask_sep = distances_px < config['min_distance']
+    separation[mask_sep] = config['avoid_factor'] * distances_px[mask_sep]
+
+    # Cohesion (attraction within visual_range)
+    mask_coh = distances_px < config['visual_range']
+    cohesion[mask_coh] = config['centering_factor'] * distances_px[mask_coh]
+
+    # Convert to force vectors (radial direction)
+    # Separation: pushes away (positive radial)
+    # Cohesion: pulls toward (negative radial)
+    sep_force_x = np.zeros_like(X)
+    sep_force_y = np.zeros_like(Y)
+    coh_force_x = np.zeros_like(X)
+    coh_force_y = np.zeros_like(Y)
+
+    for i in range(grid_size):
+        for j in range(grid_size):
+            dist = np.sqrt(X[i,j]**2 + Y[i,j]**2)
+            if dist > 1e-8:
+                # Unit vector in radial direction
+                r_hat_x = X[i,j] / dist
+                r_hat_y = Y[i,j] / dist
+
+                # Separation pushes away
+                sep_force_x[i,j] = separation[i,j] * r_hat_x * scene_size
+                sep_force_y[i,j] = separation[i,j] * r_hat_y * scene_size
+
+                # Cohesion pulls toward (negative)
+                coh_force_x[i,j] = -cohesion[i,j] * r_hat_x * scene_size
+                coh_force_y[i,j] = -cohesion[i,j] * r_hat_y * scene_size
+
+    # Combined force
+    total_force_x = sep_force_x + coh_force_x
+    total_force_y = sep_force_y + coh_force_y
+    total_magnitude = np.sqrt(total_force_x**2 + total_force_y**2)
+    sep_magnitude = np.sqrt(sep_force_x**2 + sep_force_y**2)
+    coh_magnitude = np.sqrt(coh_force_x**2 + coh_force_y**2)
+
+    # Create figure
+    fig = plt.figure(figsize=(18, 12))
+
+    # 1. Separation force
+    ax1 = plt.subplot(2, 3, 1)
+    skip = 5
+    quiver1 = ax1.quiver(X[::skip, ::skip]*scene_size, Y[::skip, ::skip]*scene_size,
+                         sep_force_x[::skip, ::skip], sep_force_y[::skip, ::skip],
+                         sep_magnitude[::skip, ::skip],
+                         cmap='Reds', scale=None, scale_units='xy')
+    circle1 = plt.Circle((0, 0), config['min_distance'], fill=False,
+                         edgecolor='red', linestyle='--', linewidth=2, label='min_distance')
+    ax1.add_patch(circle1)
+    ax1.set_xlabel('Relative Position X (px)', fontsize=10)
+    ax1.set_ylabel('Relative Position Y (px)', fontsize=10)
+    ax1.set_title('Separation Force\n(Repulsion within min_distance)', fontsize=11, fontweight='bold')
+    ax1.set_aspect('equal')
+    ax1.grid(True, alpha=0.3)
+    ax1.legend()
+    plt.colorbar(quiver1, ax=ax1, label='Force')
+
+    # 2. Separation magnitude heatmap
+    ax2 = plt.subplot(2, 3, 2)
+    im2 = ax2.contourf(X*scene_size, Y*scene_size, sep_magnitude, levels=20, cmap='Reds')
+    circle2 = plt.Circle((0, 0), config['min_distance'], fill=False,
+                         edgecolor='darkred', linestyle='--', linewidth=2)
+    ax2.add_patch(circle2)
+    ax2.set_xlabel('Relative Position X (px)', fontsize=10)
+    ax2.set_ylabel('Relative Position Y (px)', fontsize=10)
+    ax2.set_title('Separation Magnitude', fontsize=11, fontweight='bold')
+    ax2.set_aspect('equal')
+    plt.colorbar(im2, ax=ax2, label='Force')
+
+    # 3. Cohesion force
+    ax3 = plt.subplot(2, 3, 3)
+    quiver3 = ax3.quiver(X[::skip, ::skip]*scene_size, Y[::skip, ::skip]*scene_size,
+                         coh_force_x[::skip, ::skip], coh_force_y[::skip, ::skip],
+                         coh_magnitude[::skip, ::skip],
+                         cmap='Blues_r', scale=None, scale_units='xy')
+    circle3 = plt.Circle((0, 0), config['visual_range'], fill=False,
+                         edgecolor='blue', linestyle='--', linewidth=2, label='visual_range')
+    ax3.add_patch(circle3)
+    ax3.set_xlabel('Relative Position X (px)', fontsize=10)
+    ax3.set_ylabel('Relative Position Y (px)', fontsize=10)
+    ax3.set_title('Cohesion Force\n(Attraction within visual_range)', fontsize=11, fontweight='bold')
+    ax3.set_aspect('equal')
+    ax3.grid(True, alpha=0.3)
+    ax3.legend()
+    plt.colorbar(quiver3, ax=ax3, label='Force')
+
+    # 4. Cohesion magnitude heatmap
+    ax4 = plt.subplot(2, 3, 4)
+    im4 = ax4.contourf(X*scene_size, Y*scene_size, coh_magnitude, levels=20, cmap='Blues_r')
+    circle4 = plt.Circle((0, 0), config['visual_range'], fill=False,
+                         edgecolor='darkblue', linestyle='--', linewidth=2)
+    ax4.add_patch(circle4)
+    ax4.set_xlabel('Relative Position X (px)', fontsize=10)
+    ax4.set_ylabel('Relative Position Y (px)', fontsize=10)
+    ax4.set_title('Cohesion Magnitude', fontsize=11, fontweight='bold')
+    ax4.set_aspect('equal')
+    plt.colorbar(im4, ax=ax4, label='Force')
+
+    # 5. Combined force
+    ax5 = plt.subplot(2, 3, 5)
+    quiver5 = ax5.quiver(X[::skip, ::skip]*scene_size, Y[::skip, ::skip]*scene_size,
+                         total_force_x[::skip, ::skip], total_force_y[::skip, ::skip],
+                         total_magnitude[::skip, ::skip],
+                         cmap='viridis', scale=None, scale_units='xy')
+    circle5a = plt.Circle((0, 0), config['min_distance'], fill=False,
+                          edgecolor='red', linestyle='--', linewidth=1.5, alpha=0.7)
+    circle5b = plt.Circle((0, 0), config['visual_range'], fill=False,
+                          edgecolor='blue', linestyle='--', linewidth=1.5, alpha=0.7)
+    ax5.add_patch(circle5a)
+    ax5.add_patch(circle5b)
+    ax5.set_xlabel('Relative Position X (px)', fontsize=10)
+    ax5.set_ylabel('Relative Position Y (px)', fontsize=10)
+    ax5.set_title('Combined Force\n(Separation + Cohesion)', fontsize=11, fontweight='bold')
+    ax5.set_aspect('equal')
+    ax5.grid(True, alpha=0.3)
+    plt.colorbar(quiver5, ax=ax5, label='Force')
+
+    # 6. Combined magnitude heatmap
+    ax6 = plt.subplot(2, 3, 6)
+    im6 = ax6.contourf(X*scene_size, Y*scene_size, total_magnitude, levels=20, cmap='viridis')
+    circle6a = plt.Circle((0, 0), config['min_distance'], fill=False,
+                          edgecolor='red', linestyle='--', linewidth=1.5, alpha=0.7)
+    circle6b = plt.Circle((0, 0), config['visual_range'], fill=False,
+                          edgecolor='blue', linestyle='--', linewidth=1.5, alpha=0.7)
+    ax6.add_patch(circle6a)
+    ax6.add_patch(circle6b)
+    ax6.set_xlabel('Relative Position X (px)', fontsize=10)
+    ax6.set_ylabel('Relative Position Y (px)', fontsize=10)
+    ax6.set_title('Combined Magnitude', fontsize=11, fontweight='bold')
+    ax6.set_aspect('equal')
+    plt.colorbar(im6, ax=ax6, label='Force')
+
+    plt.suptitle('True 2D Boid Rules (Position-Dependent Forces)',
+                 fontsize=14, fontweight='bold', y=0.995)
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        logger.info(f"Saved true boid rules plot to {save_path}")
+
+    return fig
+
+
+def evaluate_forces_on_grid(model, grid_size=60, max_dist=50.0, particle_idx=0):
+    """
+    Evaluate learned forces on a 2D grid for two velocity configurations.
+
+    Setup:
+    - Node i at origin (0,0), stationary (vel_i = 0)
+    - Node j at grid positions (x, y)
+
+    Parameters
+    ----------
+    model : InteractionParticle
+        Trained model
+    grid_size : int
+        Grid resolution
+    max_dist : float
+        Maximum distance to evaluate (in same units as training data)
+    particle_idx : int
+        Particle embedding index
+
+    Returns
+    -------
+    dict with keys:
+        - X, Y: meshgrid coordinates
+        - away_total, away_pos, away_vel: forces when j moves away from i
+        - towards_total, towards_pos, towards_vel: forces when j moves towards i
+    """
+    # Create 2D grid
+    x = np.linspace(-max_dist, max_dist, grid_size)
+    y = np.linspace(-max_dist, max_dist, grid_size)
+    X, Y = np.meshgrid(x, y)
+
+    # Flatten for batch processing
+    positions = np.stack([X.flatten(), Y.flatten()], axis=-1)  # [N, 2]
+    n_points = len(positions)
+
+    # Convert to tensors
+    delta_pos_t = torch.tensor(positions, dtype=torch.float32, device=model.device)
+
+    # Compute distances and velocity directions
+    distances = torch.sqrt(torch.sum(delta_pos_t ** 2, dim=1, keepdim=True))
+    vel_away = delta_pos_t / (distances + 1e-8)  # Unit vector away from i
+    vel_towards = -vel_away  # Unit vector towards i
+    vel_zero = torch.zeros_like(delta_pos_t)
+
+    # Evaluate forces for all configurations
+    # 1. Away: j moving away from i
+    away_total = model.evaluate_interaction(delta_pos_t, vel_away, embedding_idx=particle_idx).cpu().numpy()
+    away_pos = model.evaluate_interaction(delta_pos_t, vel_zero, embedding_idx=particle_idx).cpu().numpy()
+    away_vel = away_total - away_pos
+
+    # 2. Towards: j moving towards i
+    towards_total = model.evaluate_interaction(delta_pos_t, vel_towards, embedding_idx=particle_idx).cpu().numpy()
+    towards_pos = model.evaluate_interaction(delta_pos_t, vel_zero, embedding_idx=particle_idx).cpu().numpy()
+    towards_vel = towards_total - towards_pos
+
+    # Reshape to grid
+    def reshape_to_grid(arr):
+        return {
+            'x': arr[:, 0].reshape(grid_size, grid_size),
+            'y': arr[:, 1].reshape(grid_size, grid_size),
+            'mag': np.sqrt(arr[:, 0]**2 + arr[:, 1]**2).reshape(grid_size, grid_size)
+        }
+
+    return {
+        'X': X,
+        'Y': Y,
+        'away_total': reshape_to_grid(away_total),
+        'away_pos': reshape_to_grid(away_pos),
+        'away_vel': reshape_to_grid(away_vel),
+        'towards_total': reshape_to_grid(towards_total),
+        'towards_pos': reshape_to_grid(towards_pos),
+        'towards_vel': reshape_to_grid(towards_vel),
+    }
+
+
+def plot_force_decomposition(forces_dict, save_path=None, title_prefix="Learned"):
+    """
+    Plot force decomposition for both velocity slices.
+
+    Creates a 2x3 grid:
+    - Row 1: Away scenario (Total | Position-Only | Velocity Residual)
+    - Row 2: Towards scenario (Total | Position-Only | Velocity Residual)
+
+    Parameters
+    ----------
+    forces_dict : dict
+        Output from evaluate_forces_on_grid or evaluate_true_boid_forces
+    save_path : str, optional
+        Path to save figure
+    title_prefix : str
+        Prefix for title (e.g., "Learned" or "True Boid")
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+    """
+    X = forces_dict['X']
+    Y = forces_dict['Y']
+
+    fig = plt.figure(figsize=(18, 12))
+
+    # Common settings
+    skip = 3  # For quiver plots
+
+    def plot_force_field(ax, force_dict, title):
+        """Helper to plot a single force field."""
+        fx, fy, mag = force_dict['x'], force_dict['y'], force_dict['mag']
+
+        # Vector field
+        quiver = ax.quiver(X[::skip, ::skip], Y[::skip, ::skip],
+                          fx[::skip, ::skip], fy[::skip, ::skip],
+                          mag[::skip, ::skip],
+                          cmap='viridis', scale=None, scale_units='xy', alpha=0.8)
+
+        # Mark origin (node i position)
+        ax.scatter([0], [0], c='red', s=200, marker='o', edgecolors='black',
+                  linewidth=2, zorder=10, label='Node i (origin)')
+
+        ax.set_xlabel('x position of j', fontsize=10)
+        ax.set_ylabel('y position of j', fontsize=10)
+        ax.set_title(title, fontsize=11, fontweight='bold')
+        ax.set_aspect('equal')
+        ax.grid(True, alpha=0.3)
+        ax.legend(loc='upper right', fontsize=8)
+
+        return quiver
+
+    # Row 1: Away scenario
+    ax1 = plt.subplot(2, 3, 1)
+    q1 = plot_force_field(ax1, forces_dict['away_total'], 'I) Total Force\n(vel_j away from i)')
+    plt.colorbar(q1, ax=ax1, label='Force mag')
+
+    ax2 = plt.subplot(2, 3, 2)
+    q2 = plot_force_field(ax2, forces_dict['away_pos'], 'II) Position-Only\n(vel=0)')
+    plt.colorbar(q2, ax=ax2, label='Force mag')
+
+    ax3 = plt.subplot(2, 3, 3)
+    q3 = plot_force_field(ax3, forces_dict['away_vel'], 'III) Velocity Residual\n(I - II)')
+    plt.colorbar(q3, ax=ax3, label='Force mag')
+
+    # Row 2: Towards scenario
+    ax4 = plt.subplot(2, 3, 4)
+    q4 = plot_force_field(ax4, forces_dict['towards_total'], 'I) Total Force\n(vel_j towards i)')
+    plt.colorbar(q4, ax=ax4, label='Force mag')
+
+    ax5 = plt.subplot(2, 3, 5)
+    q5 = plot_force_field(ax5, forces_dict['towards_pos'], 'II) Position-Only\n(vel=0)')
+    plt.colorbar(q5, ax=ax5, label='Force mag')
+
+    ax6 = plt.subplot(2, 3, 6)
+    q6 = plot_force_field(ax6, forces_dict['towards_vel'], 'III) Velocity Residual\n(I - II)')
+    plt.colorbar(q6, ax=ax6, label='Force mag')
+
+    plt.suptitle(f'{title_prefix} Interaction Forces (Node i at origin, stationary)',
+                 fontsize=14, fontweight='bold', y=0.995)
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        logger.info(f"Saved force decomposition plot to {save_path}")
+
+    return fig
+
+
+def evaluate_true_boid_forces(config, grid_size=60, max_dist=50.0, scene_size=480.0):
+    """
+    Evaluate true 2D boid forces on a grid using actual boid.py functions.
+
+    Computes forces from the 3 boid rules:
+    1. Cohesion (fly_towards_center): attraction within visual_range
+    2. Separation (avoid_others): repulsion within min_distance
+    3. Alignment (match_velocity): velocity matching within visual_range
+
+    Parameters
+    ----------
+    config : dict
+        Boid config with:
+        - min_distance: Separation threshold
+        - visual_range: Cohesion and alignment threshold
+        - avoid_factor: Separation weight
+        - centering_factor: Cohesion weight
+        - matching_factor: Alignment weight
+        - independent: Whether to skip cohesion/alignment (default: False)
+    grid_size : int
+        Grid resolution
+    max_dist : float
+        Maximum distance
+    scene_size : float
+        Scene size (not used when data is already normalized)
+
+    Returns
+    -------
+    dict with same structure as evaluate_forces_on_grid
+    """
+    # Create 2D grid
+    x = np.linspace(-max_dist, max_dist, grid_size)
+    y = np.linspace(-max_dist, max_dist, grid_size)
+    X, Y = np.meshgrid(x, y)
+
+    # Flatten for iteration
+    positions = np.stack([X.flatten(), Y.flatten()], axis=-1)
+    n_points = len(positions)
+
+    # Compute radial unit vectors (direction from i to j)
+    distances = np.sqrt(X**2 + Y**2).flatten()
+    r_hat = np.zeros_like(positions)
+    mask_nonzero = distances > 1e-8
+    r_hat[mask_nonzero] = positions[mask_nonzero] / distances[mask_nonzero, np.newaxis]
+
+    # Add 'independent' flag if not present
+    cfg = config.copy()
+    if 'independent' not in cfg:
+        cfg['independent'] = False
+
+    # Function to compute forces using actual boid functions
+    def compute_boid_forces(vel_j_array):
+        """
+        Compute forces for all grid points using actual boid.py functions.
+
+        vel_j_array: [n_points, 2] array of velocities for particle j
+        """
+        forces_total = np.zeros_like(positions)
+        forces_pos_only = np.zeros_like(positions)
+
+        for idx in range(n_points):
+            # Create boid i at origin (stationary)
+            boid_i = {
+                'x': 0.0,
+                'y': 0.0,
+                'dx': 0.0,
+                'dy': 0.0,
+                'species': 'A'
+            }
+
+            # Create boid j at grid position
+            pos_j = positions[idx]
+            vel_j = vel_j_array[idx]
+
+            boid_j = {
+                'x': pos_j[0],
+                'y': pos_j[1],
+                'dx': vel_j[0],
+                'dy': vel_j[1],
+                'species': 'A'
+            }
+
+            # List of all boids (i and j)
+            boids = [boid_i, boid_j]
+
+            # Compute total force (with velocities)
+            boid_i_copy = boid_i.copy()
+            fly_towards_center(boid_i_copy, boids, cfg)  # Rule 1: Cohesion
+            avoid_others(boid_i_copy, boids, cfg)        # Rule 2: Separation
+            match_velocity(boid_i_copy, boids, cfg)      # Rule 3: Alignment
+
+            # Force is change in velocity
+            forces_total[idx] = [
+                boid_i_copy['dx'] - boid_i['dx'],
+                boid_i_copy['dy'] - boid_i['dy']
+            ]
+
+            # Compute position-only force (set velocities to zero)
+            boid_i_zero = boid_i.copy()
+            boid_j_zero = boid_j.copy()
+            boid_j_zero['dx'] = 0.0
+            boid_j_zero['dy'] = 0.0
+            boids_zero = [boid_i_zero, boid_j_zero]
+
+            fly_towards_center(boid_i_zero, boids_zero, cfg)
+            avoid_others(boid_i_zero, boids_zero, cfg)
+            match_velocity(boid_i_zero, boids_zero, cfg)
+
+            forces_pos_only[idx] = [
+                boid_i_zero['dx'] - boid_i['dx'],
+                boid_i_zero['dy'] - boid_i['dy']
+            ]
+
+        return forces_total, forces_pos_only
+
+    # Scenario 1: vel_j moving away from i
+    vel_away = r_hat.copy()
+    forces_away_total, forces_away_pos = compute_boid_forces(vel_away)
+    forces_away_vel = forces_away_total - forces_away_pos
+
+    # Scenario 2: vel_j moving towards i
+    vel_towards = -r_hat.copy()
+    forces_towards_total, forces_towards_pos = compute_boid_forces(vel_towards)
+    forces_towards_vel = forces_towards_total - forces_towards_pos
+
+    # Reshape to grid
+    def make_force_dict(forces):
+        return {
+            'x': forces[:, 0].reshape(grid_size, grid_size),
+            'y': forces[:, 1].reshape(grid_size, grid_size),
+            'mag': np.linalg.norm(forces, axis=1).reshape(grid_size, grid_size)
+        }
+
+    return {
+        'X': X,
+        'Y': Y,
+        'away_total': make_force_dict(forces_away_total),
+        'away_pos': make_force_dict(forces_away_pos),
+        'away_vel': make_force_dict(forces_away_vel),
+        'towards_total': make_force_dict(forces_towards_total),
+        'towards_pos': make_force_dict(forces_towards_pos),
+        'towards_vel': make_force_dict(forces_towards_vel),
+    }
 
 
 def compare_with_true_boids(
@@ -214,9 +855,17 @@ def compare_with_true_boids(
     distances_fine = np.linspace(0.01, 1.0, 500)  # Normalized distances
     distances_real = distances_fine * model.max_radius  # Real distances
 
-    # Get learned forces
-    interaction_fn = model.get_interaction_function(embedding_idx=particle_idx)
-    learned_forces = interaction_fn(distances_real)
+    # Get learned forces using evaluate_interaction
+    # Create delta_pos array along x-axis (particle j to the right of particle i)
+    with torch.no_grad():
+        delta_pos = torch.zeros((len(distances_fine), 2), dtype=torch.float32, device=model.device)
+        delta_pos[:, 0] = torch.tensor(distances_fine, dtype=torch.float32)  # Position along x-axis
+
+        # Use zero relative velocity (position-only forces)
+        delta_vel = torch.zeros_like(delta_pos)
+
+        # Evaluate interaction
+        learned_forces = model.evaluate_interaction(delta_pos, delta_vel, embedding_idx=particle_idx).cpu().numpy()
 
     # Compute magnitude of learned forces
     learned_magnitude = np.sqrt(learned_forces[:, 0]**2 + learned_forces[:, 1]**2)

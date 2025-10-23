@@ -26,7 +26,11 @@ from .plotting import (
     plot_interaction_functions,
     compare_with_true_boids,
     plot_training_history,
-    create_rollout_report
+    create_rollout_report,
+    evaluate_forces_on_grid,
+    plot_force_decomposition,
+    evaluate_true_boid_forces,
+    plot_rollout_comparison
 )
 from collab_env.data.file_utils import expand_path
 
@@ -55,7 +59,7 @@ def parse_args():
     # Training arguments
     parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs')
     parser.add_argument('--batch-size', type=int, default=32, help='Batch size')
-    parser.add_argument('--learning-rate', type=float, default=1e-3, help='Learning rate')
+    parser.add_argument('--learning-rate', type=float, default=1e-5, help='Learning rate')
     parser.add_argument('--train-split', type=float, default=0.8, help='Train/val split ratio')
     parser.add_argument('--visual-range', type=float, default=0.3, help='Visual range for edge construction (normalized)')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
@@ -64,7 +68,7 @@ def parse_args():
     parser.add_argument('--hidden-dim', type=int, default=128, help='Hidden dimension for MLP')
     parser.add_argument('--embedding-dim', type=int, default=16, help='Particle embedding dimension')
     parser.add_argument('--n-layers', type=int, default=3, help='Number of MLP layers')
-    parser.add_argument('--n-particles', type=int, default=20, help='Number of particles')
+    parser.add_argument('--n-particles', type=int, default=20, help='Number of particles (auto-detected from config if available)')
 
     # Output arguments
     parser.add_argument(
@@ -74,7 +78,8 @@ def parse_args():
         help='Directory to save model and plots'
     )
     parser.add_argument('--no-plot', action='store_true', help='Skip plotting')
-    parser.add_argument('--device', type=str, default=None, help='Device to use (cpu/cuda/cuda:0)')
+    parser.add_argument('--device', type=str, default=None, help='Device to use (cpu/cuda/cuda:0/mps/auto)')
+    parser.add_argument('--plot-every', type=int, default=0, help='Plot force decomposition and rollout every N epochs (0=only at end)')
 
     # Evaluation
     parser.add_argument('--eval-only', action='store_true', help='Only evaluate a saved model')
@@ -85,7 +90,7 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_boids_config(config_path, dataset_path=None):
+def load_boids_config(config_path, dataset_path : Path=None):
     """
     Load 2D boids config from .pt file.
 
@@ -108,7 +113,7 @@ def load_boids_config(config_path, dataset_path=None):
     if config_path is None:
         # Try to infer config from dataset path
         if dataset_path:
-            config_path_guess = dataset_path.replace('.pt', '_config.pt')
+            config_path_guess = dataset_path.with_stem(dataset_path.stem + '_config')
             if os.path.exists(expand_path(config_path_guess)):
                 config_path = config_path_guess
                 logger.info(f"Auto-detected config: {config_path}")
@@ -169,10 +174,17 @@ def main():
         logger.info("No boids config loaded")
 
     # Set device
-    if args.device:
+    # Device selection with MPS support
+    if args.device and args.device != 'auto':
         device = torch.device(args.device)
     else:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # Auto-detect: cuda > mps > cpu
+        if torch.cuda.is_available():
+            device = torch.device('cuda')
+        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            device = torch.device('mps')
+        else:
+            device = torch.device('cpu')
     logger.info(f"Using device: {device}")
 
     # Evaluation mode
@@ -205,21 +217,104 @@ def main():
 
         return
 
+    # Determine n_particles from boids config or command line
+    if boids_config and 'counts' in boids_config:
+        n_particles = boids_config['counts']
+        logger.info(f"Using n_particles={n_particles} from boids config")
+    else:
+        n_particles = args.n_particles
+        logger.info(f"Using n_particles={n_particles} from command line argument")
+
     # Create model config
     model_config = {
-        'n_particles': args.n_particles,
+        'n_particles': n_particles,
         'n_particle_types': 1,
         'max_radius': 1.0,
         'hidden_dim': args.hidden_dim,
         'embedding_dim': args.embedding_dim,
         'n_mp_layers': args.n_layers,
-        'input_size': 7,  # delta_pos(2) + r(1) + vel_i(2) + vel_j(2)
+        'input_size': 5,  # delta_pos(2) + r(1) + delta_vel(2)
         'output_size': 2,
     }
 
     logger.info("Model configuration:")
     for key, value in model_config.items():
         logger.info(f"  {key}: {value}")
+
+    # Define epoch callback for plotting during training
+    def epoch_plotting_callback(model, epoch, train_loss, val_loss, save_dir):
+        """Generate plots after each validation epoch if plot_every is set."""
+        if args.plot_every <= 0 or epoch % args.plot_every != 0:
+            return
+
+        logger.info(f"\nGenerating epoch {epoch} plots...")
+        epoch_dir = os.path.join(save_dir, f'epoch_{epoch:04d}')
+        os.makedirs(epoch_dir, exist_ok=True)
+
+        # Plot force decomposition comparison
+        try:
+            # Evaluate learned forces
+            learned_forces = evaluate_forces_on_grid(
+                model,
+                grid_size=50,
+                max_dist=0.15,
+                particle_idx=0
+            )
+
+            # Evaluate ground truth forces
+            true_forces = evaluate_true_boid_forces(
+                boids_config,
+                grid_size=50,
+                max_dist=0.15,
+                scene_size=480.0
+            )
+
+            # Plot learned forces
+            learned_plot_path = os.path.join(epoch_dir, 'learned_force_decomposition.png')
+            plot_force_decomposition(
+                learned_forces,
+                save_path=learned_plot_path,
+                title_prefix=f"Learned (Epoch {epoch})"
+            )
+
+            # Plot ground truth forces
+            true_plot_path = os.path.join(epoch_dir, 'true_boid_force_decomposition.png')
+            plot_force_decomposition(
+                true_forces,
+                save_path=true_plot_path,
+                title_prefix=f"True Boid (Epoch {epoch})"
+            )
+
+            logger.info(f"Saved force decomposition plots to {epoch_dir}")
+        except Exception as e:
+            logger.warning(f"Failed to generate force decomposition plots: {e}")
+
+        # Plot rollout comparison
+        if args.evaluate_rollout:
+            try:
+                rollout_results = evaluate_rollout(
+                    model,
+                    dataset_path,
+                    visual_range=args.visual_range,
+                    n_rollout_steps=args.n_rollout_steps,
+                    device=device
+                )
+
+                # Save rollout comparison (use first trajectory)
+                if len(rollout_results['ground_truth_positions']) > 0:
+                    rollout_plot_path = os.path.join(epoch_dir, 'rollout_comparison.png')
+                    plot_rollout_comparison(
+                        rollout_results['ground_truth_positions'][0],
+                        rollout_results['predicted_positions'][0],
+                        trajectory_idx=0,
+                        save_path=rollout_plot_path
+                    )
+                else:
+                    logger.warning(f"No rollout trajectories to plot")
+
+                logger.info(f"Saved rollout comparison to {epoch_dir}")
+            except Exception as e:
+                logger.warning(f"Failed to generate rollout comparison: {e}")
 
     # Train model
     logger.info("\nStarting training...")
@@ -233,12 +328,13 @@ def main():
         visual_range=args.visual_range,
         device=device,
         save_dir=save_dir,
-        seed=args.seed
+        seed=args.seed,
+        epoch_callback=epoch_plotting_callback if args.plot_every > 0 else None
     )
 
     logger.info("\nTraining completed!")
-    logger.info(f"Final train loss: {history['train_loss'][-1]:.6f}")
-    logger.info(f"Final val loss: {history['val_loss'][-1]:.6f}")
+    logger.info(f"Final train loss: {history['train_loss'][-1]:.2g}")
+    logger.info(f"Final val loss: {history['val_loss'][-1]:.2g}")
 
     # Save model info
     info_path = os.path.join(save_dir, 'model_info.yaml')
@@ -260,13 +356,40 @@ def main():
         history_path = os.path.join(save_dir, 'training_history.png')
         plot_training_history(history, save_path=history_path)
 
-        # Plot interaction functions
-        plot_path = os.path.join(save_dir, 'interaction_functions.png')
-        plot_interaction_functions(model, save_path=plot_path)
+        # Generate 2D force decomposition plots (2x3 layout)
+        logger.info("Generating 2D force decomposition plots...")
 
-        # Compare with true boids
-        compare_path = os.path.join(save_dir, 'comparison_with_boids.png')
-        compare_with_true_boids(model, save_path=compare_path, config=boids_config)
+        # Evaluate learned forces on grid (returns both scenarios)
+        learned_forces = evaluate_forces_on_grid(
+            model,
+            grid_size=50,
+            max_dist=0.15,  # Normalized distance
+            particle_idx=0
+        )
+
+        # Evaluate ground truth boid forces
+        true_forces = evaluate_true_boid_forces(
+            boids_config,
+            grid_size=50,
+            max_dist=0.15,
+            scene_size=480.0
+        )
+
+        # Plot learned forces
+        learned_plot_path = os.path.join(save_dir, 'learned_force_decomposition.png')
+        plot_force_decomposition(
+            learned_forces,
+            save_path=learned_plot_path,
+            title_prefix="Learned"
+        )
+
+        # Plot ground truth forces
+        true_plot_path = os.path.join(save_dir, 'true_boid_force_decomposition.png')
+        plot_force_decomposition(
+            true_forces,
+            save_path=true_plot_path,
+            title_prefix="True Boid"
+        )
 
         logger.info(f"Plots saved to {save_dir}")
 

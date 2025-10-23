@@ -6,20 +6,22 @@
 # Uncomment the command you want to run, or modify as needed.
 
 # Default: Quick test (10 epochs) on basic dataset
-python -m collab_env.gnn.interaction_particles.run_training \
-    --dataset simulated_data/boid_single_species_basic.pt \
-    --epochs 10 \
-    --batch-size 32 \
-    --visual-range 0.104 \
-    --save-dir trained_models/interaction_particle_2d_quick
-
-# Full training (100 epochs) on basic dataset
 # python -m collab_env.gnn.interaction_particles.run_training \
 #     --dataset simulated_data/boid_single_species_basic.pt \
-#     --epochs 100 \
+#     --epochs 10 \
 #     --batch-size 32 \
 #     --visual-range 0.104 \
-#     --save-dir trained_models/interaction_particle_2d_basic
+#     --save-dir trained_models/interaction_particle_2d_quick \
+#     --device auto
+
+# Full training (100 epochs) on basic dataset
+python -m collab_env.gnn.interaction_particles.run_training \
+    --dataset simulated_data/boid_single_species_basic.pt \
+    --epochs 100 \
+    --batch-size 32 \
+    --visual-range 0.104 \
+    --save-dir trained_models/interaction_particle_2d_basic \
+    --device auto
 
 # Training on noisy dataset
 # python -m collab_env.gnn.interaction_particles.run_training \
@@ -78,11 +80,65 @@ python -m collab_env.gnn.interaction_particles.run_training \
 #     --visual-range 0.104 \
 #     --evaluate-rollout \
 #     --n-rollout-steps 50 \
-#     --save-dir trained_models/interaction_particle_2d_with_rollout
+#     --save-dir trained_models/interaction_particle_2d_with_rollout \
+#     --device auto
+
+# Training with periodic plotting (plot every 10 epochs)
+# python -m collab_env.gnn.interaction_particles.run_training \
+#     --dataset simulated_data/boid_single_species_basic.pt \
+#     --epochs 100 \
+#     --batch-size 32 \
+#     --visual-range 0.104 \
+#     --plot-every 10 \
+#     --save-dir trained_models/interaction_particle_2d_with_plots \
+#     --device auto
+
+# Full training with all features: periodic plots and rollout evaluation
+# python -m collab_env.gnn.interaction_particles.run_training \
+#     --dataset simulated_data/boid_single_species_basic.pt \
+#     --epochs 100 \
+#     --batch-size 32 \
+#     --visual-range 0.104 \
+#     --plot-every 10 \
+#     --evaluate-rollout \
+#     --n-rollout-steps 20 \
+#     --save-dir trained_models/interaction_particle_2d_full \
+#     --device mps
+
+# Training on LARGE runpod dataset (1000 samples, T=800 timesteps)
+# NOTE: Requires much smaller batch size due to long trajectories
+python -m collab_env.gnn.interaction_particles.run_training \
+    --dataset simulated_data/runpod/boid_single_species_basic.pt \
+    --epochs 10 \
+    --batch-size 256 \
+    --visual-range 0.104 \
+    --plot-every 2 \
+    --evaluate-rollout \
+    --n-rollout-steps 80 \
+    --save-dir trained_models/interaction_particle_2d_runpod \
+    --device cpu \
+    --learning-rate 1e-4
+
+# Use specific device (cpu, cuda, mps, or auto)
+# python -m collab_env.gnn.interaction_particles.run_training \
+#     --dataset simulated_data/boid_single_species_basic.pt \
+#     --epochs 100 \
+#     --batch-size 32 \
+#     --visual-range 0.104 \
+#     --device mps \
+#     --save-dir trained_models/interaction_particle_2d_mps
 
 # Notes:
 # - visual_range: 0.104 ≈ 50px / 480px (boid visual_range / scene_size)
 # - All datasets are in simulated_data/ directory
 # - Config files are auto-detected (e.g., *_config.pt)
 # - Results saved to trained_models/interaction_particle_2d_*/
-# - Check comparison_with_boids.png for learned vs true rules
+# - --device auto: Auto-detects cuda > mps > cpu
+# - --plot-every N: Generates force decomposition and rollout plots every N epochs
+#   Plots saved in epoch_XXXX/ subdirectories
+# - --evaluate-rollout: Enables multi-step rollout evaluation
+#   Results saved in rollout_evaluation/ subdirectory
+# - Final plots always generated:
+#   * training_history.png - loss curves
+#   * learned_force_decomposition.png - learned forces (2x3 grid)
+#   * true_boid_force_decomposition.png - ground truth forces (2x3 grid)

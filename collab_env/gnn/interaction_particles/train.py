@@ -95,10 +95,10 @@ def prepare_dataset(dataset_path, visual_range=0.5, max_radius=1.0, input_differ
     for i in range(len(dataset)):
         pos, species = dataset[i]  # [steps, N, 2], [N]
         # Add batch dimension: [1, steps, N, 2]
-        all_positions.append(pos.unsqueeze(0).numpy())
+        all_positions.append(pos.unsqueeze(0))
 
     # Stack all samples: [B, steps, N, 2]
-    position = np.concatenate(all_positions, axis=0)
+    position = torch.cat(all_positions, dim=0)
     logger.info(f"Extracted positions with shape: {position.shape}")
 
     # Note: 2D boids data is already normalized by scene size [width, height]
@@ -110,10 +110,10 @@ def prepare_dataset(dataset_path, visual_range=0.5, max_radius=1.0, input_differ
         position, input_differentiation
     )
 
-    # Convert to torch
-    p_normalized = torch.tensor(p_smooth, dtype=torch.float32)
-    v_normalized = torch.tensor(v_smooth, dtype=torch.float32)
-    a_normalized = torch.tensor(a_smooth, dtype=torch.float32)
+    # Ensure tensors are float32
+    p_normalized = p_smooth.float()
+    v_normalized = v_smooth.float()
+    a_normalized = a_smooth.float()
 
     # For 2D boids, data is already normalized
     # p_range is 1.0 (scene is normalized to [0,1] x [0,1])
@@ -139,7 +139,7 @@ def prepare_dataset(dataset_path, visual_range=0.5, max_radius=1.0, input_differ
             graphs.append(graph)
 
     logger.info(f"Created {len(graphs)} graph samples")
-    return graphs, p_range.item()
+    return graphs, p_range
 
 
 def train_interaction_particle(
@@ -147,12 +147,13 @@ def train_interaction_particle(
     config=None,
     epochs=100,
     batch_size=32,
-    learning_rate=1e-3,
+    learning_rate=1e-5,
     train_split=0.8,
     visual_range=0.5,
     device=None,
     save_dir=None,
-    seed=42
+    seed=42,
+    epoch_callback=None
 ):
     """
     Train InteractionParticle model on 2D boids data.
@@ -179,6 +180,9 @@ def train_interaction_particle(
         Directory to save model checkpoints
     seed : int
         Random seed
+    epoch_callback : callable, optional
+        Callback function called after each validation epoch with signature:
+        callback(model, epoch, train_loss, val_loss, save_dir)
 
     Returns
     -------
@@ -294,7 +298,7 @@ def train_interaction_particle(
         # Log progress
         logger.info(
             f"Epoch {epoch+1}/{epochs}: "
-            f"Train Loss = {train_loss:.6f}, Val Loss = {val_loss:.6f}"
+            f"Train Loss = {train_loss:.2g}, Val Loss = {val_loss:.2g}"
         )
 
         # Save best model
@@ -312,6 +316,10 @@ def train_interaction_particle(
                 'p_range': p_range
             }, save_path)
             logger.info(f"Saved best model to {save_path}")
+
+        # Call epoch callback if provided
+        if epoch_callback is not None:
+            epoch_callback(model, epoch + 1, train_loss, val_loss, save_dir)
 
     # Save final model
     if save_dir:
@@ -518,12 +526,16 @@ def evaluate_rollout(model, dataset_path, visual_range=0.5, n_rollout_steps=50, 
         # positions: [T, N, 2]
         T, N, D = positions.shape
 
-        # Skip if trajectory too short
-        if T < n_rollout_steps + 1:
+        # Use available timesteps (need at least 2 for initial velocity)
+        if T < 2:
             continue
 
-        # Extract ground truth trajectory
-        gt_positions = positions[:n_rollout_steps].numpy()
+        # Limit rollout steps to available data
+        # generate_rollout returns n_steps timesteps (including initial)
+        actual_rollout_steps = min(n_rollout_steps, T)
+
+        # Extract ground truth trajectory (same number of timesteps as rollout will produce)
+        gt_positions = positions[:actual_rollout_steps].numpy()
 
         # Compute ground truth velocities
         gt_velocities = np.diff(gt_positions, axis=0)
@@ -536,7 +548,7 @@ def evaluate_rollout(model, dataset_path, visual_range=0.5, n_rollout_steps=50, 
         # Generate rollout
         pred_pos, pred_vel = generate_rollout(
             model, initial_pos, initial_vel,
-            n_steps=n_rollout_steps,
+            n_steps=actual_rollout_steps,
             visual_range=visual_range,
             device=device
         )

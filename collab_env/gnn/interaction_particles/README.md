@@ -1,6 +1,82 @@
-# InteractionParticle Model Training on 2D Boids Data
+# InteractionParticle Model for 2D Boids
 
-This module implements training of the InteractionParticle model on 2D boids trajectory data from `docs/gnn/0a-Simulate_Boid_2D.ipynb`. The InteractionParticle model learns interaction functions between particles as a function of their relative distances and velocities.
+## Overview
+
+This implementation learns particle interaction dynamics from 2D boid simulation data using a Graph Neural Network (GNN). The model predicts forces between particles based on their relative positions and velocities.
+
+## Model Architecture
+
+### Input Features (per edge)
+
+The model uses **unnormalized** edge features to capture pairwise interactions:
+
+For an edge from particle `j` to particle `i`:
+- **delta_pos**: Relative position `pos_j - pos_i` (2D vector)
+- **r**: Distance `||delta_pos||` (scalar)
+- **delta_vel**: Relative velocity `vel_j - vel_i` (2D vector)
+- **embedding_i**: Learnable particle embedding (16D vector by default)
+
+**Total input size**: 5 + embedding_dim = 21 (with default embedding_dim=16)
+
+### Output
+
+- **Force**: 2D force vector from particle `j` acting on particle `i`
+
+### Architecture Details
+
+- **Message Passing**: Each edge computes a force using an MLP
+- **Aggregation**: Forces from all neighbors are summed (default: 'add')
+- **MLP**: 3-layer fully connected network with hidden_dim=128
+- **Learnable Embeddings**: Each particle has a unique embedding vector
+
+## Key Design Decisions
+
+### 1. No Normalization
+
+**Rationale**: Boid forces have physical units and magnitudes that matter. Normalization would lose this information. The model learns to handle raw physical quantities directly.
+
+### 2. Relative Velocity (not individual velocities)
+
+**Previous**: Used `vel_i` and `vel_j` separately (4 features)
+**Current**: Use `delta_vel = vel_j - vel_i` (2 features)
+
+**Rationale**: Boid rules depend on relative motion, not absolute velocities. This:
+- Reduces redundancy
+- Makes the model Galilean invariant
+- Matches the physics better
+
+### 3. Force Decomposition
+
+Forces can be decomposed into position-dependent and velocity-dependent components:
+
+1. **Total Force**: `F(delta_pos, delta_vel)`
+2. **Position-Only Force**: `F(delta_pos, 0)` - separation & cohesion
+3. **Velocity Residual**: `F(delta_pos, delta_vel) - F(delta_pos, 0)` - alignment
+
+## Visualization Approach
+
+### Setup
+
+- **Node i**: At origin (0, 0), stationary (`vel_i = 0`)
+- **Node j**: At grid position `(x, y)`
+
+### Two Velocity Slices
+
+1. **Away**: `vel_j = (x, y) / ||(x, y)||` (moving away from i)
+2. **Towards**: `vel_j = -(x, y) / ||(x, y)||` (moving towards i)
+
+### Three Force Components (per slice)
+
+For each velocity slice, we plot:
+
+1. **I) Total Force**: Full model output with velocities
+2. **II) Position-Only Force**: Model output with `vel=0` artificially set
+3. **III) Velocity Residual**: Difference `I - II`
+
+This decomposition reveals:
+- How much force comes from relative position (separation/cohesion)
+- How much comes from relative velocity (alignment)
+- Whether the learned model separates these components like true boids
 
 ## Quick Start
 
