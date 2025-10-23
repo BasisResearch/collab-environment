@@ -7,15 +7,12 @@ This module implements training of the InteractionParticle model on 2D boids tra
 Train on existing 2D boids data:
 
 ```bash
-# Train on existing 2D boids data
-python -m collab_env.gnn.interaction_particles.train_2d_boids
+# Run the quick start script (10 epochs)
+./collab_env/gnn/interaction_particles/train_2d_boids.sh
 
-# Quick test (10 epochs)
-python -m collab_env.gnn.interaction_particles.train_2d_boids --quick
-
-# Try different datasets
-python -m collab_env.gnn.interaction_particles.train_2d_boids \
-    --dataset simulated_data/boid_single_species_noisy.pt \
+# Or call run_training directly
+python -m collab_env.gnn.interaction_particles.run_training \
+    --dataset simulated_data/boid_single_species_basic.pt \
     --epochs 100
 ```
 
@@ -63,31 +60,26 @@ pip install -e .
 
 ## Usage
 
-### Basic Training
+### Quick Start Script
 
-Simple one-liner:
-
-```bash
-python -m collab_env.gnn.interaction_particles.train_2d_boids
-```
-
-With options:
+The easiest way to get started:
 
 ```bash
-python -m collab_env.gnn.interaction_particles.train_2d_boids \
-    --dataset simulated_data/boid_single_species_basic.pt \
-    --epochs 100
+# Edit train_2d_boids.sh to uncomment the command you want
+./collab_env/gnn/interaction_particles/train_2d_boids.sh
 ```
 
-Quick test (10 epochs):
+The script includes examples for:
+- Quick test (10 epochs)
+- Full training (100 epochs)
+- Different datasets (noisy, high_cluster, short)
+- High capacity models
+- Custom parameters
+- Evaluation only
 
-```bash
-python -m collab_env.gnn.interaction_particles.train_2d_boids --quick
-```
+### Direct Training
 
-### Advanced Training
-
-Direct use of the training script with custom parameters:
+Call run_training.py directly:
 
 ```bash
 python -m collab_env.gnn.interaction_particles.run_training \
@@ -130,15 +122,27 @@ python -m collab_env.gnn.interaction_particles.run_training \
 
 ### Examples
 
+See `train_2d_boids.sh` for ready-to-run examples, or run directly:
+
+**Quick Test:**
+```bash
+python -m collab_env.gnn.interaction_particles.run_training \
+    --dataset simulated_data/boid_single_species_basic.pt \
+    --epochs 10 \
+    --visual-range 0.104
+```
+
 **Different Datasets:**
 ```bash
 # Noisy trajectories
-python -m collab_env.gnn.interaction_particles.train_2d_boids \
-    --dataset simulated_data/boid_single_species_noisy.pt
+python -m collab_env.gnn.interaction_particles.run_training \
+    --dataset simulated_data/boid_single_species_noisy.pt \
+    --epochs 100
 
 # High clustering
-python -m collab_env.gnn.interaction_particles.train_2d_boids \
-    --dataset simulated_data/boid_single_species_high_cluster_high_speed.pt
+python -m collab_env.gnn.interaction_particles.run_training \
+    --dataset simulated_data/boid_single_species_high_cluster_high_speed.pt \
+    --epochs 100
 ```
 
 **High Capacity Model:**
