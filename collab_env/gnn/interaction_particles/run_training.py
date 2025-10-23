@@ -233,7 +233,7 @@ def main():
         'hidden_dim': args.hidden_dim,
         'embedding_dim': args.embedding_dim,
         'n_mp_layers': args.n_layers,
-        'input_size': 5,  # delta_pos(2) + r(1) + delta_vel(2)
+        'input_size': 7,  # delta_pos(2) + r(1) + delta_vel(2) + pos_i(2)
         'output_size': 2,
     }
 

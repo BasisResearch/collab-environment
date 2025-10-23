@@ -109,15 +109,17 @@ python -m collab_env.gnn.interaction_particles.run_training \
 # NOTE: Requires much smaller batch size due to long trajectories
 python -m collab_env.gnn.interaction_particles.run_training \
     --dataset simulated_data/runpod/boid_single_species_basic.pt \
-    --epochs 10 \
+    --epochs 50 \
     --batch-size 256 \
-    --visual-range 0.104 \
+    --visual-range 1.0 \
     --plot-every 2 \
     --evaluate-rollout \
     --n-rollout-steps 80 \
     --save-dir trained_models/interaction_particle_2d_runpod \
     --device cpu \
-    --learning-rate 1e-4
+    --learning-rate 1e-5 \
+    --n-layers 5 \
+    --hidden-dim 256
 
 # Use specific device (cpu, cuda, mps, or auto)
 # python -m collab_env.gnn.interaction_particles.run_training \

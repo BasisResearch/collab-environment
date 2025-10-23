@@ -1084,8 +1084,8 @@ def plot_rollout_comparison(ground_truth, predicted, trajectory_idx=0, n_particl
     ax.set_title('Ground Truth', fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3)
     ax.set_aspect('equal')
-    ax.set_xlim([0, 1])
-    ax.set_ylim([0, 1])
+    ax.set_xlim([-0.3, 1.3])
+    ax.set_ylim([-0.3, 1.3])
 
     # Plot predicted
     ax = axes[1]
@@ -1103,8 +1103,8 @@ def plot_rollout_comparison(ground_truth, predicted, trajectory_idx=0, n_particl
     ax.set_title('Predicted (Model)', fontsize=14, fontweight='bold')
     ax.grid(True, alpha=0.3)
     ax.set_aspect('equal')
-    ax.set_xlim([0, 1])
-    ax.set_ylim([0, 1])
+    ax.set_xlim([-0.3, 1.3])
+    ax.set_ylim([-0.3, 1.3])
 
     # Add legend
     from matplotlib.patches import Patch

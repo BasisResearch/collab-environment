@@ -9,34 +9,8 @@ import torch
 import torch.nn as nn
 import torch_geometric as pyg
 import torch_geometric.utils as pyg_utils
+from torch_geometric.nn.models import MLP
 import numpy as np
-
-
-class MLP(nn.Module):
-    """Multi-Layer Perceptron for edge interaction function."""
-
-    def __init__(self, input_size, output_size, nlayers, hidden_size, device):
-        super(MLP, self).__init__()
-        self.layers = nn.ModuleList()
-
-        # Input layer
-        self.layers.append(nn.Linear(input_size, hidden_size))
-
-        # Hidden layers
-        for _ in range(nlayers - 2):
-            self.layers.append(nn.Linear(hidden_size, hidden_size))
-
-        # Output layer
-        self.layers.append(nn.Linear(hidden_size, output_size))
-
-        self.device = device
-        self.to(device)
-
-    def forward(self, x):
-        for i, layer in enumerate(self.layers[:-1]):
-            x = torch.tanh(layer(x))  # tanh activation for hidden layers
-        x = self.layers[-1](x)  # No activation on output
-        return x
 
 
 class InteractionParticle(pyg.nn.MessagePassing):
@@ -55,9 +29,11 @@ class InteractionParticle(pyg.nn.MessagePassing):
     - delta_pos: Relative position (pos_j - pos_i) [2D vector]
     - r: Distance ||delta_pos|| [scalar]
     - delta_vel: Relative velocity (vel_j - vel_i) [2D vector]
-    - embedding_i: Particle i's learnable embedding [embedding_dim vector]
+    - pos_i: Absolute position of particle i [2D vector] (NEW)
+    - embedding_i: Particle i's learnable embedding [embedding_dim vector] (only if n_particle_types > 1)
 
-    Total input size: 2 (delta_pos) + 1 (r) + 2 (delta_vel) + embedding_dim = 5 + embedding_dim
+    Total input size: 2 (delta_pos) + 1 (r) + 2 (delta_vel) + 2 (pos_i) + [embedding_dim if n_particle_types > 1]
+                    = 7 + [embedding_dim if n_particle_types > 1]
 
     Output:
     -------
@@ -68,12 +44,12 @@ class InteractionParticle(pyg.nn.MessagePassing):
     config : dict
         Configuration dictionary with keys:
         - n_particles: Number of particles
-        - n_particle_types: Number of particle types
+        - n_particle_types: Number of particle types (embeddings only used if > 1)
         - max_radius: Maximum interaction radius (not used for normalization)
         - hidden_dim: Hidden dimension for MLP
-        - embedding_dim: Dimension of particle embeddings
+        - embedding_dim: Dimension of particle embeddings (ignored if n_particle_types=1)
         - n_mp_layers: Number of MLP layers
-        - input_size: Input size for MLP (should be 5 for delta_pos + r + delta_vel)
+        - input_size: Input size for MLP (should be 7 + embedding_dim if n_particle_types > 1, else 7)
         - output_size: Output size (2 for 2D forces)
     device : torch.device
         Device to run the model on
@@ -87,8 +63,8 @@ class InteractionParticle(pyg.nn.MessagePassing):
         super(InteractionParticle, self).__init__(aggr=aggr_type)
 
         self.device = device
-        # New input features: delta_pos(2) + r(1) + delta_vel(2) = 5
-        self.input_size = config.get('input_size', 5)
+        # Input features: delta_pos(2) + r(1) + delta_vel(2) + pos_i(2) = 7
+        self.input_size = config.get('input_size', 7)
         self.output_size = config.get('output_size', 2)  # 2D acceleration
         self.hidden_dim = config.get('hidden_dim', 128)
         self.n_layers = config.get('n_mp_layers', 3)
@@ -98,21 +74,35 @@ class InteractionParticle(pyg.nn.MessagePassing):
         self.embedding_dim = config.get('embedding_dim', 16)
         self.dimension = dimension
 
-        # Edge interaction function (MLP)
-        self.lin_edge = MLP(
-            input_size=self.input_size + self.embedding_dim,
-            output_size=self.output_size,
-            nlayers=self.n_layers,
-            hidden_size=self.hidden_dim,
-            device=self.device
-        )
+        # Only use embeddings if we have multiple particle types
+        self.use_embeddings = self.n_particle_types > 1
 
-        # Learnable particle embeddings
-        # Shape: [n_particles, embedding_dim]
-        self.a = nn.Parameter(
-            torch.randn(self.n_particles, self.embedding_dim, device=self.device) * 0.1,
-            requires_grad=True
-        )
+        # Edge interaction function (MLP)
+        # Input size includes embeddings only if n_particle_types > 1
+        mlp_input_size = self.input_size + (self.embedding_dim if self.use_embeddings else 0)
+
+        # Use PyTorch Geometric's standardized MLP implementation
+        # Benefits: Better maintained, supports various activations/norms, consistent with PyG ecosystem
+        # Create channel list: [input_size, hidden_dim, ..., hidden_dim, output_size]
+        channel_list = [mlp_input_size] + [self.hidden_dim] * (self.n_layers - 1) + [self.output_size]
+
+        self.lin_edge = MLP(
+            channel_list=channel_list,
+            act='tanh',           # Tanh activation for hidden layers
+            norm=None,            # No normalization (can add batch_norm/layer_norm if needed)
+            plain_last=True,      # No activation on output layer (linear force prediction)
+            dropout=0.0           # No dropout (can tune if overfitting)
+        ).to(self.device)
+
+        # Learnable particle embeddings (only if multiple particle types)
+        if self.use_embeddings:
+            # Shape: [n_particles, embedding_dim]
+            self.a = nn.Parameter(
+                torch.randn(self.n_particles, self.embedding_dim, device=self.device) * 0.1,
+                requires_grad=True
+            )
+        else:
+            self.a = None
 
     def forward(self, data):
         """
@@ -140,11 +130,12 @@ class InteractionParticle(pyg.nn.MessagePassing):
         pos = x[:, 1:1+self.dimension]
         vel = x[:, 1+self.dimension:1+2*self.dimension]
 
-        # Get particle embeddings
-        embedding = self.a[particle_id]
-
-        # Propagate messages
-        pred = self.propagate(edge_index, pos=pos, vel=vel, embedding=embedding)
+        # Get particle embeddings (only if using embeddings)
+        if self.use_embeddings:
+            embedding = self.a[particle_id]
+            pred = self.propagate(edge_index, pos=pos, vel=vel, embedding=embedding)
+        else:
+            pred = self.propagate(edge_index, pos=pos, vel=vel, embedding=None)
 
         return pred
 
@@ -156,6 +147,8 @@ class InteractionParticle(pyg.nn.MessagePassing):
         - Relative position: delta_pos = pos_j - pos_i
         - Relative distance: r = ||delta_pos||
         - Relative velocity: delta_vel = vel_j - vel_i
+        - Absolute position: pos_i (NEW)
+        - Particle embedding: embedding_i (only if n_particle_types > 1)
 
         Parameters
         ----------
@@ -163,8 +156,8 @@ class InteractionParticle(pyg.nn.MessagePassing):
             Positions of nodes i and j
         vel_i, vel_j : torch.Tensor
             Velocities of nodes i and j
-        embedding_i : torch.Tensor
-            Embeddings of nodes i
+        embedding_i : torch.Tensor or None
+            Embeddings of nodes i (None if n_particle_types=1)
 
         Returns
         -------
@@ -179,13 +172,19 @@ class InteractionParticle(pyg.nn.MessagePassing):
         delta_vel = vel_j - vel_i
 
         # Construct input features
-        # Format: [delta_pos(2), r(1), delta_vel(2), embedding_i(embedding_dim)]
-        in_features = torch.cat([
+        # Format: [delta_pos(2), r(1), delta_vel(2), pos_i(2), [embedding_i(embedding_dim)]]
+        feature_list = [
             delta_pos,    # Relative position (2D)
             r,            # Distance (1D)
             delta_vel,    # Relative velocity (2D)
-            embedding_i   # Particle embedding
-        ], dim=-1)
+            pos_i         # Absolute position (2D) - NEW
+        ]
+
+        # Add embeddings only if using them
+        if self.use_embeddings and embedding_i is not None:
+            feature_list.append(embedding_i)
+
+        in_features = torch.cat(feature_list, dim=-1)
 
         # Apply edge MLP
         out = self.lin_edge(in_features)
@@ -196,7 +195,7 @@ class InteractionParticle(pyg.nn.MessagePassing):
         """Update node features (identity function)."""
         return aggr_out
 
-    def evaluate_interaction(self, delta_pos, delta_vel, embedding_idx=0):
+    def evaluate_interaction(self, delta_pos, delta_vel, pos_i=None, embedding_idx=0):
         """
         Evaluate the learned interaction function.
 
@@ -206,8 +205,10 @@ class InteractionParticle(pyg.nn.MessagePassing):
             Relative positions [N, 2]
         delta_vel : torch.Tensor
             Relative velocities [N, 2]
+        pos_i : torch.Tensor, optional
+            Absolute positions of particle i [N, 2]. If None, uses origin (0, 0)
         embedding_idx : int
-            Index of particle embedding to use
+            Index of particle embedding to use (ignored if n_particle_types=1)
 
         Returns
         -------
@@ -220,16 +221,24 @@ class InteractionParticle(pyg.nn.MessagePassing):
             # Compute distance
             r = torch.sqrt(torch.sum(delta_pos ** 2, dim=1, keepdim=True))
 
-            # Get embedding
-            embedding = self.a[embedding_idx].unsqueeze(0).repeat(n, 1)
+            # Default pos_i to origin if not provided
+            if pos_i is None:
+                pos_i = torch.zeros((n, 2), device=delta_pos.device)
 
             # Construct input features
-            in_features = torch.cat([
+            feature_list = [
                 delta_pos,   # Relative position (2D)
                 r,           # Distance (1D)
                 delta_vel,   # Relative velocity (2D)
-                embedding    # Embedding
-            ], dim=-1)
+                pos_i        # Absolute position (2D) - NEW
+            ]
+
+            # Add embedding only if using embeddings
+            if self.use_embeddings:
+                embedding = self.a[embedding_idx].unsqueeze(0).repeat(n, 1)
+                feature_list.append(embedding)
+
+            in_features = torch.cat(feature_list, dim=-1)
 
             # Evaluate MLP
             forces = self.lin_edge(in_features)
