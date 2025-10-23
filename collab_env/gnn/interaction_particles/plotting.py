@@ -8,18 +8,23 @@ import torch
 from loguru import logger
 
 
-def boid_separation_force(distances, min_separation=20.0, separation_weight=15.0):
+def boid_separation_force(distances, min_distance=15.0, avoid_factor=0.05):
     """
-    Compute true boid separation force as a function of distance.
+    Compute true 2D boid separation force as a function of distance.
+
+    From boid.py avoid_others():
+    - For each neighbor within min_distance:
+      force += (self_pos - other_pos) * avoid_factor
+    - This is linear in displacement, not inverse-square
 
     Parameters
     ----------
     distances : np.ndarray
         Array of distances
-    min_separation : float
-        Minimum separation distance
-    separation_weight : float
-        Separation weight
+    min_distance : float
+        Minimum distance threshold (default: 15 from 2D boids)
+    avoid_factor : float
+        Avoidance weight (default: 0.05 from 2D boids)
 
     Returns
     -------
@@ -27,49 +32,62 @@ def boid_separation_force(distances, min_separation=20.0, separation_weight=15.0
         Separation forces
     """
     forces = np.zeros_like(distances)
-    mask = (distances > 0) & (distances < min_separation)
-    forces[mask] = separation_weight / (distances[mask] ** 2)
+    mask = distances < min_distance
+    # Linear repulsion: force = avoid_factor * distance
+    forces[mask] = avoid_factor * distances[mask]
     return forces
 
 
-def boid_alignment_force(distances, neighborhood_dist=80.0, alignment_weight=1.0):
+def boid_alignment_force(distances, visual_range=50.0, matching_factor=0.5):
     """
-    Compute true boid alignment force as a function of distance.
-    Note: This is a simplified version - actual alignment depends on relative velocities.
+    Compute true 2D boid alignment force as a function of distance.
+
+    From boid.py match_velocity():
+    - For neighbors within visual_range:
+      force += (avg_velocity - self_velocity) * matching_factor
+    - This is a step function based on visual range
+
+    Note: Actual alignment depends on relative velocities.
 
     Parameters
     ----------
     distances : np.ndarray
         Array of distances
-    neighborhood_dist : float
-        Neighborhood distance
-    alignment_weight : float
-        Alignment weight
+    visual_range : float
+        Visual range for alignment (default: 50 from 2D boids)
+    matching_factor : float
+        Alignment weight (default: 0.5 from 2D boids)
 
     Returns
     -------
     forces : np.ndarray
-        Alignment indicator (1 if within neighborhood, 0 otherwise)
+        Alignment indicator (1 if within visual range, 0 otherwise)
     """
     forces = np.zeros_like(distances)
-    mask = distances < neighborhood_dist
-    forces[mask] = alignment_weight
+    mask = distances < visual_range
+    forces[mask] = matching_factor
     return forces
 
 
-def boid_cohesion_force(distances, neighborhood_dist=80.0, cohesion_weight=0.5):
+def boid_cohesion_force(distances, visual_range=50.0, centering_factor=0.005):
     """
-    Compute true boid cohesion force as a function of distance.
-    Note: This is a simplified version - actual cohesion is proportional to distance to center of mass.
+    Compute true 2D boid cohesion force as a function of distance.
+
+    From boid.py fly_towards_center():
+    - For neighbors within visual_range:
+      force += (center_of_mass - self_pos) * centering_factor
+    - This is linear in distance to center of mass
+
+    Note: Actual cohesion is to center of neighbors, not pairwise.
 
     Parameters
     ----------
     distances : np.ndarray
         Array of distances
-    neighborhood_dist : float
-        Neighborhood distance
-    cohesion_weight : float
-        Cohesion weight
+    visual_range : float
+        Visual range for cohesion (default: 50 from 2D boids)
+    centering_factor : float
+        Cohesion weight (default: 0.005 from 2D boids)
 
     Returns
     -------
@@ -77,9 +95,9 @@ def boid_cohesion_force(distances, neighborhood_dist=80.0, cohesion_weight=0.5):
         Cohesion forces (proportional to distance)
     """
     forces = np.zeros_like(distances)
-    mask = distances < neighborhood_dist
+    mask = distances < visual_range
     # Cohesion force pulls towards center, so it increases with distance
-    forces[mask] = cohesion_weight * distances[mask]
+    forces[mask] = centering_factor * distances[mask]
     return forces
 
 
@@ -174,14 +192,14 @@ def compare_with_true_boids(
     fig : matplotlib.figure.Figure
         Figure object
     """
-    # Default boid parameters from config.yaml
+    # Default 2D boid parameters from boids_gnn_temp/boid.py
     if config is None:
         config = {
-            'min_separation': 20.0,
-            'neighborhood_dist': 80.0,
-            'separation_weight': 15.0,
-            'alignment_weight': 1.0,
-            'cohesion_weight': 0.5,
+            'visual_range': 50.0,         # Visual range for alignment and cohesion
+            'min_distance': 15.0,         # Separation distance threshold
+            'avoid_factor': 0.05,         # Separation weight
+            'matching_factor': 0.5,       # Alignment weight
+            'centering_factor': 0.005,    # Cohesion weight
         }
 
     # Create distance arrays
@@ -196,30 +214,26 @@ def compare_with_true_boids(
     learned_magnitude = np.sqrt(learned_forces[:, 0]**2 + learned_forces[:, 1]**2)
 
     # Compute true boid forces (in real distance units)
-    # Need to unnormalize distances for boid calculations
-    # Assume normalization was done by dividing by p_range
-    # For plotting purposes, we'll scale distances appropriately
-
-    # Let's assume the data was normalized such that the scene size is ~1.0
-    # and the boid parameters are in the original units
-    # We need to scale the distances back
-    scale_factor = 100.0  # Rough estimate based on config (box_size=1500, scene_scale=300)
-    distances_boid_units = distances_fine * scale_factor
+    # The 2D boids data is normalized by [width, height] (typically 480x480)
+    # So to convert back to original units, multiply by typical scene size
+    # For 2D boids, the scene is typically 480x480 pixels
+    scene_size = 480.0  # From 0a-Simulate_Boid_2D.ipynb
+    distances_boid_units = distances_fine * scene_size
 
     true_separation = boid_separation_force(
         distances_boid_units,
-        min_separation=config['min_separation'],
-        separation_weight=config['separation_weight']
+        min_distance=config.get('min_distance', 15.0),
+        avoid_factor=config.get('avoid_factor', 0.05)
     )
     true_alignment = boid_alignment_force(
         distances_boid_units,
-        neighborhood_dist=config['neighborhood_dist'],
-        alignment_weight=config['alignment_weight']
+        visual_range=config.get('visual_range', 50.0),
+        matching_factor=config.get('matching_factor', 0.5)
     )
     true_cohesion = boid_cohesion_force(
         distances_boid_units,
-        neighborhood_dist=config['neighborhood_dist'],
-        cohesion_weight=config['cohesion_weight']
+        visual_range=config.get('visual_range', 50.0),
+        centering_factor=config.get('centering_factor', 0.005)
     )
 
     # Create comprehensive comparison plot
@@ -250,41 +264,41 @@ def compare_with_true_boids(
     # Plot 3: True boid separation
     ax3 = fig.add_subplot(gs[1, 0])
     ax3.plot(distances_boid_units, true_separation, 'g-', linewidth=2, label='Separation Force')
-    ax3.axvline(x=config['min_separation'], color='g', linestyle='--', alpha=0.5,
-                label=f"min_separation = {config['min_separation']}")
+    ax3.axvline(x=config.get('min_distance', 15.0), color='g', linestyle='--', alpha=0.5,
+                label=f"min_distance = {config.get('min_distance', 15.0)}")
     ax3.axhline(y=0, color='k', linestyle='--', alpha=0.3)
-    ax3.set_xlabel('Distance (original units)', fontsize=11)
+    ax3.set_xlabel('Distance (pixels)', fontsize=11)
     ax3.set_ylabel('Force', fontsize=11)
     ax3.set_title('True Boid Separation Rule', fontsize=12, fontweight='bold')
     ax3.grid(True, alpha=0.3)
     ax3.legend()
-    ax3.set_xlim([0, config['neighborhood_dist'] * 1.2])
+    ax3.set_xlim([0, config.get('visual_range', 50.0) * 1.5])
 
     # Plot 4: True boid alignment
     ax4 = fig.add_subplot(gs[1, 1])
     ax4.plot(distances_boid_units, true_alignment, 'm-', linewidth=2, label='Alignment Indicator')
-    ax4.axvline(x=config['neighborhood_dist'], color='m', linestyle='--', alpha=0.5,
-                label=f"neighborhood_dist = {config['neighborhood_dist']}")
+    ax4.axvline(x=config.get('visual_range', 50.0), color='m', linestyle='--', alpha=0.5,
+                label=f"visual_range = {config.get('visual_range', 50.0)}")
     ax4.axhline(y=0, color='k', linestyle='--', alpha=0.3)
-    ax4.set_xlabel('Distance (original units)', fontsize=11)
+    ax4.set_xlabel('Distance (pixels)', fontsize=11)
     ax4.set_ylabel('Alignment Weight', fontsize=11)
     ax4.set_title('True Boid Alignment Rule', fontsize=12, fontweight='bold')
     ax4.grid(True, alpha=0.3)
     ax4.legend()
-    ax4.set_xlim([0, config['neighborhood_dist'] * 1.2])
+    ax4.set_xlim([0, config.get('visual_range', 50.0) * 1.5])
 
     # Plot 5: True boid cohesion
     ax5 = fig.add_subplot(gs[2, 0])
     ax5.plot(distances_boid_units, true_cohesion, 'c-', linewidth=2, label='Cohesion Force')
-    ax5.axvline(x=config['neighborhood_dist'], color='c', linestyle='--', alpha=0.5,
-                label=f"neighborhood_dist = {config['neighborhood_dist']}")
+    ax5.axvline(x=config.get('visual_range', 50.0), color='c', linestyle='--', alpha=0.5,
+                label=f"visual_range = {config.get('visual_range', 50.0)}")
     ax5.axhline(y=0, color='k', linestyle='--', alpha=0.3)
-    ax5.set_xlabel('Distance (original units)', fontsize=11)
+    ax5.set_xlabel('Distance (pixels)', fontsize=11)
     ax5.set_ylabel('Force', fontsize=11)
     ax5.set_title('True Boid Cohesion Rule', fontsize=12, fontweight='bold')
     ax5.grid(True, alpha=0.3)
     ax5.legend()
-    ax5.set_xlim([0, config['neighborhood_dist'] * 1.2])
+    ax5.set_xlim([0, config.get('visual_range', 50.0) * 1.5])
 
     # Plot 6: Combined comparison - overlay learned on true
     ax6 = fig.add_subplot(gs[2, 1])
@@ -299,14 +313,14 @@ def compare_with_true_boids(
     ax6.plot(distances_boid_units, learned_norm, 'b-', linewidth=2.5, label='Learned (normalized)', alpha=0.8)
     ax6.plot(distances_boid_units, sep_norm, 'g--', linewidth=2, label='Separation (normalized)', alpha=0.7)
     ax6.plot(distances_boid_units, coh_norm, 'c--', linewidth=2, label='Cohesion (normalized)', alpha=0.7)
-    ax6.axvline(x=config['min_separation'], color='g', linestyle=':', alpha=0.5)
-    ax6.axvline(x=config['neighborhood_dist'], color='c', linestyle=':', alpha=0.5)
-    ax6.set_xlabel('Distance (original units)', fontsize=11)
+    ax6.axvline(x=config.get('min_distance', 15.0), color='g', linestyle=':', alpha=0.5)
+    ax6.axvline(x=config.get('visual_range', 50.0), color='c', linestyle=':', alpha=0.5)
+    ax6.set_xlabel('Distance (pixels)', fontsize=11)
     ax6.set_ylabel('Normalized Force', fontsize=11)
     ax6.set_title('Comparison: Learned vs True Boid Rules', fontsize=12, fontweight='bold')
     ax6.grid(True, alpha=0.3)
     ax6.legend()
-    ax6.set_xlim([0, config['neighborhood_dist'] * 1.2])
+    ax6.set_xlim([0, config.get('visual_range', 50.0) * 1.5])
 
     # Add main title
     fig.suptitle('InteractionParticle Model: Learned vs True Boid Interaction Functions',
@@ -314,12 +328,12 @@ def compare_with_true_boids(
 
     # Add text box with parameters
     param_text = (
-        f"Boid Parameters:\n"
-        f"min_separation = {config['min_separation']}\n"
-        f"neighborhood_dist = {config['neighborhood_dist']}\n"
-        f"separation_weight = {config['separation_weight']}\n"
-        f"alignment_weight = {config['alignment_weight']}\n"
-        f"cohesion_weight = {config['cohesion_weight']}"
+        f"2D Boid Parameters:\n"
+        f"visual_range = {config.get('visual_range', 50.0)}\n"
+        f"min_distance = {config.get('min_distance', 15.0)}\n"
+        f"avoid_factor = {config.get('avoid_factor', 0.05)}\n"
+        f"matching_factor = {config.get('matching_factor', 0.5)}\n"
+        f"centering_factor = {config.get('centering_factor', 0.005)}"
     )
     fig.text(0.02, 0.98, param_text, transform=fig.transFigure,
              fontsize=9, verticalalignment='top',

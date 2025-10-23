@@ -68,7 +68,7 @@ def prepare_dataset(dataset_path, visual_range=0.5, max_radius=1.0, input_differ
     Parameters
     ----------
     dataset_path : str
-        Path to dataset .pt file
+        Path to dataset .pt file (can be AnimalTrajectoryDataset or raw tensor)
     visual_range : float
         Maximum distance for edges
     max_radius : float
@@ -84,10 +84,30 @@ def prepare_dataset(dataset_path, visual_range=0.5, max_radius=1.0, input_differ
     logger.info(f"Loading dataset from {dataset_path}")
 
     # Load data
-    data = torch.load(dataset_path)
+    data = torch.load(dataset_path, weights_only=False)
 
     # Handle different data formats
-    if isinstance(data, dict):
+    if hasattr(data, '__getitem__') and hasattr(data, '__len__'):
+        # It's a dataset (like AnimalTrajectoryDataset)
+        logger.info(f"Loaded dataset with {len(data)} samples")
+
+        # Extract all positions from the dataset
+        all_positions = []
+        for i in range(len(data)):
+            sample = data[i]
+            if isinstance(sample, tuple):
+                pos, species = sample  # [steps, N, 2], [N]
+                # Add batch dimension: [1, steps, N, 2]
+                all_positions.append(pos.unsqueeze(0).numpy())
+            else:
+                # Single tensor
+                all_positions.append(sample.unsqueeze(0).numpy())
+
+        # Stack all samples: [B, steps, N, 2]
+        position = np.concatenate(all_positions, axis=0)
+        logger.info(f"Extracted positions with shape: {position.shape}")
+
+    elif isinstance(data, dict):
         # If data is a dict, extract position tensor
         if 'position' in data:
             position = data['position']
@@ -96,11 +116,11 @@ def prepare_dataset(dataset_path, visual_range=0.5, max_radius=1.0, input_differ
         else:
             # Assume first key is positions
             position = list(data.values())[0]
+        logger.info(f"Position data shape: {position.shape}")
     else:
         # Assume data is directly the position tensor
         position = data
-
-    logger.info(f"Position data shape: {position.shape}")
+        logger.info(f"Position data shape: {position.shape}")
 
     # Convert to numpy for processing
     if torch.is_tensor(position):

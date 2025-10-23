@@ -2,6 +2,33 @@
 
 This module implements training of the InteractionParticle model on boids trajectory data. The InteractionParticle model learns interaction functions between particles as a function of their relative distances and velocities.
 
+**Supports both 2D and 3D boids data!**
+- **2D Boids**: From `docs/gnn/0a-Simulate_Boid_2D.ipynb` (data in `simulated_data/`)
+- **3D Boids**: From `collab_env/sim/boids/` (data in `collab_env/data/boids/`)
+
+## Quick Start with 2D Boids
+
+The easiest way to get started is with the existing 2D boids data:
+
+```bash
+# Train on existing 2D boids data
+python -m collab_env.gnn.interaction_particles.train_2d_boids
+
+# Quick test (10 epochs)
+python -m collab_env.gnn.interaction_particles.train_2d_boids --quick
+
+# Try different datasets
+python -m collab_env.gnn.interaction_particles.train_2d_boids \
+    --dataset simulated_data/boid_single_species_noisy.pt \
+    --epochs 100
+```
+
+Available 2D datasets:
+- `boid_single_species_basic.pt` - Clean flocking behavior
+- `boid_single_species_noisy.pt` - Noisy trajectories
+- `boid_single_species_high_cluster_high_speed.pt` - High clustering
+- `boid_single_species_short.pt` - Short trajectories
+
 ## Model Overview
 
 The InteractionParticle model is based on the work from:
@@ -40,16 +67,45 @@ pip install -e .
 
 ## Usage
 
-### Basic Training
+### Training on 2D Boids (Recommended)
 
-Train the model on boids data:
+The repo includes 2D boids data ready to use:
+
+```bash
+# Simple training
+python -m collab_env.gnn.interaction_particles.train_2d_boids
+
+# With options
+python -m collab_env.gnn.interaction_particles.train_2d_boids \
+    --dataset simulated_data/boid_single_species_basic.pt \
+    --epochs 100
+```
+
+### Training on 3D Boids
+
+For 3D boids from the simulator:
 
 ```bash
 python -m collab_env.gnn.interaction_particles.run_training \
     --dataset collab_env/data/boids/boid_single_species_basic.pt \
+    --config collab_env/sim/boids/config.yaml \
     --epochs 100 \
     --batch-size 32 \
-    --save-dir trained_models/interaction_particle
+    --visual-range 0.3 \
+    --save-dir trained_models/interaction_particle_3d
+```
+
+### Advanced: Custom Training
+
+Direct use of the main script:
+
+```bash
+python -m collab_env.gnn.interaction_particles.run_training \
+    --dataset <path/to/data.pt> \
+    --config <path/to/config.pt or config.yaml> \
+    --epochs 100 \
+    --batch-size 32 \
+    --save-dir trained_models/my_model
 ```
 
 ### Command Line Arguments
@@ -125,9 +181,26 @@ The training script generates the following outputs in `--save-dir`:
 
 ## Comparison with True Boid Rules
 
-The module compares learned interaction functions with the true boid rules implemented in the simulator:
+The module compares learned interaction functions with the true boid rules implemented in the simulator.
 
-### True Boid Rules (from `collab_env/sim/boids/boidsAgents.py`)
+### 2D Boid Rules (from `collab_env/sim/boids_gnn_temp/boid.py`)
+
+1. **Separation** (`avoid_others`, line 144-160):
+   - Distance threshold: `min_distance` = 15 pixels
+   - Force: `avoid_factor * (self_pos - other_pos)` = 0.05 * displacement
+   - Effect: Linear repulsion at close range
+
+2. **Alignment** (`match_velocity`, line 163-184):
+   - Distance threshold: `visual_range` = 50 pixels
+   - Force: `matching_factor * (avg_velocity - self_velocity)` = 0.5 * vel_diff
+   - Effect: Match velocity with neighbors in visual range
+
+3. **Cohesion** (`fly_towards_center`, line 120-141):
+   - Distance threshold: `visual_range` = 50 pixels
+   - Force: `centering_factor * (center_of_mass - self_pos)` = 0.005 * displacement
+   - Effect: Steer towards center of neighbors
+
+### 3D Boid Rules (from `collab_env/sim/boids/boidsAgents.py`)
 
 1. **Separation** (line 318-322):
    - Distance threshold: `min_separation` = 20.0

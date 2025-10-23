@@ -37,14 +37,14 @@ def parse_args():
     parser.add_argument(
         '--dataset',
         type=str,
-        default='collab_env/data/boids/boid_single_species_basic.pt',
-        help='Path to dataset .pt file'
+        default='simulated_data/boid_single_species_basic.pt',
+        help='Path to dataset .pt file (2D or 3D boids)'
     )
     parser.add_argument(
         '--config',
         type=str,
-        default='collab_env/sim/boids/config.yaml',
-        help='Path to boids config.yaml for comparison'
+        default=None,
+        help='Path to boids config file (.pt or .yaml). If not provided, uses defaults.'
     )
 
     # Training arguments
@@ -78,22 +78,64 @@ def parse_args():
     return parser.parse_args()
 
 
-def load_boids_config(config_path):
-    """Load boids config from YAML file."""
+def load_boids_config(config_path, dataset_path=None):
+    """
+    Load boids config from .pt or .yaml file.
+
+    For 2D boids (from boids_gnn_temp), config is a .pt file with species_configs.
+    For 3D boids (from sim/boids), config is a .yaml file.
+    """
+    if config_path is None:
+        # Try to infer config from dataset path
+        if dataset_path:
+            config_path_guess = dataset_path.replace('.pt', '_config.pt')
+            if os.path.exists(expand_path(config_path_guess)):
+                config_path = config_path_guess
+                logger.info(f"Inferred config path: {config_path}")
+            else:
+                logger.info("No config file found, using 2D boids defaults")
+                return {
+                    'visual_range': 50.0,
+                    'min_distance': 15.0,
+                    'avoid_factor': 0.05,
+                    'matching_factor': 0.5,
+                    'centering_factor': 0.005,
+                }
+        else:
+            return None
+
     try:
         config_path = expand_path(config_path)
-        with open(config_path, 'r') as f:
-            config = yaml.safe_load(f)
-        return config['agent']
+
+        if config_path.endswith('.pt'):
+            # 2D boids config
+            species_configs = torch.load(config_path, weights_only=False)
+            # Extract first species config (usually 'A')
+            first_species = list(species_configs.keys())[0]
+            config = species_configs[first_species]
+            logger.info(f"Loaded 2D boids config for species '{first_species}'")
+            return config
+
+        elif config_path.endswith('.yaml') or config_path.endswith('.yml'):
+            # 3D boids config
+            with open(config_path, 'r') as f:
+                config = yaml.safe_load(f)
+            logger.info("Loaded 3D boids config from YAML")
+            return config['agent']
+
+        else:
+            logger.warning(f"Unknown config file format: {config_path}")
+            return None
+
     except Exception as e:
         logger.warning(f"Could not load boids config from {config_path}: {e}")
-        logger.warning("Using default boid parameters")
+        logger.warning("Using default 2D boid parameters")
         return {
-            'min_separation': 20.0,
-            'neighborhood_dist': 80.0,
-            'separation_weight': 15.0,
-            'alignment_weight': 1.0,
-            'cohesion_weight': 0.5,
+            'visual_range': 50.0,
+            'min_distance': 15.0,
+            'avoid_factor': 0.05,
+            'matching_factor': 0.5,
+            'centering_factor': 0.005,
         }
 
 
@@ -122,8 +164,13 @@ def main():
     logger.info(f"Device: {args.device or 'auto'}")
 
     # Load boids config
-    boids_config = load_boids_config(args.config)
-    logger.info(f"Boids config: {boids_config}")
+    boids_config = load_boids_config(args.config, dataset_path)
+    if boids_config:
+        logger.info("Boids config parameters:")
+        for key, value in boids_config.items():
+            logger.info(f"  {key}: {value}")
+    else:
+        logger.info("No boids config loaded")
 
     # Set device
     if args.device:
