@@ -44,7 +44,7 @@ def parse_args():
         '--config',
         type=str,
         default=None,
-        help='Path to boids config file (.pt or .yaml). If not provided, uses defaults.'
+        help='Path to 2D boids config file (.pt). If not provided, auto-detects or uses defaults.'
     )
 
     # Training arguments
@@ -80,63 +80,52 @@ def parse_args():
 
 def load_boids_config(config_path, dataset_path=None):
     """
-    Load boids config from .pt or .yaml file.
+    Load 2D boids config from .pt file.
 
-    For 2D boids (from boids_gnn_temp), config is a .pt file with species_configs.
-    For 3D boids (from sim/boids), config is a .yaml file.
+    The config file contains species_configs dictionary with parameters like:
+    - visual_range: 50.0
+    - min_distance: 15.0
+    - avoid_factor: 0.05
+    - matching_factor: 0.5
+    - centering_factor: 0.005
     """
+    # Default 2D boid parameters
+    default_config = {
+        'visual_range': 50.0,
+        'min_distance': 15.0,
+        'avoid_factor': 0.05,
+        'matching_factor': 0.5,
+        'centering_factor': 0.005,
+    }
+
     if config_path is None:
         # Try to infer config from dataset path
         if dataset_path:
             config_path_guess = dataset_path.replace('.pt', '_config.pt')
             if os.path.exists(expand_path(config_path_guess)):
                 config_path = config_path_guess
-                logger.info(f"Inferred config path: {config_path}")
+                logger.info(f"Auto-detected config: {config_path}")
             else:
-                logger.info("No config file found, using 2D boids defaults")
-                return {
-                    'visual_range': 50.0,
-                    'min_distance': 15.0,
-                    'avoid_factor': 0.05,
-                    'matching_factor': 0.5,
-                    'centering_factor': 0.005,
-                }
+                logger.info("No config file found, using defaults")
+                return default_config
         else:
-            return None
+            logger.info("Using default 2D boid parameters")
+            return default_config
 
     try:
         config_path = expand_path(config_path)
-
-        if config_path.endswith('.pt'):
-            # 2D boids config
-            species_configs = torch.load(config_path, weights_only=False)
-            # Extract first species config (usually 'A')
-            first_species = list(species_configs.keys())[0]
-            config = species_configs[first_species]
-            logger.info(f"Loaded 2D boids config for species '{first_species}'")
-            return config
-
-        elif config_path.endswith('.yaml') or config_path.endswith('.yml'):
-            # 3D boids config
-            with open(config_path, 'r') as f:
-                config = yaml.safe_load(f)
-            logger.info("Loaded 3D boids config from YAML")
-            return config['agent']
-
-        else:
-            logger.warning(f"Unknown config file format: {config_path}")
-            return None
+        # Load species_configs from .pt file
+        species_configs = torch.load(config_path, weights_only=False)
+        # Extract first species config (usually 'A')
+        first_species = list(species_configs.keys())[0]
+        config = species_configs[first_species]
+        logger.info(f"Loaded config for species '{first_species}'")
+        return config
 
     except Exception as e:
-        logger.warning(f"Could not load boids config from {config_path}: {e}")
-        logger.warning("Using default 2D boid parameters")
-        return {
-            'visual_range': 50.0,
-            'min_distance': 15.0,
-            'avoid_factor': 0.05,
-            'matching_factor': 0.5,
-            'centering_factor': 0.005,
-        }
+        logger.warning(f"Could not load config from {config_path}: {e}")
+        logger.warning("Using default parameters")
+        return default_config
 
 
 def main():
@@ -157,7 +146,7 @@ def main():
     logger.add(log_path, level="DEBUG")
 
     logger.info("=" * 60)
-    logger.info("InteractionParticle Training on Boids Data")
+    logger.info("InteractionParticle Training on 2D Boids Data")
     logger.info("=" * 60)
     logger.info(f"Dataset: {dataset_path}")
     logger.info(f"Save directory: {save_dir}")

@@ -63,14 +63,14 @@ def build_graph_from_data(positions, velocities, accelerations, visual_range=0.5
 
 def prepare_dataset(dataset_path, visual_range=0.5, max_radius=1.0, input_differentiation='finite_diff'):
     """
-    Load and prepare boids dataset for training.
+    Load and prepare 2D boids dataset for training.
 
     Parameters
     ----------
     dataset_path : str
-        Path to dataset .pt file (can be AnimalTrajectoryDataset or raw tensor)
+        Path to AnimalTrajectoryDataset .pt file
     visual_range : float
-        Maximum distance for edges
+        Maximum distance for edges (in normalized coordinates)
     max_radius : float
         Maximum radius for normalization
     input_differentiation : str
@@ -80,74 +80,44 @@ def prepare_dataset(dataset_path, visual_range=0.5, max_radius=1.0, input_differ
     -------
     graphs : list
         List of PyG Data objects
+    p_range : float
+        Position range for normalization
     """
-    logger.info(f"Loading dataset from {dataset_path}")
+    logger.info(f"Loading 2D boids dataset from {dataset_path}")
 
-    # Load data
-    data = torch.load(dataset_path, weights_only=False)
+    # Load AnimalTrajectoryDataset
+    dataset = torch.load(dataset_path, weights_only=False)
+    logger.info(f"Loaded dataset with {len(dataset)} samples")
 
-    # Handle different data formats
-    if hasattr(data, '__getitem__') and hasattr(data, '__len__'):
-        # It's a dataset (like AnimalTrajectoryDataset)
-        logger.info(f"Loaded dataset with {len(data)} samples")
+    # Extract all positions from the dataset
+    # Each sample is (positions, species) where positions: [steps, N, 2]
+    all_positions = []
+    for i in range(len(dataset)):
+        pos, species = dataset[i]  # [steps, N, 2], [N]
+        # Add batch dimension: [1, steps, N, 2]
+        all_positions.append(pos.unsqueeze(0).numpy())
 
-        # Extract all positions from the dataset
-        all_positions = []
-        for i in range(len(data)):
-            sample = data[i]
-            if isinstance(sample, tuple):
-                pos, species = sample  # [steps, N, 2], [N]
-                # Add batch dimension: [1, steps, N, 2]
-                all_positions.append(pos.unsqueeze(0).numpy())
-            else:
-                # Single tensor
-                all_positions.append(sample.unsqueeze(0).numpy())
+    # Stack all samples: [B, steps, N, 2]
+    position = np.concatenate(all_positions, axis=0)
+    logger.info(f"Extracted positions with shape: {position.shape}")
 
-        # Stack all samples: [B, steps, N, 2]
-        position = np.concatenate(all_positions, axis=0)
-        logger.info(f"Extracted positions with shape: {position.shape}")
+    # Note: 2D boids data is already normalized by scene size [width, height]
+    # Positions are in [0, 1] range
+    # We just need to compute velocities and accelerations
 
-    elif isinstance(data, dict):
-        # If data is a dict, extract position tensor
-        if 'position' in data:
-            position = data['position']
-        elif 'pos' in data:
-            position = data['pos']
-        else:
-            # Assume first key is positions
-            position = list(data.values())[0]
-        logger.info(f"Position data shape: {position.shape}")
-    else:
-        # Assume data is directly the position tensor
-        position = data
-        logger.info(f"Position data shape: {position.shape}")
-
-    # Convert to numpy for processing
-    if torch.is_tensor(position):
-        position = position.numpy()
-
-    # Compute velocities and accelerations
+    # Compute velocities and accelerations using finite differences
     p_smooth, v_smooth, a_smooth, v_function = handle_discrete_data(
         position, input_differentiation
     )
 
-    # Convert back to torch
-    p_smooth = torch.tensor(p_smooth, dtype=torch.float32)
-    v_smooth = torch.tensor(v_smooth, dtype=torch.float32)
-    a_smooth = torch.tensor(a_smooth, dtype=torch.float32)
+    # Convert to torch
+    p_normalized = torch.tensor(p_smooth, dtype=torch.float32)
+    v_normalized = torch.tensor(v_smooth, dtype=torch.float32)
+    a_normalized = torch.tensor(a_smooth, dtype=torch.float32)
 
-    # Normalize data
-    # Get overall bounds
-    p_min = p_smooth.min(dim=(0, 1, 2), keepdim=True)[0]
-    p_max = p_smooth.max(dim=(0, 1, 2), keepdim=True)[0]
-    p_range = (p_max - p_min).max()
-
-    # Normalize positions to [0, 1]
-    p_normalized = (p_smooth - p_min) / (p_range + 1e-8)
-
-    # Normalize velocities and accelerations by the same scale
-    v_normalized = v_smooth / (p_range + 1e-8)
-    a_normalized = a_smooth / (p_range + 1e-8)
+    # For 2D boids, data is already normalized
+    # p_range is 1.0 (scene is normalized to [0,1] x [0,1])
+    p_range = 1.0
 
     # Build graphs
     B, F, N, D = p_normalized.shape

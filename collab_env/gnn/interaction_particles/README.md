@@ -1,14 +1,10 @@
-# InteractionParticle Model Training on Boids Data
+# InteractionParticle Model Training on 2D Boids Data
 
-This module implements training of the InteractionParticle model on boids trajectory data. The InteractionParticle model learns interaction functions between particles as a function of their relative distances and velocities.
+This module implements training of the InteractionParticle model on 2D boids trajectory data from `docs/gnn/0a-Simulate_Boid_2D.ipynb`. The InteractionParticle model learns interaction functions between particles as a function of their relative distances and velocities.
 
-**Supports both 2D and 3D boids data!**
-- **2D Boids**: From `docs/gnn/0a-Simulate_Boid_2D.ipynb` (data in `simulated_data/`)
-- **3D Boids**: From `collab_env/sim/boids/` (data in `collab_env/data/boids/`)
+## Quick Start
 
-## Quick Start with 2D Boids
-
-The easiest way to get started is with the existing 2D boids data:
+Train on existing 2D boids data:
 
 ```bash
 # Train on existing 2D boids data
@@ -67,44 +63,39 @@ pip install -e .
 
 ## Usage
 
-### Training on 2D Boids (Recommended)
+### Basic Training
 
-The repo includes 2D boids data ready to use:
+Simple one-liner:
 
 ```bash
-# Simple training
 python -m collab_env.gnn.interaction_particles.train_2d_boids
+```
 
-# With options
+With options:
+
+```bash
 python -m collab_env.gnn.interaction_particles.train_2d_boids \
     --dataset simulated_data/boid_single_species_basic.pt \
     --epochs 100
 ```
 
-### Training on 3D Boids
-
-For 3D boids from the simulator:
+Quick test (10 epochs):
 
 ```bash
-python -m collab_env.gnn.interaction_particles.run_training \
-    --dataset collab_env/data/boids/boid_single_species_basic.pt \
-    --config collab_env/sim/boids/config.yaml \
-    --epochs 100 \
-    --batch-size 32 \
-    --visual-range 0.3 \
-    --save-dir trained_models/interaction_particle_3d
+python -m collab_env.gnn.interaction_particles.train_2d_boids --quick
 ```
 
-### Advanced: Custom Training
+### Advanced Training
 
-Direct use of the main script:
+Direct use of the training script with custom parameters:
 
 ```bash
 python -m collab_env.gnn.interaction_particles.run_training \
-    --dataset <path/to/data.pt> \
-    --config <path/to/config.pt or config.yaml> \
+    --dataset simulated_data/boid_single_species_basic.pt \
+    --config simulated_data/boid_single_species_basic_config.pt \
     --epochs 100 \
     --batch-size 32 \
+    --visual-range 0.104 \
     --save-dir trained_models/my_model
 ```
 
@@ -139,11 +130,15 @@ python -m collab_env.gnn.interaction_particles.run_training \
 
 ### Examples
 
-**Quick Training (50 epochs):**
+**Different Datasets:**
 ```bash
-python -m collab_env.gnn.interaction_particles.run_training \
-    --epochs 50 \
-    --batch-size 64
+# Noisy trajectories
+python -m collab_env.gnn.interaction_particles.train_2d_boids \
+    --dataset simulated_data/boid_single_species_noisy.pt
+
+# High clustering
+python -m collab_env.gnn.interaction_particles.train_2d_boids \
+    --dataset simulated_data/boid_single_species_high_cluster_high_speed.pt
 ```
 
 **High Capacity Model:**
@@ -159,7 +154,7 @@ python -m collab_env.gnn.interaction_particles.run_training \
 ```bash
 python -m collab_env.gnn.interaction_particles.run_training \
     --eval-only \
-    --model-path trained_models/interaction_particle/best_model.pt
+    --model-path trained_models/interaction_particle_2d_*/best_model.pt
 ```
 
 ## Output
@@ -181,41 +176,24 @@ The training script generates the following outputs in `--save-dir`:
 
 ## Comparison with True Boid Rules
 
-The module compares learned interaction functions with the true boid rules implemented in the simulator.
+The module compares learned interaction functions with the true 2D boid rules implemented in `collab_env/sim/boids_gnn_temp/boid.py`.
 
-### 2D Boid Rules (from `collab_env/sim/boids_gnn_temp/boid.py`)
+### 2D Boid Rules
 
 1. **Separation** (`avoid_others`, line 144-160):
    - Distance threshold: `min_distance` = 15 pixels
    - Force: `avoid_factor * (self_pos - other_pos)` = 0.05 * displacement
-   - Effect: Linear repulsion at close range
+   - Effect: **Linear repulsion** at close range
 
 2. **Alignment** (`match_velocity`, line 163-184):
    - Distance threshold: `visual_range` = 50 pixels
    - Force: `matching_factor * (avg_velocity - self_velocity)` = 0.5 * vel_diff
-   - Effect: Match velocity with neighbors in visual range
+   - Effect: **Step function** - match velocity with neighbors in visual range
 
 3. **Cohesion** (`fly_towards_center`, line 120-141):
    - Distance threshold: `visual_range` = 50 pixels
    - Force: `centering_factor * (center_of_mass - self_pos)` = 0.005 * displacement
-   - Effect: Steer towards center of neighbors
-
-### 3D Boid Rules (from `collab_env/sim/boids/boidsAgents.py`)
-
-1. **Separation** (line 318-322):
-   - Distance threshold: `min_separation` = 20.0
-   - Force: `separation_weight / distance²` = 15.0 / d²
-   - Effect: Inverse square repulsion at close range
-
-2. **Alignment** (line 331-334):
-   - Distance threshold: `neighborhood_dist` = 80.0
-   - Force: Steer towards average velocity of neighbors
-   - Weight: `alignment_weight` = 1.0
-
-3. **Cohesion** (line 331-334, 378-387):
-   - Distance threshold: `neighborhood_dist` = 80.0
-   - Force: Steer towards center of mass of neighbors
-   - Weight: `cohesion_weight` = 0.5
+   - Effect: **Linear attraction** towards center of neighbors
 
 ### Comparison Visualization
 
@@ -231,18 +209,22 @@ The model should learn:
 
 ## Data Format
 
-The model expects boids trajectory data in PyTorch format:
+The model expects 2D boids data in `AnimalTrajectoryDataset` format:
 
 ```python
-# Input: Position tensor
-position: torch.Tensor  # Shape: [B, F, N, D]
-# B = number of trajectories
-# F = number of frames
-# N = number of particles
-# D = spatial dimension (2)
+# Each sample is a tuple: (positions, species)
+positions: torch.Tensor  # Shape: [steps, N, 2]
+species: torch.Tensor    # Shape: [N]
+
+# Positions are normalized to [0, 1] by scene size (480x480)
+# steps = number of frames (e.g., 800)
+# N = number of particles (e.g., 20)
 ```
 
-The training script automatically computes velocities and accelerations using finite differences or spline fitting.
+The training script automatically:
+- Loads all samples from the dataset
+- Computes velocities and accelerations using finite differences
+- Builds graphs based on visual range
 
 ## Model Architecture Details
 

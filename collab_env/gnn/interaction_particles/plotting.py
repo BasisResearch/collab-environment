@@ -171,10 +171,11 @@ def compare_with_true_boids(
     model,
     save_path=None,
     config=None,
-    particle_idx=0
+    particle_idx=0,
+    scene_size=480.0
 ):
     """
-    Compare learned interaction functions with true boid rules.
+    Compare learned interaction functions with true 2D boid rules.
 
     Parameters
     ----------
@@ -183,9 +184,16 @@ def compare_with_true_boids(
     save_path : str, optional
         Path to save the plot
     config : dict, optional
-        Configuration dict with boid parameters (from config.yaml)
+        2D boid configuration dict with parameters:
+        - visual_range: 50.0 (pixels)
+        - min_distance: 15.0 (pixels)
+        - avoid_factor: 0.05
+        - matching_factor: 0.5
+        - centering_factor: 0.005
     particle_idx : int
         Particle index to use for embedding
+    scene_size : float
+        Scene size in pixels (default: 480 for 2D boids)
 
     Returns
     -------
@@ -195,8 +203,8 @@ def compare_with_true_boids(
     # Default 2D boid parameters from boids_gnn_temp/boid.py
     if config is None:
         config = {
-            'visual_range': 50.0,         # Visual range for alignment and cohesion
-            'min_distance': 15.0,         # Separation distance threshold
+            'visual_range': 50.0,         # Visual range for alignment and cohesion (pixels)
+            'min_distance': 15.0,         # Separation distance threshold (pixels)
             'avoid_factor': 0.05,         # Separation weight
             'matching_factor': 0.5,       # Alignment weight
             'centering_factor': 0.005,    # Cohesion weight
@@ -213,27 +221,25 @@ def compare_with_true_boids(
     # Compute magnitude of learned forces
     learned_magnitude = np.sqrt(learned_forces[:, 0]**2 + learned_forces[:, 1]**2)
 
-    # Compute true boid forces (in real distance units)
-    # The 2D boids data is normalized by [width, height] (typically 480x480)
-    # So to convert back to original units, multiply by typical scene size
-    # For 2D boids, the scene is typically 480x480 pixels
-    scene_size = 480.0  # From 0a-Simulate_Boid_2D.ipynb
-    distances_boid_units = distances_fine * scene_size
+    # Convert distances to pixels
+    # 2D boids data is normalized by scene size (typically 480x480)
+    distances_pixels = distances_fine * scene_size
 
+    # Compute true 2D boid forces
     true_separation = boid_separation_force(
-        distances_boid_units,
-        min_distance=config.get('min_distance', 15.0),
-        avoid_factor=config.get('avoid_factor', 0.05)
+        distances_pixels,
+        min_distance=config['min_distance'],
+        avoid_factor=config['avoid_factor']
     )
     true_alignment = boid_alignment_force(
-        distances_boid_units,
-        visual_range=config.get('visual_range', 50.0),
-        matching_factor=config.get('matching_factor', 0.5)
+        distances_pixels,
+        visual_range=config['visual_range'],
+        matching_factor=config['matching_factor']
     )
     true_cohesion = boid_cohesion_force(
-        distances_boid_units,
-        visual_range=config.get('visual_range', 50.0),
-        centering_factor=config.get('centering_factor', 0.005)
+        distances_pixels,
+        visual_range=config['visual_range'],
+        centering_factor=config['centering_factor']
     )
 
     # Create comprehensive comparison plot
@@ -242,9 +248,9 @@ def compare_with_true_boids(
 
     # Plot 1: Learned force magnitude
     ax1 = fig.add_subplot(gs[0, 0])
-    ax1.plot(distances_boid_units, learned_magnitude, 'b-', linewidth=2, label='Learned Force Magnitude')
+    ax1.plot(distances_pixels, learned_magnitude, 'b-', linewidth=2, label='Learned Force Magnitude')
     ax1.axhline(y=0, color='k', linestyle='--', alpha=0.3)
-    ax1.set_xlabel('Distance (original units)', fontsize=11)
+    ax1.set_xlabel('Distance (pixels)', fontsize=11)
     ax1.set_ylabel('Force Magnitude', fontsize=11)
     ax1.set_title('Learned Interaction Force Magnitude', fontsize=12, fontweight='bold')
     ax1.grid(True, alpha=0.3)
@@ -252,53 +258,53 @@ def compare_with_true_boids(
 
     # Plot 2: Learned force components
     ax2 = fig.add_subplot(gs[0, 1])
-    ax2.plot(distances_boid_units, learned_forces[:, 0], 'b-', linewidth=2, label='X Component', alpha=0.7)
-    ax2.plot(distances_boid_units, learned_forces[:, 1], 'r-', linewidth=2, label='Y Component', alpha=0.7)
+    ax2.plot(distances_pixels, learned_forces[:, 0], 'b-', linewidth=2, label='X Component', alpha=0.7)
+    ax2.plot(distances_pixels, learned_forces[:, 1], 'r-', linewidth=2, label='Y Component', alpha=0.7)
     ax2.axhline(y=0, color='k', linestyle='--', alpha=0.3)
-    ax2.set_xlabel('Distance (original units)', fontsize=11)
+    ax2.set_xlabel('Distance (pixels)', fontsize=11)
     ax2.set_ylabel('Force', fontsize=11)
     ax2.set_title('Learned Force Components', fontsize=12, fontweight='bold')
     ax2.grid(True, alpha=0.3)
     ax2.legend()
 
-    # Plot 3: True boid separation
+    # Plot 3: True boid separation (linear repulsion)
     ax3 = fig.add_subplot(gs[1, 0])
-    ax3.plot(distances_boid_units, true_separation, 'g-', linewidth=2, label='Separation Force')
-    ax3.axvline(x=config.get('min_distance', 15.0), color='g', linestyle='--', alpha=0.5,
-                label=f"min_distance = {config.get('min_distance', 15.0)}")
+    ax3.plot(distances_pixels, true_separation, 'g-', linewidth=2, label='Separation Force')
+    ax3.axvline(x=config['min_distance'], color='g', linestyle='--', alpha=0.5,
+                label=f"min_distance = {config['min_distance']:.0f}px")
     ax3.axhline(y=0, color='k', linestyle='--', alpha=0.3)
     ax3.set_xlabel('Distance (pixels)', fontsize=11)
     ax3.set_ylabel('Force', fontsize=11)
-    ax3.set_title('True Boid Separation Rule', fontsize=12, fontweight='bold')
+    ax3.set_title('True Boid Separation (Linear Repulsion)', fontsize=12, fontweight='bold')
     ax3.grid(True, alpha=0.3)
     ax3.legend()
-    ax3.set_xlim([0, config.get('visual_range', 50.0) * 1.5])
+    ax3.set_xlim([0, config['visual_range'] * 1.5])
 
-    # Plot 4: True boid alignment
+    # Plot 4: True boid alignment (step function)
     ax4 = fig.add_subplot(gs[1, 1])
-    ax4.plot(distances_boid_units, true_alignment, 'm-', linewidth=2, label='Alignment Indicator')
-    ax4.axvline(x=config.get('visual_range', 50.0), color='m', linestyle='--', alpha=0.5,
-                label=f"visual_range = {config.get('visual_range', 50.0)}")
+    ax4.plot(distances_pixels, true_alignment, 'm-', linewidth=2, label='Alignment Weight')
+    ax4.axvline(x=config['visual_range'], color='m', linestyle='--', alpha=0.5,
+                label=f"visual_range = {config['visual_range']:.0f}px")
     ax4.axhline(y=0, color='k', linestyle='--', alpha=0.3)
     ax4.set_xlabel('Distance (pixels)', fontsize=11)
-    ax4.set_ylabel('Alignment Weight', fontsize=11)
-    ax4.set_title('True Boid Alignment Rule', fontsize=12, fontweight='bold')
+    ax4.set_ylabel('Weight', fontsize=11)
+    ax4.set_title('True Boid Alignment (Step Function)', fontsize=12, fontweight='bold')
     ax4.grid(True, alpha=0.3)
     ax4.legend()
-    ax4.set_xlim([0, config.get('visual_range', 50.0) * 1.5])
+    ax4.set_xlim([0, config['visual_range'] * 1.5])
 
-    # Plot 5: True boid cohesion
+    # Plot 5: True boid cohesion (linear attraction)
     ax5 = fig.add_subplot(gs[2, 0])
-    ax5.plot(distances_boid_units, true_cohesion, 'c-', linewidth=2, label='Cohesion Force')
-    ax5.axvline(x=config.get('visual_range', 50.0), color='c', linestyle='--', alpha=0.5,
-                label=f"visual_range = {config.get('visual_range', 50.0)}")
+    ax5.plot(distances_pixels, true_cohesion, 'c-', linewidth=2, label='Cohesion Force')
+    ax5.axvline(x=config['visual_range'], color='c', linestyle='--', alpha=0.5,
+                label=f"visual_range = {config['visual_range']:.0f}px")
     ax5.axhline(y=0, color='k', linestyle='--', alpha=0.3)
     ax5.set_xlabel('Distance (pixels)', fontsize=11)
     ax5.set_ylabel('Force', fontsize=11)
-    ax5.set_title('True Boid Cohesion Rule', fontsize=12, fontweight='bold')
+    ax5.set_title('True Boid Cohesion (Linear Attraction)', fontsize=12, fontweight='bold')
     ax5.grid(True, alpha=0.3)
     ax5.legend()
-    ax5.set_xlim([0, config.get('visual_range', 50.0) * 1.5])
+    ax5.set_xlim([0, config['visual_range'] * 1.5])
 
     # Plot 6: Combined comparison - overlay learned on true
     ax6 = fig.add_subplot(gs[2, 1])
@@ -310,30 +316,30 @@ def compare_with_true_boids(
     sep_norm = true_separation / (np.max(true_separation) + 1e-8)
     coh_norm = true_cohesion / (np.max(true_cohesion) + 1e-8)
 
-    ax6.plot(distances_boid_units, learned_norm, 'b-', linewidth=2.5, label='Learned (normalized)', alpha=0.8)
-    ax6.plot(distances_boid_units, sep_norm, 'g--', linewidth=2, label='Separation (normalized)', alpha=0.7)
-    ax6.plot(distances_boid_units, coh_norm, 'c--', linewidth=2, label='Cohesion (normalized)', alpha=0.7)
-    ax6.axvline(x=config.get('min_distance', 15.0), color='g', linestyle=':', alpha=0.5)
-    ax6.axvline(x=config.get('visual_range', 50.0), color='c', linestyle=':', alpha=0.5)
+    ax6.plot(distances_pixels, learned_norm, 'b-', linewidth=2.5, label='Learned (normalized)', alpha=0.8)
+    ax6.plot(distances_pixels, sep_norm, 'g--', linewidth=2, label='Separation (normalized)', alpha=0.7)
+    ax6.plot(distances_pixels, coh_norm, 'c--', linewidth=2, label='Cohesion (normalized)', alpha=0.7)
+    ax6.axvline(x=config['min_distance'], color='g', linestyle=':', alpha=0.5)
+    ax6.axvline(x=config['visual_range'], color='c', linestyle=':', alpha=0.5)
     ax6.set_xlabel('Distance (pixels)', fontsize=11)
     ax6.set_ylabel('Normalized Force', fontsize=11)
-    ax6.set_title('Comparison: Learned vs True Boid Rules', fontsize=12, fontweight='bold')
+    ax6.set_title('Comparison: Learned vs True 2D Boid Rules', fontsize=12, fontweight='bold')
     ax6.grid(True, alpha=0.3)
     ax6.legend()
-    ax6.set_xlim([0, config.get('visual_range', 50.0) * 1.5])
+    ax6.set_xlim([0, config['visual_range'] * 1.5])
 
     # Add main title
-    fig.suptitle('InteractionParticle Model: Learned vs True Boid Interaction Functions',
+    fig.suptitle('InteractionParticle Model: Learned vs True 2D Boid Interaction Functions',
                  fontsize=14, fontweight='bold', y=0.995)
 
     # Add text box with parameters
     param_text = (
         f"2D Boid Parameters:\n"
-        f"visual_range = {config.get('visual_range', 50.0)}\n"
-        f"min_distance = {config.get('min_distance', 15.0)}\n"
-        f"avoid_factor = {config.get('avoid_factor', 0.05)}\n"
-        f"matching_factor = {config.get('matching_factor', 0.5)}\n"
-        f"centering_factor = {config.get('centering_factor', 0.005)}"
+        f"visual_range = {config['visual_range']:.1f} px\n"
+        f"min_distance = {config['min_distance']:.1f} px\n"
+        f"avoid_factor = {config['avoid_factor']:.3f}\n"
+        f"matching_factor = {config['matching_factor']:.2f}\n"
+        f"centering_factor = {config['centering_factor']:.4f}"
     )
     fig.text(0.02, 0.98, param_text, transform=fig.transFigure,
              fontsize=9, verticalalignment='top',
