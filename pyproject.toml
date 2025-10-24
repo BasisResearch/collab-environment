@@ -49,9 +49,11 @@ dependencies = [
   "trame-vuetify",
   "lpips",
   "scikit-image",
-  "types-PyYAML",
-  "starbars",
+  "panel",
+  "param",
   "rich",
+  "pyarrow",
+  "starbars",
   "importlib-metadata"
 ]
 
@@ -91,13 +93,16 @@ dev = [
   "pytest-cov",
   "pytest-xdist",
   "pytest-benchmark",
-  "mypy",
+  "mypy==1.18.2",
+  "mypy-extensions==1.1.0",
   "ruff",
   "nbval",
   "nbqa",
   "black",
   "isort",
   "flake8>=6.0",
+  "types-requests",
+  "types-PyYAML",
 ]
 
 [build-system]

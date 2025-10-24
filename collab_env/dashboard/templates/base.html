@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Track Viewer{% endblock %}</title>
+    
+    <!-- Three.js import map (must be before any module imports) -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+    
+    <!-- Base styles -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}">
+    
+    <!-- Block for additional styles -->
+    {% block styles %}{% endblock %}
+</head>
+<body>
+    <div id="app">
+        <!-- Navigation header -->
+        <nav class="navbar">
+            <div class="nav-container">
+                <h1 class="nav-title">Track Viewer</h1>
+                <div class="nav-links">
+                    <a href="/" class="nav-link">Home</a>
+                    {% if simulation_mode %}
+                    <a href="/simulation" class="nav-link">🎯 Simulations</a>
+                    {% endif %}
+                    <a href="/video" class="nav-link">2D Video</a>
+                    <a href="/3d" class="nav-link">3D Mesh</a>
+                    <a href="/sync" class="nav-link">Sync View</a>
+                </div>
+            </div>
+        </nav>
+        
+        <!-- Main content area -->
+        <main class="main-content">
+            {% block content %}{% endblock %}
+        </main>
+    </div>
+    
+    <!-- Base JavaScript utilities -->
+    <script type="module">
+        // Make API base URL available globally
+        window.API_BASE_URL = window.location.origin;
+    </script>
+    
+    <!-- Block for additional scripts -->
+    {% block scripts %}{% endblock %}
+</body>
+</html>

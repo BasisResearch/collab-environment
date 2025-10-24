@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}3D Mesh Track Viewer{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/mesh_viewer.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="mesh-container" id="container">
+    <div class="mesh-loader" id="loader">Loading 3D Viewer...</div>
+    <div id="canvas" class="mesh-canvas"></div>
+    
+    <div class="mesh-controls" id="controls">
+        <h2>🌍 3D Track Viewer</h2>
+        
+        <div class="control-group">
+            <label>Select Mesh:</label>
+            <select id="meshSelect" class="mesh-select">
+                <option value="">Loading meshes...</option>
+            </select>
+            <button id="refreshBtn">🔄 Refresh</button>
+        </div>
+        
+        <div id="meshControls" style="display: none;">
+            <div class="control-group">
+                <label>Playback Controls:</label>
+                <button id="playBtn">▶️ Play</button>
+                <button id="resetBtn">⏮️ Reset</button>
+                <div class="frame-info" id="frameInfo">Frame: 0 / 0</div>
+                
+                <div class="slider-container">
+                    <label>Speed:</label>
+                    <input type="range" id="speedSlider" min="0.1" max="3" step="0.1" value="1">
+                    <span class="value-display" id="speedValue">1.0x</span>
+                </div>
+                
+                <div class="slider-container">
+                    <label>Frame:</label>
+                    <input type="range" id="frameSlider" min="0" max="100" value="0">
+                    <span class="value-display" id="frameValue">0</span>
+                </div>
+            </div>
+            
+            <div class="control-group">
+                <label>Display Options:</label>
+                <div class="checkbox-group">
+                    <label>
+                        <input type="checkbox" id="showTrails">
+                        Show Trails
+                    </label>
+                    <label>
+                        <input type="checkbox" id="showIds" checked>
+                        Show Track IDs
+                    </label>
+                    <label>
+                        <input type="checkbox" id="showMesh" checked>
+                        Show Mesh
+                    </label>
+                    <label>
+                        <input type="checkbox" id="showCamera" disabled>
+                        Show Camera Frustum
+                    </label>
+                </div>
+                
+                <div class="slider-container">
+                    <label>Sphere Size:</label>
+                    <input type="range" id="sphereSizeSlider" min="0.001" max="0.05" step="0.001" value="0.01">
+                    <span class="value-display" id="sphereSizeValue">0.01</span>
+                </div>
+            </div>
+            
+            <div class="mesh-status" id="status">Ready</div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { MeshViewer } from '{{ url_for('static', filename='js/viewers/mesh_viewer.js') }}';
+
+// Initialize mesh viewer when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    const viewer = new MeshViewer();
+    
+    // Make viewer available globally for debugging
+    window.meshViewer = viewer;
+});
+</script>
+{% endblock %}

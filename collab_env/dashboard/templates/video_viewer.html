@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+
+{% block title %}2D Video Viewer{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/video_viewer.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="viewer-container">
+    <div class="viewer-header">
+        <h2>2D Video Viewer</h2>
+        <div class="header-controls">
+            <select id="videoSelect" class="video-selector">
+                <option value="">Select a video...</option>
+            </select>
+            <button id="refreshBtn" class="btn">Refresh List</button>
+        </div>
+    </div>
+    
+    <div class="viewer-content" id="videoContent" style="display: none;">
+        <div class="video-container">
+            <video id="videoPlayer" class="video-player"></video>
+            <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
+        </div>
+    </div>
+    
+    <div class="controls-panel" id="controlsPanel" style="display: none;">
+        <!-- Playback controls -->
+        <div class="control-group">
+            <label class="control-label">Playback:</label>
+            <button id="playPauseBtn" class="btn">Play</button>
+            <button id="stepBackBtn" class="btn">◀ Step</button>
+            <button id="stepForwardBtn" class="btn">Step ▶</button>
+            <button id="resetBtn" class="btn">Reset</button>
+        </div>
+        
+        <!-- Frame control -->
+        <div class="control-group">
+            <label class="control-label">Frame:</label>
+            <input type="range" id="frameSlider" min="0" max="100" value="0">
+            <span id="frameDisplay">0 / 0</span>
+        </div>
+        
+        <!-- Speed control -->
+        <div class="control-group">
+            <label class="control-label">Speed:</label>
+            <input type="range" id="speedSlider" min="0.25" max="4" step="0.25" value="1">
+            <span id="speedDisplay">1.0x</span>
+        </div>
+        
+        <!-- Display options -->
+        <div class="control-group">
+            <label class="control-label">Display:</label>
+            <label><input type="checkbox" id="showIds" checked> Track IDs</label>
+            <label><input type="checkbox" id="showTrails"> Trails</label>
+            <label><input type="checkbox" id="showDebug"> Debug Info</label>
+            <label>
+                Opacity:
+                <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="0.8" style="width: 100px;">
+            </label>
+        </div>
+    </div>
+    
+    <div id="statusMessage" class="status" style="display: none;"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { VideoViewer } from '{{ url_for('static', filename='js/viewers/video_viewer.js') }}';
+
+// Initialize video viewer when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    const viewer = new VideoViewer();
+    
+    // Make viewer available globally for debugging
+    window.videoViewer = viewer;
+});
+</script>
+{% endblock %}

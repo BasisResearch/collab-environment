@@ -1,0 +1,489 @@
+/* Styles specific to synchronized viewer */
+
+.sync-viewer-container {
+    width: 100%;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.sync-viewer-header {
+    background: white;
+    border-bottom: 1px solid var(--border-color);
+    padding: 0.75rem;
+    flex-shrink: 0;
+}
+
+.sync-viewer-header h1 {
+    margin: 0 0 0.5rem 0;
+    color: var(--primary-color);
+    font-size: 1.25rem;
+}
+
+.header-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.data-selectors {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.video-selector,
+.mesh-selector {
+    min-width: 180px;
+    padding: 0.4rem;
+    font-size: 0.875rem;
+}
+
+.sync-viewer-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.viewers-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1px;
+    background: var(--border-color);
+    min-height: 0;
+}
+
+.viewer-panel {
+    background: white;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.panel-header {
+    background: #f8f9fa;
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.panel-header h3 {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--primary-color);
+}
+
+.status-text {
+    font-size: 0.875rem;
+    color: var(--secondary-color);
+    font-style: italic;
+}
+
+/* Video panel styles */
+.video-container {
+    position: relative;
+    flex: 1;
+    background: #000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0;
+}
+
+.video-player {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.overlay-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+/* Mesh panel styles */
+.mesh-canvas {
+    flex: 1;
+    position: relative;
+    background: #1a1a1a;
+    min-height: 0;
+}
+
+/* Synchronized controls panel - override global styles */
+.sync-controls-panel {
+    background: white;
+    border-top: 1px solid var(--border-color);
+    padding: 0.75rem;
+    flex-shrink: 0;
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem !important;
+    align-items: initial !important;
+    max-height: 250px;
+    overflow-y: auto;
+}
+
+/* Override main.css control-group styles for sync viewer */
+.sync-controls-panel .control-group {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 0.4rem !important;
+    margin-bottom: 0 !important;
+    align-items: initial !important;
+    padding: 0.5rem;
+    background: #f8f9fa;
+    border-radius: 4px;
+}
+
+.sync-controls-panel .control-label {
+    font-weight: 600;
+    color: var(--primary-color);
+    font-size: 0.8rem;
+    min-width: auto !important;
+    margin-bottom: 0.3rem !important;
+}
+
+/* Override button and input styles for sync controls */
+.sync-controls-panel .control-group button {
+    padding: 0.4rem 0.75rem;
+    margin: 0.1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.375rem;
+    background: white;
+    color: var(--text-color);
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: all 0.2s;
+    width: auto !important;
+}
+
+.sync-controls-panel .control-group button:hover {
+    background-color: var(--bg-color);
+}
+
+.sync-controls-panel .control-group input[type="range"] {
+    width: 100% !important;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--border-color);
+    outline: none;
+    flex: none !important;
+    margin: 0.5rem 0;
+}
+
+.sync-controls-panel .control-group input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--primary-color);
+    cursor: pointer;
+}
+
+/* Override checkbox group styles for sync controls */
+.sync-controls-panel .checkbox-group {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.3rem !important;
+    margin: 0.3rem 0;
+    align-items: initial !important;
+}
+
+.sync-controls-panel .checkbox-group label {
+    display: flex !important;
+    align-items: center !important;
+    font-size: 0.8rem;
+    gap: 0.3rem !important;
+    margin-bottom: 0 !important;
+    font-weight: normal !important;
+    min-width: auto !important;
+}
+
+.sync-controls-panel .checkbox-group input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+.frame-display,
+.speed-display {
+    font-family: monospace;
+    font-weight: bold;
+    color: var(--primary-color);
+    text-align: center;
+    padding: 0.2rem 0.4rem;
+    background: #f8f9fa;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+    font-size: 0.8rem;
+}
+
+.opacity-control,
+.sphere-size-control {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.8rem;
+    margin-top: 0.3rem;
+}
+
+.opacity-control input,
+.sphere-size-control input {
+    width: 80px;
+}
+
+/* Status messages */
+.status {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    padding: 1rem;
+    border-radius: 0.5rem;
+    z-index: 1000;
+    max-width: 300px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.status.success {
+    background: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.status.error {
+    background: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}
+
+.status.info {
+    background: #d1ecf1;
+    color: #0c5460;
+    border: 1px solid #bee5eb;
+}
+
+/* Compact playback controls */
+.playback-controls {
+    display: flex !important;
+    gap: 0.25rem !important;
+    margin-bottom: 0.3rem;
+}
+
+.playback-controls button {
+    flex: 1;
+    min-width: 0;
+    padding: 0.3rem 0.5rem !important;
+    font-size: 0.75rem !important;
+}
+
+.speed-control {
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+    margin-bottom: 0.3rem;
+}
+
+.speed-control input[type="range"] {
+    flex: 1;
+    width: auto !important;
+}
+
+/* Responsive design */
+@media (max-width: 1200px) {
+    .viewers-grid {
+        grid-template-columns: 1fr;
+        grid-template-rows: 1fr 1fr;
+    }
+    
+    .sync-controls-panel {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .header-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .data-selectors {
+        flex-direction: column;
+    }
+    
+    .video-selector,
+    .mesh-selector {
+        min-width: auto;
+        width: 100%;
+    }
+    
+    .checkbox-group {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* Loading states */
+.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    color: var(--secondary-color);
+}
+
+.loading::after {
+    content: '⏳';
+    margin-left: 0.5rem;
+}
+
+/* Transform Controls Styling */
+.transform-header {
+    margin-bottom: 10px;
+}
+
+.transform-header > label {
+    display: block !important;
+    font-size: 14px;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 8px;
+}
+
+.transform-toggle-group {
+    display: flex !important;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.transform-toggle {
+    display: flex !important;
+    align-items: center !important;
+    font-weight: normal !important;
+    font-size: 13px;
+    margin-bottom: 0 !important;
+}
+
+.transform-toggle input[type="checkbox"] {
+    margin-right: 5px;
+    width: auto !important;
+    height: auto !important;
+}
+
+.transform-section {
+    margin: 12px 0;
+    padding: 8px;
+    background: #ffffff;
+    border-radius: 4px;
+    border: 1px solid #e0e0e0;
+}
+
+.transform-section-title {
+    font-size: 12px;
+    font-weight: bold;
+    color: #666;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.transform-slider-row {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px;
+    margin: 6px 0;
+}
+
+.transform-slider-row label {
+    min-width: 40px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 0 !important;
+}
+
+.transform-slider-row input[type="range"] {
+    flex: 1;
+    margin: 0 !important;
+    height: 6px;
+    border-radius: 3px;
+    background: #ddd;
+    outline: none;
+}
+
+.transform-slider-row input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #007bff;
+    cursor: pointer;
+}
+
+.transform-slider-row input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #007bff;
+    cursor: pointer;
+    border: none;
+}
+
+.transform-value {
+    min-width: 60px;
+    text-align: right;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: bold;
+    color: #333;
+    background: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid #ccc;
+}
+
+.transform-reset-btn {
+    width: 100%;
+    padding: 8px;
+    margin: 10px 0 5px 0;
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.transform-reset-btn:hover {
+    background: #c82333;
+}
+
+.transform-debug-info {
+    margin-top: 10px;
+    padding: 10px;
+    background: #1e1e1e;
+    border-radius: 4px;
+    border: 1px solid #333;
+}
+
+.transform-debug-info pre {
+    color: #00ff00;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    line-height: 1.4;
+    margin: 0;
+    white-space: pre;
+    overflow-x: auto;
+}

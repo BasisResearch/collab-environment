@@ -5,7 +5,8 @@ from typing import Optional, Tuple, TypeAlias
 from dataclasses import dataclass
 import open3d as o3d
 from scipy.spatial import cKDTree
-
+import platform
+import itertools
 from collab_env.utils.utils import array_nan_equal
 
 #########################################################
@@ -76,16 +77,22 @@ def get_depths_on_mesh(camera, mesh, radius=0.01, smooth=True):
     mesh_points = np.asarray(mesh.vertices)
     tree = cKDTree(mesh_points)
 
-    # Get indices of image
-    image_indices = np.argwhere(camera.depth)
-    image_indices = image_indices[:, [1, 0]]
+    height, width = camera.depth.shape
 
+    # Get indices of image
+    # image_indices = np.argwhere(camera.depth)
+    # image_indices = image_indices[:, [1, 0]]
+    image_indices = np.array(
+        [
+            np.array(pair[::-1])
+            for pair in itertools.product(range(height), range(width))
+        ]
+    )
     # Project image indices to world --> then project back to 2d
     world_points = camera.project_to_world(image_indices)
     _, depths = camera.project_to_camera(world_points)
 
     # Reshape the points to the bounding box shape
-    height, width = camera.depth.shape
     depth_patch = depths.reshape(height, width)
 
     # Check if the depths are the same
@@ -296,6 +303,21 @@ class MeshEnvironment:
         if camera.image is not None and camera.depth is not None:
             return camera.image, camera.depth
 
+        # Use on-screen rendering for macOS, offscreen for others
+        if platform.system() == "Darwin":  # macOS
+            image, depth = self._render_camera_onscreen(camera)
+        else:
+            image, depth = self._render_camera_offscreen(camera)
+
+        camera.set_view(
+            image=image,
+            depth=depth,  # depth is in world units
+        )
+
+        return image, depth
+
+    def _render_camera_offscreen(self, camera: Camera) -> Tuple[np.ndarray, np.ndarray]:
+        """Offscreen rendering implementation (for Linux/Windows)"""
         # Create renderer
         renderer = o3d.visualization.rendering.OffscreenRenderer(
             camera.width, camera.height
@@ -319,12 +341,69 @@ class MeshEnvironment:
         image = np.asarray(image)
         depth = np.asarray(depth)
 
-        camera.set_view(
-            image=image,
-            depth=depth,  # depth is in world units
+        del renderer
+
+        return image, depth
+
+    def _render_camera_onscreen(self, camera: Camera) -> Tuple[np.ndarray, np.ndarray]:
+        """On-screen rendering implementation for macOS"""
+        # Create a non-blocking visualizer
+        vis = o3d.visualization.Visualizer()
+        vis.create_window(
+            window_name="Render",
+            width=camera.width,
+            height=camera.height,
+            visible=False,  # Keep window hidden
         )
 
-        del renderer
+        # add white background
+        vis.get_render_option().background_color = [1, 1, 1]
+
+        # Add mesh
+        vis.add_geometry(self.mesh)
+
+        # Get view control and set camera parameters
+        view_ctrl = vis.get_view_control()
+
+        # Convert camera parameters to Open3D format
+        cam_params = o3d.camera.PinholeCameraParameters()
+        cam_params.intrinsic = o3d.camera.PinholeCameraIntrinsic(
+            camera.width,
+            camera.height,
+            camera.K[0, 0],
+            camera.K[1, 1],
+            camera.K[0, 2],
+            camera.K[1, 2],
+        )
+
+        # Set extrinsic matrix (world to camera transform)
+        cam_params.extrinsic = camera.w2c
+
+        # Apply camera parameters
+        view_ctrl.convert_from_pinhole_camera_parameters(
+            cam_params, allow_arbitrary=True
+        )
+
+        # Update geometry and render
+        vis.poll_events()
+        vis.update_renderer()
+
+        # Capture rendered image
+        image = vis.capture_screen_float_buffer(do_render=True)
+        image = np.asarray(image)
+        image = (image * 255).astype(np.uint8)
+
+        # Capture depth buffer (returns depth in view space by default)
+        depth = vis.capture_depth_float_buffer(do_render=False)
+        depth = np.asarray(depth)
+
+        # The onscreen visualizer returns 0 for background pixels (no geometry)
+        # while offscreen returns inf. Map 0 -> inf for consistency.
+        # Note: valid geometry will have positive depth values in view space
+        depth[depth == 0.0] = np.inf
+
+        # Clean up
+        vis.destroy_window()
 
         return image, depth
 

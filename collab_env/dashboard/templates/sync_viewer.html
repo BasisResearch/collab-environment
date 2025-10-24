@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block title %}Synchronized 2D + 3D Viewer{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/video_viewer.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/mesh_viewer.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/sync_viewer.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="sync-viewer-container">
+    <div class="sync-viewer-header">
+        <h1>🔄 Synchronized 2D + 3D Viewer</h1>
+        <div class="header-controls">
+            <div class="data-selectors">
+                <select id="videoSelect" class="video-selector">
+                    <option value="">Select a video...</option>
+                </select>
+                <select id="meshSelect" class="mesh-selector">
+                    <option value="">Select a mesh...</option>
+                </select>
+                <button id="refreshBtn" class="btn">🔄 Refresh Lists</button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="sync-viewer-content" id="syncContent" style="display: none;">
+        <div class="viewers-grid">
+            <!-- 2D Video Viewer -->
+            <div class="viewer-panel" id="videoPanel">
+                <div class="panel-header">
+                    <h3>📹 2D Video</h3>
+                    <div class="panel-controls">
+                        <span id="videoStatus" class="status-text">No video loaded</span>
+                    </div>
+                </div>
+                <div class="video-container">
+                    <video id="videoPlayer" class="video-player"></video>
+                    <canvas id="overlayCanvas" class="overlay-canvas"></canvas>
+                </div>
+            </div>
+            
+            <!-- 3D Mesh Viewer -->
+            <div class="viewer-panel" id="meshPanel">
+                <div class="panel-header">
+                    <h3>🌍 3D Mesh</h3>
+                    <div class="panel-controls">
+                        <span id="meshStatus" class="status-text">No mesh loaded</span>
+                    </div>
+                </div>
+                <div id="meshCanvas" class="mesh-canvas"></div>
+            </div>
+        </div>
+        
+        <!-- Synchronized Controls -->
+        <div class="sync-controls-panel">
+            <div class="control-group">
+                <label class="control-label">Playback & Frame:</label>
+                <div class="playback-controls">
+                    <button id="playPauseBtn" class="btn">▶️ Play</button>
+                    <button id="stepBackBtn" class="btn">◀</button>
+                    <button id="stepForwardBtn" class="btn">▶</button>
+                    <button id="resetBtn" class="btn">⏮️</button>
+                </div>
+                <input type="range" id="frameSlider" min="0" max="100" value="0">
+                <span id="frameDisplay" class="frame-display">0 / 0</span>
+            </div>
+            
+            <div class="control-group">
+                <label class="control-label">Speed & 2D Options:</label>
+                <div class="speed-control">
+                    <input type="range" id="speedSlider" min="0.25" max="4" step="0.25" value="1">
+                    <span id="speedDisplay" class="speed-display">1.0x</span>
+                </div>
+                <div class="checkbox-group">
+                    <label><input type="checkbox" id="showIds2D" checked> IDs</label>
+                    <label><input type="checkbox" id="showTrails2D"> Trails</label>
+                    <label><input type="checkbox" id="showDebug2D"> Debug</label>
+                </div>
+                <label class="opacity-control">
+                    Opacity: <input type="range" id="opacitySlider" min="0" max="1" step="0.1" value="0.8">
+                </label>
+            </div>
+            
+            <div class="control-group">
+                <label class="control-label">3D Options:</label>
+                <div class="checkbox-group">
+                    <label><input type="checkbox" id="showIds3D" checked> IDs</label>
+                    <label><input type="checkbox" id="showTrails3D"> Trails</label>
+                    <label><input type="checkbox" id="showMesh3D" checked> Mesh</label>
+                    <label><input type="checkbox" id="showCamera3D" disabled> Camera</label>
+                </div>
+                <label class="sphere-size-control">
+                    Sphere Size: <input type="range" id="sphereSizeSlider" min="0.001" max="0.05" step="0.001" value="0.01">
+                    <span id="sphereSizeValue">0.01</span>
+                </label>
+            </div>
+        </div>
+    </div>
+    
+    <div id="statusMessage" class="status" style="display: none;"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { SyncViewer } from '{{ url_for('static', filename='js/viewers/sync_viewer.js') }}';
+
+// Initialize synchronized viewer when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    const viewer = new SyncViewer();
+    
+    // Make viewer available globally for debugging
+    window.syncViewer = viewer;
+});
+</script>
+{% endblock %}

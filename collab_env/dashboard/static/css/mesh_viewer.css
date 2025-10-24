@@ -1,0 +1,343 @@
+/* Styles specific to 3D mesh viewer */
+
+.mesh-container {
+    width: 100vw;
+    height: 100vh;
+    position: relative;
+    overflow: hidden;
+}
+
+.mesh-canvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+    position: relative;
+}
+
+.mesh-controls {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    background: rgba(255, 255, 255, 0.95);
+    padding: 20px;
+    border-radius: 10px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    width: 320px;
+    max-height: calc(100vh - 40px);
+    overflow-y: auto;
+    z-index: 1000;
+    backdrop-filter: blur(5px);
+}
+
+.mesh-controls h2 {
+    margin-top: 0;
+    color: #333;
+}
+
+/* Override main.css control-group styles for mesh viewer */
+.mesh-controls .control-group {
+    display: block !important;
+    margin: 15px 0;
+    padding: 10px;
+    background: #f8f9fa;
+    border-radius: 5px;
+    align-items: initial !important;
+    gap: initial !important;
+}
+
+.mesh-controls .control-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+    color: #555;
+    min-width: auto !important;
+}
+
+.mesh-select {
+    min-width: 200px;
+}
+
+/* Override global styles for mesh controls */
+.mesh-controls select, 
+.mesh-controls button {
+    width: 100%;
+    padding: 8px;
+    margin: 5px 0;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    box-sizing: border-box;
+}
+
+.mesh-controls button {
+    background: #007bff;
+    color: white;
+    cursor: pointer;
+    border: none;
+    font-weight: normal;
+    transition: background-color 0.2s;
+}
+
+.mesh-controls button:hover {
+    background: #0056b3;
+}
+
+.mesh-controls button:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+}
+
+.mesh-controls input[type="range"] {
+    width: 100%;
+    margin: 10px 0;
+    height: 6px;
+    border-radius: 3px;
+    background: #ddd;
+    outline: none;
+    flex: none !important;
+}
+
+.mesh-controls input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #007bff;
+    cursor: pointer;
+}
+
+.mesh-controls input[type="checkbox"] {
+    margin-right: 10px;
+    width: auto;
+    height: auto;
+}
+
+.mesh-status {
+    margin-top: 10px;
+    padding: 10px;
+    background: #e8f5e9;
+    border-left: 4px solid #4caf50;
+    border-radius: 4px;
+    color: #2e7d32;
+    font-size: 13px;
+}
+
+.mesh-status.error {
+    background: #ffebee;
+    border-left-color: #f44336;
+    color: #c62828;
+}
+
+.frame-info {
+    font-family: monospace;
+    background: #333;
+    color: #0f0;
+    padding: 5px 10px;
+    border-radius: 3px;
+    margin: 5px 0;
+}
+
+.mesh-loader {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 24px;
+    color: white;
+    z-index: 1000;
+}
+
+/* Speed/frame control styling - override global styles */
+.mesh-controls .slider-container {
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    margin: 10px 0;
+    flex-wrap: nowrap !important;
+}
+
+.mesh-controls .slider-container label {
+    white-space: nowrap;
+    min-width: 70px !important;
+    margin-bottom: 0 !important;
+    display: inline-block !important;
+    font-weight: bold;
+    flex-shrink: 0;
+}
+
+.mesh-controls .slider-container input[type="range"] {
+    flex: 1 !important;
+    margin: 0 !important;
+    width: auto !important;
+    min-width: 100px;
+}
+
+.mesh-controls .slider-container .value-display {
+    min-width: 50px;
+    text-align: right;
+    font-family: monospace;
+    font-weight: bold;
+    flex-shrink: 0;
+    background: #f8f9fa;
+    padding: 2px 6px;
+    border-radius: 4px;
+    border: 1px solid #ddd;
+}
+
+/* Checkbox styling - override global styles */
+.mesh-controls .checkbox-group {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px !important;
+    margin: 10px 0;
+    align-items: initial !important;
+}
+
+.mesh-controls .checkbox-group label {
+    display: flex !important;
+    align-items: center !important;
+    margin-bottom: 0 !important;
+    font-weight: normal !important;
+    min-width: auto !important;
+}
+
+/* Transform Controls Styling */
+.transform-header {
+    margin-bottom: 10px;
+}
+
+.transform-header > label {
+    display: block !important;
+    font-size: 14px;
+    font-weight: bold;
+    color: #333;
+    margin-bottom: 8px;
+}
+
+.transform-toggle-group {
+    display: flex !important;
+    gap: 15px;
+    flex-wrap: wrap;
+}
+
+.transform-toggle {
+    display: flex !important;
+    align-items: center !important;
+    font-weight: normal !important;
+    font-size: 13px;
+    margin-bottom: 0 !important;
+}
+
+.transform-toggle input[type="checkbox"] {
+    margin-right: 5px;
+    width: auto !important;
+    height: auto !important;
+}
+
+.transform-section {
+    margin: 12px 0;
+    padding: 8px;
+    background: #ffffff;
+    border-radius: 4px;
+    border: 1px solid #e0e0e0;
+}
+
+.transform-section-title {
+    font-size: 12px;
+    font-weight: bold;
+    color: #666;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.transform-slider-row {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px;
+    margin: 6px 0;
+}
+
+.transform-slider-row label {
+    min-width: 40px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+    margin-bottom: 0 !important;
+}
+
+.transform-slider-row input[type="range"] {
+    flex: 1;
+    margin: 0 !important;
+    height: 6px;
+    border-radius: 3px;
+    background: #ddd;
+    outline: none;
+}
+
+.transform-slider-row input[type="range"]::-webkit-slider-thumb {
+    appearance: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #007bff;
+    cursor: pointer;
+}
+
+.transform-slider-row input[type="range"]::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #007bff;
+    cursor: pointer;
+    border: none;
+}
+
+.transform-value {
+    min-width: 60px;
+    text-align: right;
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+    font-weight: bold;
+    color: #333;
+    background: #f0f0f0;
+    padding: 2px 6px;
+    border-radius: 3px;
+    border: 1px solid #ccc;
+}
+
+.transform-reset-btn {
+    width: 100%;
+    padding: 8px;
+    margin: 10px 0 5px 0;
+    background: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.transform-reset-btn:hover {
+    background: #c82333;
+}
+
+.transform-debug-info {
+    margin-top: 10px;
+    padding: 10px;
+    background: #1e1e1e;
+    border-radius: 4px;
+    border: 1px solid #333;
+}
+
+.transform-debug-info pre {
+    color: #00ff00;
+    font-family: 'Courier New', monospace;
+    font-size: 11px;
+    line-height: 1.4;
+    margin: 0;
+    white-space: pre;
+    overflow-x: auto;
+}

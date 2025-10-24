@@ -161,15 +161,15 @@ The bucket should contain a .pt file containing the model weights for a YOLOv11 
    Ensure the extracted dataset is organized in the required format (e.g., YOLO or COCO) for training.
 
    If you want to use the pretrained weights, save the .pt file locally to be called in:
-```python
-checkpoint_path = LOCAL_DOWNLOAD_DIR / "yolo11_weights.pt"  # Update with your model path
+    ```python
+    checkpoint_path = LOCAL_DOWNLOAD_DIR / "yolo11_weights.pt"  # Update with your model path
 
-infer_with_yolo(
-    video_path=thermal_video_path,
-    model_path=checkpoint_path,
-    output_csv_path=detect_csv
-)
-```
+    infer_with_yolo(
+        video_path=thermal_video_path,
+        model_path=checkpoint_path,
+        output_csv_path=detect_csv
+    )
+    ```
 
 
 ## Tracking

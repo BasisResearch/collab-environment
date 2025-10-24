@@ -171,7 +171,7 @@ class GCSClient:
 
         return self._gcs.glob(pattern)
 
-    def upload_file(self, local_path: str, gcs_path: str):
+    def upload_file(self, local_path: str | Path, gcs_path: str):
         """
         Upload a file to GCS.
         """
@@ -255,6 +255,32 @@ class GCSClient:
             self._gcs.get(gcs_file_path, str(local_file_path))
 
         logger.info(f"Finished downloading folder {gcs_path} to {local_path}.")
+
+    def download_file(
+        self, gcs_path: str, local_path: Union[str, Path], overwrite: bool = False
+    ):
+        """
+        Download a single file from GCS.
+
+        Args:
+            gcs_path: GCS path of the file to download
+            local_path: Local path where file should be downloaded
+            overwrite: Whether to overwrite the file if it exists
+        """
+        assert self.is_initialized, (
+            "GCSClient must be initialized before downloading a file"
+        )
+        local_path_obj = Path(local_path)
+        # Create parent directories if they don't exist
+        local_path_obj.parent.mkdir(parents=True, exist_ok=True)
+
+        if local_path_obj.exists() and not overwrite:
+            logger.info(f"File {local_path_obj} already exists and overwrite is False. Skipping download.")
+            return
+
+        logger.info(f"Downloading file {gcs_path} to {local_path_obj}")
+        self._gcs.get(gcs_path, str(local_path_obj))
+        logger.info(f"Finished downloading file {gcs_path} to {local_path_obj}.")
 
     def delete_path(self, gcs_path: str):
         """
