@@ -345,9 +345,16 @@ def analyze_dataset(dataset_path, save_dir=None, device='cpu'):
                 species_config = boids_config[species_key]
 
                 # Evaluate ground truth forces
-                # Use visual_range as the plot boundary (with small cushion)
-                visual_range_norm = species_config['visual_range'] / 480.0
-                plot_max_dist = visual_range_norm * 1.5  # 50% cushion
+                # Determine plot boundary based on which forces are active
+                # For independent configs, use min_distance; otherwise use visual_range
+                if species_config.get('independent', False):
+                    # Independent: only avoidance active (within min_distance)
+                    relevant_range = species_config['min_distance'] / 480.0
+                else:
+                    # Normal: cohesion/alignment active (within visual_range)
+                    relevant_range = species_config['visual_range'] / 480.0
+
+                plot_max_dist = relevant_range * 1.5  # 50% cushion
 
                 true_forces = evaluate_true_boid_forces(
                     species_config,  # Pass species-specific config
@@ -357,19 +364,29 @@ def analyze_dataset(dataset_path, save_dir=None, device='cpu'):
                 )
 
                 # Plot ground truth forces
+                # Use visual_range and min_distance from config (normalized to [0,1] space)
+                visual_range_normalized = species_config['visual_range'] / 480.0
+                min_distance_normalized = None
+                if 'min_distance' in species_config:
+                    min_distance_normalized = species_config['min_distance'] / 480.0
+
                 if save_dir:
                     true_plot_path = os.path.join(save_dir, 'true_boid_force_fields.png')
                     plot_force_decomposition(
                         true_forces,
                         save_path=true_plot_path,
-                        title_prefix="Ground Truth Boid"
+                        title_prefix="Ground Truth Boid",
+                        visual_range=visual_range_normalized,
+                        min_distance=min_distance_normalized
                     )
                     logger.info(f"Saved force field plot to {true_plot_path}")
                 else:
                     plot_force_decomposition(
                         true_forces,
                         save_path=None,
-                        title_prefix="Ground Truth Boid"
+                        title_prefix="Ground Truth Boid",
+                        visual_range=visual_range_normalized,
+                        min_distance=min_distance_normalized
                     )
                     plt.show()
             else:

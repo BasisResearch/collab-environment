@@ -253,9 +253,9 @@ def main():
 
         # Plot force decomposition comparison
         try:
-            # Use visual_range as the plot boundary (with small cushion)
-            visual_range_norm = boids_config['visual_range'] / 480.0
-            plot_max_dist = visual_range_norm * 1.5  # 50% cushion
+            # Use the training visual_range parameter for BOTH learned and true forces
+            # This ensures fair comparison (same plot range for both)
+            plot_max_dist = args.visual_range * 1.5  # 50% cushion
 
             # Evaluate learned forces
             learned_forces = evaluate_forces_on_grid(
@@ -265,7 +265,7 @@ def main():
                 particle_idx=0
             )
 
-            # Evaluate ground truth forces
+            # Evaluate ground truth forces (use SAME range as learned for comparison)
             true_forces = evaluate_true_boid_forces(
                 boids_config,
                 grid_size=50,
@@ -278,15 +278,23 @@ def main():
             plot_force_decomposition(
                 learned_forces,
                 save_path=learned_plot_path,
-                title_prefix=f"Learned (Epoch {epoch})"
+                title_prefix=f"Learned (Epoch {epoch})",
+                visual_range=args.visual_range
             )
 
             # Plot ground truth forces
             true_plot_path = os.path.join(epoch_dir, 'true_boid_force_decomposition.png')
+            # Extract min_distance from boids_config (normalized to [0,1] space)
+            min_distance_normalized = None
+            if boids_config and 'min_distance' in boids_config:
+                min_distance_normalized = boids_config['min_distance'] / 480.0
+
             plot_force_decomposition(
                 true_forces,
                 save_path=true_plot_path,
-                title_prefix=f"True Boid (Epoch {epoch})"
+                title_prefix=f"True Boid (Epoch {epoch})",
+                visual_range=args.visual_range,
+                min_distance=min_distance_normalized
             )
 
             logger.info(f"Saved force decomposition plots to {epoch_dir}")
@@ -363,9 +371,9 @@ def main():
         # Generate 2D force decomposition plots (2x3 layout)
         logger.info("Generating 2D force decomposition plots...")
 
-        # Use visual_range as the plot boundary (with small cushion)
-        visual_range_norm = boids_config['visual_range'] / 480.0
-        plot_max_dist = visual_range_norm * 1.5  # 50% cushion
+        # Use the training visual_range parameter for BOTH learned and true forces
+        # This ensures fair comparison (same plot range for both)
+        plot_max_dist = args.visual_range * 1.5  # 50% cushion
 
         # Evaluate learned forces on grid (returns both scenarios)
         learned_forces = evaluate_forces_on_grid(
@@ -375,7 +383,7 @@ def main():
             particle_idx=0
         )
 
-        # Evaluate ground truth boid forces
+        # Evaluate ground truth boid forces (use SAME range as learned for comparison)
         true_forces = evaluate_true_boid_forces(
             boids_config,
             grid_size=50,
@@ -388,7 +396,8 @@ def main():
         plot_force_decomposition(
             learned_forces,
             save_path=learned_plot_path,
-            title_prefix="Learned"
+            title_prefix="Learned",
+            visual_range=args.visual_range
         )
 
         # Plot ground truth forces
@@ -396,7 +405,8 @@ def main():
         plot_force_decomposition(
             true_forces,
             save_path=true_plot_path,
-            title_prefix="True Boid"
+            title_prefix="True Boid",
+            visual_range=args.visual_range
         )
 
         logger.info(f"Plots saved to {save_dir}")

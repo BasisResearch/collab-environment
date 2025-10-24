@@ -19,9 +19,30 @@ python -m collab_env.gnn.interaction_particles.run_training \
     --dataset simulated_data/boid_single_species_basic.pt \
     --epochs 100 \
     --batch-size 32 \
-    --visual-range 0.104 \
+    --visual-range 0.2 \
+    --plot-every 2 \
+    --evaluate-rollout \
+    --n-rollout-steps 80 \
+    --learning-rate 1e-4 \
+    --n-layers 3 \
+    --hidden-dim 256 \
     --save-dir trained_models/interaction_particle_2d_basic \
-    --device auto
+    --device cpu
+
+# weak alignment dataset
+python -m collab_env.gnn.interaction_particles.run_training \
+    --dataset simulated_data/boid_single_species_weakalignment_large.pt \
+    --epochs 50 \
+    --batch-size 32 \
+    --visual-range 0.5 \
+    --plot-every 2 \
+    --evaluate-rollout \
+    --n-rollout-steps 80 \
+    --learning-rate 1e-4 \
+    --n-layers 3 \
+    --hidden-dim 256 \
+    --save-dir trained_models/interaction_particle_2d_weakalignment \
+    --device cpu
 
 # Training on noisy dataset
 # python -m collab_env.gnn.interaction_particles.run_training \
@@ -110,15 +131,30 @@ python -m collab_env.gnn.interaction_particles.run_training \
 python -m collab_env.gnn.interaction_particles.run_training \
     --dataset simulated_data/runpod/boid_single_species_basic.pt \
     --epochs 50 \
-    --batch-size 256 \
-    --visual-range 1.0 \
-    --plot-every 2 \
+    --batch-size 32 \
+    --visual-range 0.2 \
+    --plot-every 5 \
     --evaluate-rollout \
-    --n-rollout-steps 80 \
+    --n-rollout-steps 50 \
     --save-dir trained_models/interaction_particle_2d_runpod \
     --device cpu \
-    --learning-rate 1e-5 \
-    --n-layers 5 \
+    --learning-rate 1e-4 \
+    --n-layers 3 \
+    --hidden-dim 256
+
+# weak alignment dataset
+python -m collab_env.gnn.interaction_particles.run_training \
+    --dataset simulated_data/runpod/boid_single_species_weakalignment_large.pt \
+    --epochs 50 \
+    --batch-size 32 \
+    --visual-range 0.2 \
+    --plot-every 5 \
+    --evaluate-rollout \
+    --n-rollout-steps 50 \
+    --save-dir trained_models/interaction_particle_2d_runpod \
+    --device cpu \
+    --learning-rate 1e-4 \
+    --n-layers 3 \
     --hidden-dim 256
 
 # Use specific device (cpu, cuda, mps, or auto)

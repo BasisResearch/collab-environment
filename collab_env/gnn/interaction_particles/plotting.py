@@ -574,7 +574,7 @@ def evaluate_forces_on_grid(model, grid_size=60, max_dist=50.0, particle_idx=0):
     }
 
 
-def plot_force_decomposition(forces_dict, save_path=None, title_prefix="Learned"):
+def plot_force_decomposition(forces_dict, save_path=None, title_prefix="Learned", visual_range=None, min_distance=None):
     """
     Plot force decomposition for both velocity slices.
 
@@ -590,6 +590,8 @@ def plot_force_decomposition(forces_dict, save_path=None, title_prefix="Learned"
         Path to save figure
     title_prefix : str
         Prefix for title (e.g., "Learned" or "True Boid")
+    visual_range : float, optional
+        Visual range radius to draw as reference circle (in normalized units)
 
     Returns
     -------
@@ -644,8 +646,22 @@ def plot_force_decomposition(forces_dict, save_path=None, title_prefix="Learned"
         ax.scatter([0], [0], c='red', s=200, marker='o', edgecolors='black',
                   linewidth=2, zorder=10, label='Node i (origin)')
 
-        ax.set_xlabel('x position of j', fontsize=10)
-        ax.set_ylabel('y position of j', fontsize=10)
+        # Draw visual range circle if provided
+        if visual_range is not None:
+            circle = plt.Circle((0, 0), visual_range, fill=False,
+                              edgecolor='gray', linestyle='--', linewidth=1.5,
+                              alpha=0.6, zorder=5, label=f'Visual range ({visual_range:.3f})')
+            ax.add_patch(circle)
+
+        # Draw min_distance circle if provided (for true boid forces)
+        if min_distance is not None:
+            min_circle = plt.Circle((0, 0), min_distance, fill=False,
+                                   edgecolor='blue', linestyle='--', linewidth=1.5,
+                                   alpha=0.6, zorder=5, label=f'Min distance ({min_distance:.3f})')
+            ax.add_patch(min_circle)
+
+        ax.set_xlabel('Relative x position (j - i)', fontsize=10)
+        ax.set_ylabel('Relative y position (j - i)', fontsize=10)
         ax.set_title(title, fontsize=11, fontweight='bold')
         ax.set_aspect('equal')
         ax.grid(True, alpha=0.3)
@@ -679,7 +695,7 @@ def plot_force_decomposition(forces_dict, save_path=None, title_prefix="Learned"
     q6 = plot_force_field(ax6, forces_dict['towards_vel'], 'III) Velocity Residual\n(I - II)')
     plt.colorbar(q6, ax=ax6, label='Force mag')
 
-    plt.suptitle(f'{title_prefix} Interaction Forces (Node i at origin, stationary)',
+    plt.suptitle(f'{title_prefix} Force on j due to i at origin (arrows show force on j at that position)',
                  fontsize=14, fontweight='bold', y=0.995)
     plt.tight_layout(rect=[0, 0, 1, 0.99])
 
@@ -693,6 +709,10 @@ def plot_force_decomposition(forces_dict, save_path=None, title_prefix="Learned"
 def evaluate_true_boid_forces(config, grid_size=60, max_dist=50.0, scene_size=480.0):
     """
     Evaluate true 2D boid forces on a grid using actual boid.py functions.
+
+    Computes the force experienced by particle j (at grid positions) due to
+    particle i (at origin). This matches the natural interpretation: arrows show
+    the force on a particle at that position relative to a reference particle at origin.
 
     Computes forces from the 3 boid rules:
     1. Cohesion (fly_towards_center): attraction within visual_range
@@ -708,11 +728,12 @@ def evaluate_true_boid_forces(config, grid_size=60, max_dist=50.0, scene_size=48
         - avoid_factor: Separation weight
         - centering_factor: Cohesion weight
         - matching_factor: Alignment weight
+        - speed_limit: Maximum speed (pixels/timestep)
         - independent: Whether to skip cohesion/alignment (default: False)
     grid_size : int
         Grid resolution
     max_dist : float
-        Maximum distance in normalized space
+        Maximum distance in normalized space (recommend: visual_range * 1.5 / scene_size)
     scene_size : float
         Scene size in pixels (used to normalize config parameters)
 
@@ -759,7 +780,7 @@ def evaluate_true_boid_forces(config, grid_size=60, max_dist=50.0, scene_size=48
         forces_pos_only = np.zeros_like(positions)
 
         for idx in range(n_points):
-            # Create boid i at origin (stationary)
+            # Create boid i at origin (stationary reference point)
             boid_i = {
                 'x': 0.0,
                 'y': 0.0,
@@ -768,7 +789,7 @@ def evaluate_true_boid_forces(config, grid_size=60, max_dist=50.0, scene_size=48
                 'species': 'A'
             }
 
-            # Create boid j at grid position
+            # Create boid j at grid position (this is the boid we compute forces FOR)
             pos_j = positions[idx]
             vel_j = vel_j_array[idx]
 
@@ -780,19 +801,25 @@ def evaluate_true_boid_forces(config, grid_size=60, max_dist=50.0, scene_size=48
                 'species': 'A'
             }
 
-            # Compute total force (with velocities)
-            # IMPORTANT: Use boid_i directly in the list (not a copy) so that
-            # the identity check "o is not boid" in boid functions works correctly
-            boids = [boid_i, boid_j]
+            # Compute force ON boid_j (at grid position) due TO boid_i (at origin)
+            # Put boid_j in the list and call force functions on it
+            boids = [boid_j, boid_i]
 
-            fly_towards_center(boid_i, boids, normalized_config)  # Rule 1: Cohesion
-            avoid_others(boid_i, boids, normalized_config)        # Rule 2: Separation
-            match_velocity(boid_i, boids, normalized_config)      # Rule 3: Alignment
+            fly_towards_center(boid_j, boids, normalized_config)  # Rule 1: Cohesion
+            avoid_others(boid_j, boids, normalized_config)        # Rule 2: Separation
+            match_velocity(boid_j, boids, normalized_config)      # Rule 3: Alignment
 
-            # Force is change in velocity (from initial zero velocity)
-            forces_total[idx] = [boid_i['dx'], boid_i['dy']]
+            # Force is change in velocity (from initial velocity)
+            forces_total[idx] = [boid_j['dx'] - vel_j[0], boid_j['dy'] - vel_j[1]]
 
             # Compute position-only force (set velocities to zero)
+            boid_j_zero = {
+                'x': pos_j[0],
+                'y': pos_j[1],
+                'dx': 0.0,
+                'dy': 0.0,
+                'species': 'A'
+            }
             boid_i_zero = {
                 'x': 0.0,
                 'y': 0.0,
@@ -800,20 +827,13 @@ def evaluate_true_boid_forces(config, grid_size=60, max_dist=50.0, scene_size=48
                 'dy': 0.0,
                 'species': 'A'
             }
-            boid_j_zero = {
-                'x': pos_j[0],
-                'y': pos_j[1],
-                'dx': 0.0,  # Zero velocity for position-only
-                'dy': 0.0,
-                'species': 'A'
-            }
-            boids_zero = [boid_i_zero, boid_j_zero]
+            boids_zero = [boid_j_zero, boid_i_zero]
 
-            fly_towards_center(boid_i_zero, boids_zero, normalized_config)
-            avoid_others(boid_i_zero, boids_zero, normalized_config)
-            match_velocity(boid_i_zero, boids_zero, normalized_config)
+            fly_towards_center(boid_j_zero, boids_zero, normalized_config)
+            avoid_others(boid_j_zero, boids_zero, normalized_config)
+            match_velocity(boid_j_zero, boids_zero, normalized_config)
 
-            forces_pos_only[idx] = [boid_i_zero['dx'], boid_i_zero['dy']]
+            forces_pos_only[idx] = [boid_j_zero['dx'], boid_j_zero['dy']]
 
         return forces_total, forces_pos_only
 
