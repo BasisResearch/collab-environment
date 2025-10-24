@@ -62,6 +62,7 @@ def parse_args():
     parser.add_argument('--learning-rate', type=float, default=1e-5, help='Learning rate')
     parser.add_argument('--train-split', type=float, default=0.8, help='Train/val split ratio')
     parser.add_argument('--visual-range', type=float, default=0.3, help='Visual range for edge construction (normalized)')
+    parser.add_argument('--scene-size', type=float, default=480.0, help='Scene size in pixels (for normalizing config parameters)')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
 
     # Model arguments
@@ -270,7 +271,7 @@ def main():
                 boids_config,
                 grid_size=50,
                 max_dist=plot_max_dist,
-                scene_size=480.0
+                scene_size=args.scene_size
             )
 
             # Plot learned forces
@@ -287,7 +288,7 @@ def main():
             # Extract min_distance from boids_config (normalized to [0,1] space)
             min_distance_normalized = None
             if boids_config and 'min_distance' in boids_config:
-                min_distance_normalized = boids_config['min_distance'] / 480.0
+                min_distance_normalized = boids_config['min_distance'] / args.scene_size
 
             plot_force_decomposition(
                 true_forces,
@@ -388,7 +389,7 @@ def main():
             boids_config,
             grid_size=50,
             max_dist=plot_max_dist,
-            scene_size=480.0
+            scene_size=args.scene_size
         )
 
         # Plot learned forces
@@ -402,11 +403,17 @@ def main():
 
         # Plot ground truth forces
         true_plot_path = os.path.join(save_dir, 'true_boid_force_decomposition.png')
+        # Extract min_distance from boids_config (normalized to [0,1] space)
+        min_distance_normalized = None
+        if boids_config and 'min_distance' in boids_config:
+            min_distance_normalized = boids_config['min_distance'] / args.scene_size
+
         plot_force_decomposition(
             true_forces,
             save_path=true_plot_path,
             title_prefix="True Boid",
-            visual_range=args.visual_range
+            visual_range=args.visual_range,
+            min_distance=min_distance_normalized
         )
 
         logger.info(f"Plots saved to {save_dir}")

@@ -74,8 +74,7 @@ class InteractionParticle(pyg.nn.MessagePassing):
         self.embedding_dim = config.get('embedding_dim', 16)
         self.dimension = dimension
 
-        # Only use embeddings if we have multiple particle types
-        self.use_embeddings = True #self.n_particle_types > 1
+        self.use_embeddings = self.embedding_dim > 0 # set to 0 to disable embeddings
 
         # Edge interaction function (MLP)
         # Input size includes embeddings only if n_particle_types > 1

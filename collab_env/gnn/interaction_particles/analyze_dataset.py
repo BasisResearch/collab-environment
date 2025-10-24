@@ -84,7 +84,7 @@ def compute_pairwise_features(positions, velocities):
     }
 
 
-def analyze_dataset(dataset_path, save_dir=None, device='cpu'):
+def analyze_dataset(dataset_path, save_dir=None, device='cpu', scene_size=480.0):
     """
     Perform exploratory data analysis on a boid trajectory dataset.
 
@@ -96,6 +96,8 @@ def analyze_dataset(dataset_path, save_dir=None, device='cpu'):
         Directory to save analysis plots
     device : str, optional
         Device to use for computations (default: 'cpu')
+    scene_size : float, optional
+        Scene size in pixels for normalizing config parameters (default: 480.0)
     """
     logger.info(f"Loading dataset from {dataset_path}")
     logger.info(f"Using device: {device}")
@@ -349,10 +351,10 @@ def analyze_dataset(dataset_path, save_dir=None, device='cpu'):
                 # For independent configs, use min_distance; otherwise use visual_range
                 if species_config.get('independent', False):
                     # Independent: only avoidance active (within min_distance)
-                    relevant_range = species_config['min_distance'] / 480.0
+                    relevant_range = species_config['min_distance'] / scene_size
                 else:
                     # Normal: cohesion/alignment active (within visual_range)
-                    relevant_range = species_config['visual_range'] / 480.0
+                    relevant_range = species_config['visual_range'] / scene_size
 
                 plot_max_dist = relevant_range * 1.5  # 50% cushion
 
@@ -360,15 +362,15 @@ def analyze_dataset(dataset_path, save_dir=None, device='cpu'):
                     species_config,  # Pass species-specific config
                     grid_size=50,
                     max_dist=plot_max_dist,
-                    scene_size=480.0
+                    scene_size=scene_size
                 )
 
                 # Plot ground truth forces
                 # Use visual_range and min_distance from config (normalized to [0,1] space)
-                visual_range_normalized = species_config['visual_range'] / 480.0
+                visual_range_normalized = species_config['visual_range'] / scene_size
                 min_distance_normalized = None
                 if 'min_distance' in species_config:
-                    min_distance_normalized = species_config['min_distance'] / 480.0
+                    min_distance_normalized = species_config['min_distance'] / scene_size
 
                 if save_dir:
                     true_plot_path = os.path.join(save_dir, 'true_boid_force_fields.png')
@@ -426,6 +428,8 @@ Examples:
                        help='Directory to save analysis plots (default: show plots)')
     parser.add_argument('--device', type=str, default='cpu',
                        help='Device to use for computations (default: cpu)')
+    parser.add_argument('--scene-size', type=float, default=480.0,
+                       help='Scene size in pixels (for normalizing config parameters)')
 
     args = parser.parse_args()
 
@@ -433,7 +437,7 @@ Examples:
         logger.error(f"Dataset not found: {args.dataset}")
         return 1
 
-    analyze_dataset(args.dataset, save_dir=args.save_dir, device=args.device)
+    analyze_dataset(args.dataset, save_dir=args.save_dir, device=args.device, scene_size=args.scene_size)
 
     return 0
 

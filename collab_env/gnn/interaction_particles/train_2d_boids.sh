@@ -17,16 +17,17 @@
 # Full training (100 epochs) on basic dataset
 python -m collab_env.gnn.interaction_particles.run_training \
     --dataset simulated_data/boid_single_species_basic.pt \
-    --epochs 100 \
+    --epochs 300 \
     --batch-size 32 \
     --visual-range 0.2 \
-    --plot-every 2 \
+    --plot-every 50 \
     --evaluate-rollout \
     --n-rollout-steps 80 \
-    --learning-rate 1e-4 \
-    --n-layers 3 \
-    --hidden-dim 256 \
-    --save-dir trained_models/interaction_particle_2d_basic \
+    --learning-rate 1e-3 \
+    --n-layers 2 \
+    --hidden-dim 64 \
+    --embedding-dim 16 \
+    --save-dir trained_models/interaction_particle_2d_basic_embed16 \
     --device cpu
 
 # weak alignment dataset
@@ -44,117 +45,54 @@ python -m collab_env.gnn.interaction_particles.run_training \
     --save-dir trained_models/interaction_particle_2d_weakalignment \
     --device cpu
 
-# Training on noisy dataset
-# python -m collab_env.gnn.interaction_particles.run_training \
-#     --dataset simulated_data/boid_single_species_noisy.pt \
-#     --epochs 100 \
-#     --batch-size 32 \
-#     --visual-range 0.104 \
-#     --save-dir trained_models/interaction_particle_2d_noisy
-
-# Training on high cluster, high speed dataset
-# python -m collab_env.gnn.interaction_particles.run_training \
-#     --dataset simulated_data/boid_single_species_high_cluster_high_speed.pt \
-#     --epochs 100 \
-#     --batch-size 32 \
-#     --visual-range 0.104 \
-#     --save-dir trained_models/interaction_particle_2d_high_cluster
-
-# Training on short dataset
-# python -m collab_env.gnn.interaction_particles.run_training \
-#     --dataset simulated_data/boid_single_species_short.pt \
-#     --epochs 100 \
-#     --batch-size 32 \
-#     --visual-range 0.104 \
-#     --save-dir trained_models/interaction_particle_2d_short
-
-# High capacity model (more parameters)
-# python -m collab_env.gnn.interaction_particles.run_training \
-#     --dataset simulated_data/boid_single_species_basic.pt \
-#     --epochs 200 \
-#     --batch-size 32 \
-#     --hidden-dim 256 \
-#     --embedding-dim 32 \
-#     --n-layers 4 \
-#     --visual-range 0.104 \
-#     --save-dir trained_models/interaction_particle_2d_large
-
-# Custom visual range (if your data has different normalization)
-# python -m collab_env.gnn.interaction_particles.run_training \
-#     --dataset simulated_data/boid_single_species_basic.pt \
-#     --epochs 100 \
-#     --batch-size 32 \
-#     --visual-range 0.2 \
-#     --save-dir trained_models/interaction_particle_2d_custom
-
-# Evaluation only (no training)
-# python -m collab_env.gnn.interaction_particles.run_training \
-#     --eval-only \
-#     --model-path trained_models/interaction_particle_2d_basic/best_model.pt \
-#     --dataset simulated_data/boid_single_species_basic.pt
-
-# Full training with rollout evaluation (multi-step prediction)
-# python -m collab_env.gnn.interaction_particles.run_training \
-#     --dataset simulated_data/boid_single_species_basic.pt \
-#     --epochs 100 \
-#     --batch-size 32 \
-#     --visual-range 0.104 \
-#     --evaluate-rollout \
-#     --n-rollout-steps 50 \
-#     --save-dir trained_models/interaction_particle_2d_with_rollout \
-#     --device auto
-
-# Training with periodic plotting (plot every 10 epochs)
-# python -m collab_env.gnn.interaction_particles.run_training \
-#     --dataset simulated_data/boid_single_species_basic.pt \
-#     --epochs 100 \
-#     --batch-size 32 \
-#     --visual-range 0.104 \
-#     --plot-every 10 \
-#     --save-dir trained_models/interaction_particle_2d_with_plots \
-#     --device auto
-
-# Full training with all features: periodic plots and rollout evaluation
-# python -m collab_env.gnn.interaction_particles.run_training \
-#     --dataset simulated_data/boid_single_species_basic.pt \
-#     --epochs 100 \
-#     --batch-size 32 \
-#     --visual-range 0.104 \
-#     --plot-every 10 \
-#     --evaluate-rollout \
-#     --n-rollout-steps 20 \
-#     --save-dir trained_models/interaction_particle_2d_full \
-#     --device mps
 
 # Training on LARGE runpod dataset (1000 samples, T=800 timesteps)
 # NOTE: Requires much smaller batch size due to long trajectories
 python -m collab_env.gnn.interaction_particles.run_training \
     --dataset simulated_data/runpod/boid_single_species_basic.pt \
-    --epochs 50 \
+    --epochs 5 \
     --batch-size 32 \
     --visual-range 0.2 \
-    --plot-every 5 \
+    --plot-every 1 \
     --evaluate-rollout \
     --n-rollout-steps 50 \
     --save-dir trained_models/interaction_particle_2d_runpod \
     --device cpu \
     --learning-rate 1e-4 \
     --n-layers 3 \
+    --embedding-dim 0 \
     --hidden-dim 256
 
 # weak alignment dataset
 python -m collab_env.gnn.interaction_particles.run_training \
     --dataset simulated_data/runpod/boid_single_species_weakalignment_large.pt \
-    --epochs 50 \
+    --epochs 5 \
     --batch-size 32 \
     --visual-range 0.2 \
-    --plot-every 5 \
+    --plot-every 1 \
     --evaluate-rollout \
     --n-rollout-steps 50 \
-    --save-dir trained_models/interaction_particle_2d_runpod \
+    --save-dir trained_models/interaction_particle_2d_runpod_weakalignment \
     --device cpu \
     --learning-rate 1e-4 \
     --n-layers 3 \
+    --embedding-dim 0 \
+    --hidden-dim 256
+
+# independent dataset
+python -m collab_env.gnn.interaction_particles.run_training \
+    --dataset simulated_data/runpod/boid_single_species_independent.pt \
+    --epochs 5 \
+    --batch-size 32 \
+    --visual-range 0.2 \
+    --plot-every 1 \
+    --evaluate-rollout \
+    --n-rollout-steps 50 \
+    --save-dir trained_models/interaction_particle_2d_runpod_independent \
+    --device cpu \
+    --learning-rate 1e-4 \
+    --n-layers 3 \
+    --embedding-dim 0 \
     --hidden-dim 256
 
 # Use specific device (cpu, cuda, mps, or auto)

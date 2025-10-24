@@ -7,7 +7,7 @@ RUN apt-get update && apt-get install -y  \
     && rm -rf /var/lib/apt/lists/* && \
     curl https://rclone.org/install.sh | bash && \
     rclone config create collab-data "google cloud storage" service_account_file=/workspace/collab-environment/config-local/collab-data-463313-c340ad86b28e.json && \
-    pip install uv && uv pip install nvitop && \
+    pip install uv && uv pip install nvitop --system && \
     git config --global user.email "dima.batenkov@gmail.com" && \
     git config --global user.name "Dmitry Batenkov" && \
     echo "alias s3pod='aws s3 --region eu-ro-1 --endpoint-url https://s3api-eu-ro-1.runpod.io'" >> ~/.bashrc

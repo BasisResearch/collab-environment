@@ -544,14 +544,18 @@ def evaluate_forces_on_grid(model, grid_size=60, max_dist=50.0, particle_idx=0):
     vel_zero = torch.zeros_like(delta_pos_t)
 
     # Evaluate forces for all configurations
+    # NOTE: Model computes force ON i (at origin) DUE TO j (at grid position)
+    # But we want to plot force ON j DUE TO i (Newton's 3rd law: F_j = -F_i)
+    # So we negate the model output to match the true boid force convention
+
     # 1. Away: j moving away from i
-    away_total = model.evaluate_interaction(delta_pos_t, vel_away, embedding_idx=particle_idx).cpu().numpy()
-    away_pos = model.evaluate_interaction(delta_pos_t, vel_zero, embedding_idx=particle_idx).cpu().numpy()
+    away_total = -model.evaluate_interaction(delta_pos_t, vel_away, embedding_idx=particle_idx).cpu().numpy()
+    away_pos = -model.evaluate_interaction(delta_pos_t, vel_zero, embedding_idx=particle_idx).cpu().numpy()
     away_vel = away_total - away_pos
 
     # 2. Towards: j moving towards i
-    towards_total = model.evaluate_interaction(delta_pos_t, vel_towards, embedding_idx=particle_idx).cpu().numpy()
-    towards_pos = model.evaluate_interaction(delta_pos_t, vel_zero, embedding_idx=particle_idx).cpu().numpy()
+    towards_total = -model.evaluate_interaction(delta_pos_t, vel_towards, embedding_idx=particle_idx).cpu().numpy()
+    towards_pos = -model.evaluate_interaction(delta_pos_t, vel_zero, embedding_idx=particle_idx).cpu().numpy()
     towards_vel = towards_total - towards_pos
 
     # Reshape to grid
