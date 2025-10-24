@@ -253,11 +253,15 @@ def main():
 
         # Plot force decomposition comparison
         try:
+            # Use visual_range as the plot boundary (with small cushion)
+            visual_range_norm = boids_config['visual_range'] / 480.0
+            plot_max_dist = visual_range_norm * 1.5  # 50% cushion
+
             # Evaluate learned forces
             learned_forces = evaluate_forces_on_grid(
                 model,
                 grid_size=50,
-                max_dist=0.15,
+                max_dist=plot_max_dist,
                 particle_idx=0
             )
 
@@ -265,7 +269,7 @@ def main():
             true_forces = evaluate_true_boid_forces(
                 boids_config,
                 grid_size=50,
-                max_dist=0.15,
+                max_dist=plot_max_dist,
                 scene_size=480.0
             )
 
@@ -359,11 +363,15 @@ def main():
         # Generate 2D force decomposition plots (2x3 layout)
         logger.info("Generating 2D force decomposition plots...")
 
+        # Use visual_range as the plot boundary (with small cushion)
+        visual_range_norm = boids_config['visual_range'] / 480.0
+        plot_max_dist = visual_range_norm * 1.5  # 50% cushion
+
         # Evaluate learned forces on grid (returns both scenarios)
         learned_forces = evaluate_forces_on_grid(
             model,
             grid_size=50,
-            max_dist=0.15,  # Normalized distance
+            max_dist=plot_max_dist,
             particle_idx=0
         )
 
@@ -371,7 +379,7 @@ def main():
         true_forces = evaluate_true_boid_forces(
             boids_config,
             grid_size=50,
-            max_dist=0.15,
+            max_dist=plot_max_dist,
             scene_size=480.0
         )
 

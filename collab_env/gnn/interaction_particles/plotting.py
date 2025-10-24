@@ -607,11 +607,38 @@ def plot_force_decomposition(forces_dict, save_path=None, title_prefix="Learned"
         """Helper to plot a single force field."""
         fx, fy, mag = force_dict['x'], force_dict['y'], force_dict['mag']
 
-        # Vector field
-        quiver = ax.quiver(X[::skip, ::skip], Y[::skip, ::skip],
-                          fx[::skip, ::skip], fy[::skip, ::skip],
-                          mag[::skip, ::skip],
-                          cmap='viridis', scale=None, scale_units='xy', alpha=0.8)
+        # Filter out near-zero vectors to help with autoscaling
+        # Define threshold as 1% of max magnitude
+        max_mag = np.max(mag)
+        if max_mag > 1e-10:
+            threshold = max_mag * 0.01
+        else:
+            threshold = 1e-10
+
+        # Apply skip and create mask for non-zero vectors
+        X_skip = X[::skip, ::skip]
+        Y_skip = Y[::skip, ::skip]
+        fx_skip = fx[::skip, ::skip]
+        fy_skip = fy[::skip, ::skip]
+        mag_skip = mag[::skip, ::skip]
+
+        # Mask for vectors above threshold
+        mask = mag_skip > threshold
+
+        # Only plot non-trivial vectors
+        if np.sum(mask) > 0:
+            X_plot = X_skip[mask]
+            Y_plot = Y_skip[mask]
+            fx_plot = fx_skip[mask]
+            fy_plot = fy_skip[mask]
+            mag_plot = mag_skip[mask]
+
+            # Vector field with autoscaling (filtering fixed the autoscale issue)
+            quiver = ax.quiver(X_plot, Y_plot, fx_plot, fy_plot, mag_plot,
+                              cmap='viridis', scale=None, scale_units='xy', alpha=0.8)
+        else:
+            # Fallback: create empty quiver
+            quiver = ax.quiver([], [], [], [], [], cmap='viridis')
 
         # Mark origin (node i position)
         ax.scatter([0], [0], c='red', s=200, marker='o', edgecolors='black',
@@ -675,9 +702,9 @@ def evaluate_true_boid_forces(config, grid_size=60, max_dist=50.0, scene_size=48
     Parameters
     ----------
     config : dict
-        Boid config with:
-        - min_distance: Separation threshold
-        - visual_range: Cohesion and alignment threshold
+        Boid config with parameters in PIXEL SPACE:
+        - min_distance: Separation threshold (pixels)
+        - visual_range: Cohesion and alignment threshold (pixels)
         - avoid_factor: Separation weight
         - centering_factor: Cohesion weight
         - matching_factor: Alignment weight
@@ -685,18 +712,27 @@ def evaluate_true_boid_forces(config, grid_size=60, max_dist=50.0, scene_size=48
     grid_size : int
         Grid resolution
     max_dist : float
-        Maximum distance
+        Maximum distance in normalized space
     scene_size : float
-        Scene size (not used when data is already normalized)
+        Scene size in pixels (used to normalize config parameters)
 
     Returns
     -------
     dict with same structure as evaluate_forces_on_grid
     """
-    # Create 2D grid
+    # Create 2D grid in normalized space
     x = np.linspace(-max_dist, max_dist, grid_size)
     y = np.linspace(-max_dist, max_dist, grid_size)
     X, Y = np.meshgrid(x, y)
+
+    # Normalize config parameters from pixel space to normalized space
+    # The grid is in normalized space [-max_dist, max_dist], so we need to
+    # convert pixel-space thresholds to normalized space
+    normalized_config = config.copy()
+    if 'min_distance' in config:
+        normalized_config['min_distance'] = config['min_distance'] / scene_size
+    if 'visual_range' in config:
+        normalized_config['visual_range'] = config['visual_range'] / scene_size
 
     # Flatten for iteration
     positions = np.stack([X.flatten(), Y.flatten()], axis=-1)
@@ -708,10 +744,9 @@ def evaluate_true_boid_forces(config, grid_size=60, max_dist=50.0, scene_size=48
     mask_nonzero = distances > 1e-8
     r_hat[mask_nonzero] = positions[mask_nonzero] / distances[mask_nonzero, np.newaxis]
 
-    # Add 'independent' flag if not present
-    cfg = config.copy()
-    if 'independent' not in cfg:
-        cfg['independent'] = False
+    # Add 'independent' flag if not present in normalized config
+    if 'independent' not in normalized_config:
+        normalized_config['independent'] = False
 
     # Function to compute forces using actual boid functions
     def compute_boid_forces(vel_j_array):
@@ -745,46 +780,58 @@ def evaluate_true_boid_forces(config, grid_size=60, max_dist=50.0, scene_size=48
                 'species': 'A'
             }
 
-            # List of all boids (i and j)
+            # Compute total force (with velocities)
+            # IMPORTANT: Use boid_i directly in the list (not a copy) so that
+            # the identity check "o is not boid" in boid functions works correctly
             boids = [boid_i, boid_j]
 
-            # Compute total force (with velocities)
-            boid_i_copy = boid_i.copy()
-            fly_towards_center(boid_i_copy, boids, cfg)  # Rule 1: Cohesion
-            avoid_others(boid_i_copy, boids, cfg)        # Rule 2: Separation
-            match_velocity(boid_i_copy, boids, cfg)      # Rule 3: Alignment
+            fly_towards_center(boid_i, boids, normalized_config)  # Rule 1: Cohesion
+            avoid_others(boid_i, boids, normalized_config)        # Rule 2: Separation
+            match_velocity(boid_i, boids, normalized_config)      # Rule 3: Alignment
 
-            # Force is change in velocity
-            forces_total[idx] = [
-                boid_i_copy['dx'] - boid_i['dx'],
-                boid_i_copy['dy'] - boid_i['dy']
-            ]
+            # Force is change in velocity (from initial zero velocity)
+            forces_total[idx] = [boid_i['dx'], boid_i['dy']]
 
             # Compute position-only force (set velocities to zero)
-            boid_i_zero = boid_i.copy()
-            boid_j_zero = boid_j.copy()
-            boid_j_zero['dx'] = 0.0
-            boid_j_zero['dy'] = 0.0
+            boid_i_zero = {
+                'x': 0.0,
+                'y': 0.0,
+                'dx': 0.0,
+                'dy': 0.0,
+                'species': 'A'
+            }
+            boid_j_zero = {
+                'x': pos_j[0],
+                'y': pos_j[1],
+                'dx': 0.0,  # Zero velocity for position-only
+                'dy': 0.0,
+                'species': 'A'
+            }
             boids_zero = [boid_i_zero, boid_j_zero]
 
-            fly_towards_center(boid_i_zero, boids_zero, cfg)
-            avoid_others(boid_i_zero, boids_zero, cfg)
-            match_velocity(boid_i_zero, boids_zero, cfg)
+            fly_towards_center(boid_i_zero, boids_zero, normalized_config)
+            avoid_others(boid_i_zero, boids_zero, normalized_config)
+            match_velocity(boid_i_zero, boids_zero, normalized_config)
 
-            forces_pos_only[idx] = [
-                boid_i_zero['dx'] - boid_i['dx'],
-                boid_i_zero['dy'] - boid_i['dy']
-            ]
+            forces_pos_only[idx] = [boid_i_zero['dx'], boid_i_zero['dy']]
 
         return forces_total, forces_pos_only
 
-    # Scenario 1: vel_j moving away from i
-    vel_away = r_hat.copy()
+    # Use realistic velocity magnitude from config's speed_limit instead of unit vectors
+    # The speed_limit is in pixel space, so normalize it
+    if 'speed_limit' in config:
+        speed_magnitude = config['speed_limit'] / scene_size
+    else:
+        # Fallback: use a typical speed (mean from basic datasets ~0.014)
+        speed_magnitude = 0.015
+
+    # Scenario 1: vel_j moving away from i (with realistic speed)
+    vel_away = r_hat.copy() * speed_magnitude
     forces_away_total, forces_away_pos = compute_boid_forces(vel_away)
     forces_away_vel = forces_away_total - forces_away_pos
 
-    # Scenario 2: vel_j moving towards i
-    vel_towards = -r_hat.copy()
+    # Scenario 2: vel_j moving towards i (with realistic speed)
+    vel_towards = -r_hat.copy() * speed_magnitude
     forces_towards_total, forces_towards_pos = compute_boid_forces(vel_towards)
     forces_towards_vel = forces_towards_total - forces_towards_pos
 

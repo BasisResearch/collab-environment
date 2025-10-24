@@ -75,7 +75,7 @@ class InteractionParticle(pyg.nn.MessagePassing):
         self.dimension = dimension
 
         # Only use embeddings if we have multiple particle types
-        self.use_embeddings = self.n_particle_types > 1
+        self.use_embeddings = True #self.n_particle_types > 1
 
         # Edge interaction function (MLP)
         # Input size includes embeddings only if n_particle_types > 1
@@ -89,7 +89,7 @@ class InteractionParticle(pyg.nn.MessagePassing):
         self.lin_edge = MLP(
             channel_list=channel_list,
             act='tanh',           # Tanh activation for hidden layers
-            norm=None,            # No normalization (can add batch_norm/layer_norm if needed)
+            norm='layer_norm',    # Layer normalization
             plain_last=True,      # No activation on output layer (linear force prediction)
             dropout=0.0           # No dropout (can tune if overfitting)
         ).to(self.device)
