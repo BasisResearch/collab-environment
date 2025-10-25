@@ -21,14 +21,16 @@ import torch
 import yaml
 from loguru import logger
 
-from .train import train_interaction_particle, evaluate_model, evaluate_rollout
+from .train import train_interaction_particle, evaluate_model, evaluate_rollout, compute_velocity_statistics
 from .plotting import (
     plot_interaction_functions,
     compare_with_true_boids,
     plot_training_history,
     create_rollout_report,
     evaluate_forces_on_grid,
+    evaluate_velocity_forces_on_grid,
     plot_force_decomposition,
+    plot_symmetric_force_decomposition,
     evaluate_true_boid_forces,
     plot_rollout_comparison
 )
@@ -63,6 +65,7 @@ def parse_args():
     parser.add_argument('--train-split', type=float, default=0.8, help='Train/val split ratio')
     parser.add_argument('--visual-range', type=float, default=0.3, help='Visual range for edge construction (normalized)')
     parser.add_argument('--scene-size', type=float, default=480.0, help='Scene size in pixels (for normalizing config parameters)')
+    parser.add_argument('--rollout-steps', type=int, default=1, help='Number of rollout steps for training (1=single-step, >1=multi-step)')
     parser.add_argument('--seed', type=int, default=42, help='Random seed')
 
     # Model arguments
@@ -174,6 +177,18 @@ def main():
     else:
         logger.info("No boids config loaded")
 
+    # Compute velocity statistics from dataset for visualization
+    logger.info("Computing velocity statistics from dataset...")
+    vel_stats = compute_velocity_statistics(dataset_path)
+
+    # Use for speed magnitude in position-dependent force plots
+    speed_magnitude = vel_stats['mean_speed']
+    logger.info(f"Using mean speed = {speed_magnitude:.4f} for position-dependent force visualization")
+
+    # Use for velocity grid bounds in velocity-dependent force plots
+    max_rel_vel = vel_stats['max_relative_velocity']
+    logger.info(f"Using max relative velocity = {max_rel_vel:.4f} for velocity-dependent force visualization")
+
     # Set device
     # Device selection with MPS support
     if args.device and args.device != 'auto':
@@ -258,12 +273,13 @@ def main():
             # This ensures fair comparison (same plot range for both)
             plot_max_dist = args.visual_range * 1.5  # 50% cushion
 
-            # Evaluate learned forces
+            # Evaluate learned forces (use same speed magnitude as true forces)
             learned_forces = evaluate_forces_on_grid(
                 model,
                 grid_size=50,
                 max_dist=plot_max_dist,
-                particle_idx=0
+                particle_idx=0,
+                speed_magnitude=speed_magnitude
             )
 
             # Evaluate ground truth forces (use SAME range as learned for comparison)
@@ -339,6 +355,7 @@ def main():
         learning_rate=args.learning_rate,
         train_split=args.train_split,
         visual_range=args.visual_range,
+        rollout_steps=args.rollout_steps,
         device=device,
         save_dir=save_dir,
         seed=args.seed,
@@ -376,12 +393,13 @@ def main():
         # This ensures fair comparison (same plot range for both)
         plot_max_dist = args.visual_range * 1.5  # 50% cushion
 
-        # Evaluate learned forces on grid (returns both scenarios)
+        # Evaluate learned forces on grid (use same speed magnitude as true forces)
         learned_forces = evaluate_forces_on_grid(
             model,
             grid_size=50,
             max_dist=plot_max_dist,
-            particle_idx=0
+            particle_idx=0,
+            speed_magnitude=speed_magnitude
         )
 
         # Evaluate ground truth boid forces (use SAME range as learned for comparison)
@@ -414,6 +432,36 @@ def main():
             title_prefix="True Boid",
             visual_range=args.visual_range,
             min_distance=min_distance_normalized
+        )
+
+        # Generate SYMMETRIC force decomposition plots (NEW!)
+        logger.info("Generating symmetric force decomposition plots...")
+
+        # Position-dependent forces (with delta_vel = 0)
+        pos_forces_learned = evaluate_forces_on_grid(
+            model,
+            grid_size=50,
+            max_dist=plot_max_dist,
+            particle_idx=0,
+            speed_magnitude=0.0  # Zero velocity for position-only term
+        )
+
+        # Velocity-dependent forces (with delta_pos = 0)
+        vel_forces_learned = evaluate_velocity_forces_on_grid(
+            model,
+            grid_size=50,
+            max_vel=max_rel_vel,
+            particle_idx=0
+        )
+
+        # Plot symmetric decomposition for learned forces
+        symmetric_learned_path = os.path.join(save_dir, 'learned_symmetric_decomposition.png')
+        plot_symmetric_force_decomposition(
+            pos_forces_learned,
+            vel_forces_learned,
+            save_path=symmetric_learned_path,
+            title_prefix="Learned",
+            visual_range=args.visual_range
         )
 
         logger.info(f"Plots saved to {save_dir}")

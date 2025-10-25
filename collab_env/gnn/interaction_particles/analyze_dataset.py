@@ -11,6 +11,11 @@ Generates:
     - true_boid_force_fields.png: 2x3 grid showing ground truth boid force decomposition
       (if config file is available)
 
+Note:
+    For symmetric force decomposition (position-dependent vs velocity-dependent),
+    see run_training.py which generates learned_symmetric_decomposition.png after
+    training a model. This clean separation is most useful for learned models.
+
 Usage:
     python analyze_dataset.py <dataset_path> [--save-dir <output_dir>]
 
@@ -98,6 +103,10 @@ def analyze_dataset(dataset_path, save_dir=None, device='cpu', scene_size=480.0)
         Device to use for computations (default: 'cpu')
     scene_size : float, optional
         Scene size in pixels for normalizing config parameters (default: 480.0)
+
+    Notes
+    -----
+    Uses natural timestep dt=1.0 from simulation for velocity/acceleration computation.
     """
     logger.info(f"Loading dataset from {dataset_path}")
     logger.info(f"Using device: {device}")
@@ -135,11 +144,13 @@ def analyze_dataset(dataset_path, save_dir=None, device='cpu', scene_size=480.0)
 
         positions_np = positions_traj.numpy()  # [T, N, 2]
 
-        # Compute velocities (finite differences)
+        # Compute velocities (finite differences, natural timestep dt=1.0)
+        # v[t] = p[t+1] - p[t]
         velocities_np = np.diff(positions_np, axis=0)  # [T-1, N, 2]
         velocities_np = np.concatenate([velocities_np, velocities_np[-1:]], axis=0)  # [T, N, 2]
 
-        # Compute accelerations
+        # Compute accelerations (natural timestep dt=1.0)
+        # a[t] = v[t+1] - v[t]
         accelerations_np = np.diff(velocities_np, axis=0)  # [T-1, N, 2]
 
         # Collect frame-by-frame
@@ -328,11 +339,19 @@ def analyze_dataset(dataset_path, save_dir=None, device='cpu', scene_size=480.0)
         try:
             # Import plotting functions
             try:
-                from .plotting import evaluate_true_boid_forces, plot_force_decomposition
+                from .plotting import (
+                    evaluate_true_boid_forces,
+                    evaluate_true_boid_velocity_forces,
+                    plot_force_decomposition,
+                    plot_symmetric_force_decomposition
+                )
             except ImportError:
                 # If relative import fails, try absolute import
                 from collab_env.gnn.interaction_particles.plotting import (
-                    evaluate_true_boid_forces, plot_force_decomposition
+                    evaluate_true_boid_forces,
+                    evaluate_true_boid_velocity_forces,
+                    plot_force_decomposition,
+                    plot_symmetric_force_decomposition
                 )
 
             boids_config = torch.load(config_path, weights_only=False)
@@ -391,6 +410,56 @@ def analyze_dataset(dataset_path, save_dir=None, device='cpu', scene_size=480.0)
                         min_distance=min_distance_normalized
                     )
                     plt.show()
+
+                # Generate SYMMETRIC force decomposition plots (NEW!)
+                logger.info("Generating symmetric force decomposition plots...")
+
+                # Compute typical velocity magnitude from dataset
+                # Use mean relative velocity as a reference
+                speed_stats = np.linalg.norm(velocities_all, axis=1)
+                mean_speed = speed_stats.mean()
+                logger.info(f"Mean speed from dataset: {mean_speed:.4f}")
+
+                # Estimate max relative velocity (2x mean speed as upper bound)
+                max_rel_vel = min(2.0 * mean_speed, 0.05)  # Cap at 0.05
+
+                # Position-dependent forces (with delta_vel = 0)
+                pos_forces_true = evaluate_true_boid_forces(
+                    species_config,
+                    grid_size=50,
+                    max_dist=plot_max_dist,
+                    scene_size=scene_size
+                )
+
+                # Velocity-dependent forces (with delta_pos = 0)
+                vel_forces_true = evaluate_true_boid_velocity_forces(
+                    species_config,
+                    grid_size=50,
+                    max_vel=max_rel_vel,
+                    scene_size=scene_size
+                )
+
+                # Plot symmetric decomposition
+                if save_dir:
+                    symmetric_plot_path = os.path.join(save_dir, 'true_boid_symmetric_decomposition.png')
+                    plot_symmetric_force_decomposition(
+                        pos_forces_true,
+                        vel_forces_true,
+                        save_path=symmetric_plot_path,
+                        title_prefix="Ground Truth Boid",
+                        visual_range=visual_range_normalized
+                    )
+                    logger.info(f"Saved symmetric decomposition plot to {symmetric_plot_path}")
+                else:
+                    plot_symmetric_force_decomposition(
+                        pos_forces_true,
+                        vel_forces_true,
+                        save_path=None,
+                        title_prefix="Ground Truth Boid",
+                        visual_range=visual_range_normalized
+                    )
+                    plt.show()
+
             else:
                 logger.warning("Could not find species config in loaded config file")
 
@@ -437,7 +506,8 @@ Examples:
         logger.error(f"Dataset not found: {args.dataset}")
         return 1
 
-    analyze_dataset(args.dataset, save_dir=args.save_dir, device=args.device, scene_size=args.scene_size)
+    analyze_dataset(args.dataset, save_dir=args.save_dir, device=args.device,
+                   scene_size=args.scene_size)
 
     return 0
 

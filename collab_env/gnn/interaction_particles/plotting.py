@@ -499,13 +499,13 @@ def plot_true_boid_rules_2d(config=None, scene_size=480.0, save_path=None):
     return fig
 
 
-def evaluate_forces_on_grid(model, grid_size=60, max_dist=50.0, particle_idx=0):
+def evaluate_forces_on_grid(model, grid_size=60, max_dist=50.0, particle_idx=0, speed_magnitude=0.015):
     """
     Evaluate learned forces on a 2D grid for two velocity configurations.
 
     Setup:
-    - Node i at origin (0,0), stationary (vel_i = 0)
-    - Node j at grid positions (x, y)
+    - Node i at square center (0.5, 0.5), stationary (vel_i = 0)
+    - Node j at grid positions relative to i (delta_pos varies)
 
     Parameters
     ----------
@@ -517,6 +517,9 @@ def evaluate_forces_on_grid(model, grid_size=60, max_dist=50.0, particle_idx=0):
         Maximum distance to evaluate (in same units as training data)
     particle_idx : int
         Particle embedding index
+    speed_magnitude : float
+        Magnitude of relative velocity to use (should match typical training data speed)
+        Default: 0.015 (typical for normalized boid data)
 
     Returns
     -------
@@ -537,25 +540,32 @@ def evaluate_forces_on_grid(model, grid_size=60, max_dist=50.0, particle_idx=0):
     # Convert to tensors
     delta_pos_t = torch.tensor(positions, dtype=torch.float32, device=model.device)
 
-    # Compute distances and velocity directions
+    # Set absolute position to square center (0.5, 0.5)
+    # This is important because the model uses absolute position as a feature
+    pos_i = torch.full((n_points, 2), 0.5, dtype=torch.float32, device=model.device)
+
+    # Compute distances and velocity directions with REALISTIC MAGNITUDES
     distances = torch.sqrt(torch.sum(delta_pos_t ** 2, dim=1, keepdim=True))
-    vel_away = delta_pos_t / (distances + 1e-8)  # Unit vector away from i
-    vel_towards = -vel_away  # Unit vector towards i
+    r_hat = delta_pos_t / (distances + 1e-8)  # Unit vector away from i
+
+    # Use realistic speed magnitude (not unit vectors!)
+    vel_away = r_hat * speed_magnitude  # Realistic velocity away from i
+    vel_towards = -r_hat * speed_magnitude  # Realistic velocity towards i
     vel_zero = torch.zeros_like(delta_pos_t)
 
     # Evaluate forces for all configurations
-    # NOTE: Model computes force ON i (at origin) DUE TO j (at grid position)
+    # NOTE: Model computes force ON i (at square center) DUE TO j (at grid position)
     # But we want to plot force ON j DUE TO i (Newton's 3rd law: F_j = -F_i)
     # So we negate the model output to match the true boid force convention
 
     # 1. Away: j moving away from i
-    away_total = -model.evaluate_interaction(delta_pos_t, vel_away, embedding_idx=particle_idx).cpu().numpy()
-    away_pos = -model.evaluate_interaction(delta_pos_t, vel_zero, embedding_idx=particle_idx).cpu().numpy()
+    away_total = -model.evaluate_interaction(delta_pos_t, vel_away, pos_i=pos_i, embedding_idx=particle_idx).cpu().numpy()
+    away_pos = -model.evaluate_interaction(delta_pos_t, vel_zero, pos_i=pos_i, embedding_idx=particle_idx).cpu().numpy()
     away_vel = away_total - away_pos
 
     # 2. Towards: j moving towards i
-    towards_total = -model.evaluate_interaction(delta_pos_t, vel_towards, embedding_idx=particle_idx).cpu().numpy()
-    towards_pos = -model.evaluate_interaction(delta_pos_t, vel_zero, embedding_idx=particle_idx).cpu().numpy()
+    towards_total = -model.evaluate_interaction(delta_pos_t, vel_towards, pos_i=pos_i, embedding_idx=particle_idx).cpu().numpy()
+    towards_pos = -model.evaluate_interaction(delta_pos_t, vel_zero, pos_i=pos_i, embedding_idx=particle_idx).cpu().numpy()
     towards_vel = towards_total - towards_pos
 
     # Reshape to grid
@@ -575,6 +585,71 @@ def evaluate_forces_on_grid(model, grid_size=60, max_dist=50.0, particle_idx=0):
         'towards_total': reshape_to_grid(towards_total),
         'towards_pos': reshape_to_grid(towards_pos),
         'towards_vel': reshape_to_grid(towards_vel),
+    }
+
+
+def evaluate_velocity_forces_on_grid(model, grid_size=60, max_vel=0.05, particle_idx=0):
+    """
+    Evaluate learned forces on a 2D velocity grid (symmetric decomposition).
+
+    Setup:
+    - Particles at SAME position (delta_pos = 0) at square center (0.5, 0.5)
+    - Vary relative velocity on a 2D grid
+
+    Parameters
+    ----------
+    model : InteractionParticle
+        Trained model
+    grid_size : int
+        Grid resolution
+    max_vel : float
+        Maximum relative velocity magnitude to evaluate
+    particle_idx : int
+        Particle embedding index
+
+    Returns
+    -------
+    dict with keys:
+        - VX, VY: meshgrid coordinates (relative velocity components)
+        - forces: force vectors [grid_size, grid_size, 2]
+        - force_mag: force magnitudes [grid_size, grid_size]
+    """
+    # Create 2D velocity grid
+    vx = np.linspace(-max_vel, max_vel, grid_size)
+    vy = np.linspace(-max_vel, max_vel, grid_size)
+    VX, VY = np.meshgrid(vx, vy)
+
+    # Flatten for batch processing
+    delta_vels = np.stack([VX.flatten(), VY.flatten()], axis=-1)  # [N, 2]
+    n_points = len(delta_vels)
+
+    # Convert to tensors
+    delta_vel_t = torch.tensor(delta_vels, dtype=torch.float32, device=model.device)
+
+    # Particles at same position: delta_pos = 0
+    delta_pos_t = torch.zeros_like(delta_vel_t)
+
+    # Set absolute position to square center (0.5, 0.5)
+    pos_i = torch.full((n_points, 2), 0.5, dtype=torch.float32, device=model.device)
+
+    # Evaluate forces
+    # NOTE: Model computes force ON i DUE TO j
+    # With delta_pos=0, both particles are at same location (square center)
+    # Force should depend only on relative velocity
+    forces = -model.evaluate_interaction(delta_pos_t, delta_vel_t, pos_i=pos_i, embedding_idx=particle_idx).cpu().numpy()
+
+    # Reshape to grid
+    forces_x = forces[:, 0].reshape(grid_size, grid_size)
+    forces_y = forces[:, 1].reshape(grid_size, grid_size)
+    forces_mag = np.sqrt(forces_x**2 + forces_y**2)
+
+    return {
+        'VX': VX,
+        'VY': VY,
+        'forces': forces.reshape(grid_size, grid_size, 2),
+        'forces_x': forces_x,
+        'forces_y': forces_y,
+        'force_mag': forces_mag
     }
 
 
@@ -879,6 +954,106 @@ def evaluate_true_boid_forces(config, grid_size=60, max_dist=50.0, scene_size=48
     }
 
 
+def evaluate_true_boid_velocity_forces(config, grid_size=60, max_vel=0.05, scene_size=480.0):
+    """
+    Evaluate true boid forces on a 2D velocity grid (symmetric decomposition).
+
+    Setup:
+    - Two boids at SAME position (delta_pos = 0) at square center
+    - Vary relative velocity on a 2D grid
+
+    Parameters
+    ----------
+    config : dict
+        Boid config with parameters in PIXEL SPACE (same as evaluate_true_boid_forces)
+    grid_size : int
+        Grid resolution
+    max_vel : float
+        Maximum relative velocity magnitude to evaluate (in normalized space)
+    scene_size : float
+        Scene size in pixels (used to normalize config parameters)
+
+    Returns
+    -------
+    dict with keys:
+        - VX, VY: meshgrid coordinates (relative velocity components)
+        - forces: force vectors [grid_size, grid_size, 2]
+        - force_mag: force magnitudes [grid_size, grid_size]
+    """
+    # Create 2D velocity grid in normalized space
+    vx = np.linspace(-max_vel, max_vel, grid_size)
+    vy = np.linspace(-max_vel, max_vel, grid_size)
+    VX, VY = np.meshgrid(vx, vy)
+
+    # Normalize config parameters from pixel space to normalized space
+    normalized_config = config.copy()
+    if 'min_distance' in config:
+        normalized_config['min_distance'] = config['min_distance'] / scene_size
+    if 'visual_range' in config:
+        normalized_config['visual_range'] = config['visual_range'] / scene_size
+
+    # Add 'independent' flag if not present
+    if 'independent' not in normalized_config:
+        normalized_config['independent'] = False
+
+    # Flatten for iteration
+    delta_vels = np.stack([VX.flatten(), VY.flatten()], axis=-1)  # [N, 2]
+    n_points = len(delta_vels)
+
+    # Compute forces at each velocity grid point
+    forces = np.zeros_like(delta_vels)
+
+    for idx in range(n_points):
+        # Both boids at the same position (square center: 0.5, 0.5 in normalized space)
+        # Boid i: stationary reference
+        boid_i = {
+            'x': 0.5,
+            'y': 0.5,
+            'dx': 0.0,
+            'dy': 0.0,
+            'species': 'A'
+        }
+
+        # Boid j: has relative velocity
+        vel_j = delta_vels[idx]
+        boid_j = {
+            'x': 0.5,  # Same position as i
+            'y': 0.5,
+            'dx': vel_j[0],
+            'dy': vel_j[1],
+            'species': 'A'
+        }
+
+        # Initial velocity of boid_j
+        initial_vel = np.array([boid_j['dx'], boid_j['dy']])
+
+        # Compute force ON boid_j due TO boid_i
+        # Put boids in a list and call force functions
+        boids = [boid_j, boid_i]
+
+        fly_towards_center(boid_j, boids, normalized_config)  # Rule 1: Cohesion
+        avoid_others(boid_j, boids, normalized_config)        # Rule 2: Separation
+        match_velocity(boid_j, boids, normalized_config)      # Rule 3: Alignment
+
+        # Force is change in velocity
+        final_vel = np.array([boid_j['dx'], boid_j['dy']])
+        forces[idx] = final_vel - initial_vel
+
+    # Reshape to grid
+    forces_x = forces[:, 0].reshape(grid_size, grid_size)
+    forces_y = forces[:, 1].reshape(grid_size, grid_size)
+    forces_mag = np.sqrt(forces_x**2 + forces_y**2)
+
+    return {
+        'VX': VX,
+        'VY': VY,
+        'forces': forces.reshape(grid_size, grid_size, 2),
+        'forces_x': forces_x,
+        'forces_y': forces_y,
+        'force_mag': forces_mag
+    }
+
+
 def compare_with_true_boids(
     model,
     save_path=None,
@@ -1068,6 +1243,97 @@ def compare_with_true_boids(
     if save_path:
         plt.savefig(save_path, dpi=300, bbox_inches='tight')
         logger.info(f"Saved comparison plot to {save_path}")
+
+    return fig
+
+
+def plot_symmetric_force_decomposition(position_forces, velocity_forces, save_path=None,
+                                       title_prefix="Learned", visual_range=None):
+    """
+    Plot symmetric force decomposition: position-dependent and velocity-dependent forces.
+
+    Creates a 1x2 grid:
+    - Left: Position-dependent forces (velocity=0, vary position)
+    - Right: Velocity-dependent forces (position=0, vary velocity)
+
+    Parameters
+    ----------
+    position_forces : dict
+        Output from evaluate_forces_on_grid (with delta_vel=0)
+    velocity_forces : dict
+        Output from evaluate_velocity_forces_on_grid (with delta_pos=0)
+    save_path : str, optional
+        Path to save figure
+    title_prefix : str
+        Prefix for title (e.g., "Learned" or "True Boid")
+    visual_range : float, optional
+        Visual range radius to draw as reference circle
+
+    Returns
+    -------
+    fig : matplotlib.figure.Figure
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(16, 7))
+
+    # LEFT: Position-dependent forces (velocity = 0)
+    ax = axes[0]
+    X, Y = position_forces['X'], position_forces['Y']
+
+    # Plot force magnitude as heatmap
+    im = ax.pcolormesh(X, Y, position_forces['away_pos']['mag'],
+                       cmap='viridis', shading='auto')
+    plt.colorbar(im, ax=ax, label='Force Magnitude')
+
+    # Overlay force vectors (subsample for clarity)
+    step = max(1, len(X) // 15)
+    ax.quiver(X[::step, ::step], Y[::step, ::step],
+              position_forces['away_pos']['x'][::step, ::step],
+              position_forces['away_pos']['y'][::step, ::step],
+              color='white', alpha=0.7, scale=None, scale_units='xy')
+
+    ax.set_xlabel('Δx (relative position)')
+    ax.set_ylabel('Δy (relative position)')
+    ax.set_title(f'{title_prefix}: Position-Dependent Forces\n(Δv = 0)')
+    ax.set_aspect('equal')
+    ax.axhline(0, color='white', linestyle='--', alpha=0.3, linewidth=0.5)
+    ax.axvline(0, color='white', linestyle='--', alpha=0.3, linewidth=0.5)
+
+    # Add visual range circle if provided
+    if visual_range is not None:
+        circle = plt.Circle((0, 0), visual_range, fill=False,
+                           edgecolor='red', linestyle='--', linewidth=2,
+                           label=f'Visual range = {visual_range:.2f}')
+        ax.add_patch(circle)
+        ax.legend(loc='upper right')
+
+    # RIGHT: Velocity-dependent forces (position = 0)
+    ax = axes[1]
+    VX, VY = velocity_forces['VX'], velocity_forces['VY']
+
+    # Plot force magnitude as heatmap
+    im = ax.pcolormesh(VX, VY, velocity_forces['force_mag'],
+                       cmap='plasma', shading='auto')
+    plt.colorbar(im, ax=ax, label='Force Magnitude')
+
+    # Overlay force vectors (subsample for clarity)
+    step = max(1, len(VX) // 15)
+    ax.quiver(VX[::step, ::step], VY[::step, ::step],
+              velocity_forces['forces_x'][::step, ::step],
+              velocity_forces['forces_y'][::step, ::step],
+              color='white', alpha=0.7, scale=None, scale_units='xy')
+
+    ax.set_xlabel('Δv_x (relative velocity)')
+    ax.set_ylabel('Δv_y (relative velocity)')
+    ax.set_title(f'{title_prefix}: Velocity-Dependent Forces\n(Δpos = 0)')
+    ax.set_aspect('equal')
+    ax.axhline(0, color='white', linestyle='--', alpha=0.3, linewidth=0.5)
+    ax.axvline(0, color='white', linestyle='--', alpha=0.3, linewidth=0.5)
+
+    plt.tight_layout()
+
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+        logger.info(f"Saved symmetric force decomposition plot to {save_path}")
 
     return fig
 
