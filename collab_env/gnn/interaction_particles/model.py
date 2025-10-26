@@ -170,13 +170,19 @@ class InteractionParticle(pyg.nn.MessagePassing):
         # Compute relative velocity (NO normalization)
         delta_vel = vel_j - vel_i
 
+        # Compute complementary boundary distances to help model learn wall bouncing
+        # Distance from right/top walls (1-x, 1-y)
+        boundary_complement = 1.0 - pos_i  # (2D)
+
         # Construct input features
-        # Format: [delta_pos(2), r(1), delta_vel(2), pos_i(2), [embedding_i(embedding_dim)]]
+        # Format: [delta_pos(2), r(1), delta_vel(2), pos_i(2), vel_i(2), boundary_complement(2), [embedding_i(embedding_dim)]]
         feature_list = [
-            delta_pos,    # Relative position (2D)
-            r,            # Distance (1D)
-            delta_vel,    # Relative velocity (2D)
-            pos_i         # Absolute position (2D) - NEW
+            delta_pos,            # Relative position (2D)
+            r,                    # Distance (1D)
+            delta_vel,            # Relative velocity (2D)
+            pos_i,                # Absolute position (2D) - distance from left/bottom
+            vel_i,                # Self velocity (2D)
+            boundary_complement   # Distance from right/top (2D) - NEW: [1-x, 1-y]
         ]
 
         # Add embeddings only if using them
@@ -194,7 +200,7 @@ class InteractionParticle(pyg.nn.MessagePassing):
         """Update node features (identity function)."""
         return aggr_out
 
-    def evaluate_interaction(self, delta_pos, delta_vel, pos_i=None, embedding_idx=0):
+    def evaluate_interaction(self, delta_pos, delta_vel, pos_i=None, vel_i=None, embedding_idx=0):
         """
         Evaluate the learned interaction function.
 
@@ -206,6 +212,8 @@ class InteractionParticle(pyg.nn.MessagePassing):
             Relative velocities [N, 2]
         pos_i : torch.Tensor, optional
             Absolute positions of particle i [N, 2]. If None, uses origin (0, 0)
+        vel_i : torch.Tensor, optional
+            Self velocities of particle i [N, 2]. If None, uses zero velocity
         embedding_idx : int
             Index of particle embedding to use (ignored if n_particle_types=1)
 
@@ -224,12 +232,21 @@ class InteractionParticle(pyg.nn.MessagePassing):
             if pos_i is None:
                 pos_i = torch.zeros((n, 2), device=delta_pos.device)
 
+            # Default vel_i to zero if not provided
+            if vel_i is None:
+                vel_i = torch.zeros((n, 2), device=delta_pos.device)
+
+            # Compute complementary boundary distances
+            boundary_complement = 1.0 - pos_i  # (2D)
+
             # Construct input features
             feature_list = [
-                delta_pos,   # Relative position (2D)
-                r,           # Distance (1D)
-                delta_vel,   # Relative velocity (2D)
-                pos_i        # Absolute position (2D) - NEW
+                delta_pos,            # Relative position (2D)
+                r,                    # Distance (1D)
+                delta_vel,            # Relative velocity (2D)
+                pos_i,                # Absolute position (2D)
+                vel_i,                # Self velocity (2D)
+                boundary_complement   # Distance from right/top (2D)
             ]
 
             # Add embedding only if using embeddings

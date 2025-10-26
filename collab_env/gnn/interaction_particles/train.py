@@ -10,13 +10,14 @@ from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 from loguru import logger
 import os
+import gc
 
 from .model import InteractionParticle
 from collab_env.gnn.utility import handle_discrete_data
 from collab_env.data.file_utils import expand_path
 
 
-def build_graph_from_data(positions, velocities, accelerations, visual_range=0.5, max_radius=1.0):
+def build_graph_from_data(positions, velocities, accelerations, next_positions=None, visual_range=0.5, max_radius=1.0):
     """
     Build PyG graph from position, velocity, and acceleration data.
 
@@ -27,7 +28,9 @@ def build_graph_from_data(positions, velocities, accelerations, visual_range=0.5
     velocities : torch.Tensor
         Velocities [N, 2]
     accelerations : torch.Tensor
-        Accelerations [N, 2] (targets)
+        Accelerations [N, 2] (targets for acceleration-based loss)
+    next_positions : torch.Tensor, optional
+        Next positions [N, 2] (targets for position-based loss)
     visual_range : float
         Maximum distance for edges (normalized)
     max_radius : float
@@ -55,7 +58,8 @@ def build_graph_from_data(positions, velocities, accelerations, visual_range=0.5
         x=node_features,
         edge_index=edge_index,
         y=accelerations,
-        pos=positions
+        pos=positions,
+        next_pos=next_positions if next_positions is not None else positions  # Store next position for position-based loss
     )
 
     return data
@@ -213,10 +217,14 @@ def prepare_dataset(dataset_path, visual_range=0.5, max_radius=1.0, input_differ
             if torch.isnan(a_normalized[b, f]).any() or torch.isinf(a_normalized[b, f]).any():
                 continue
 
+            # Get next position for position-based loss
+            next_pos = p_normalized[b, f+1] if f+1 < F else p_normalized[b, f]
+
             graph = build_graph_from_data(
                 p_normalized[b, f],
                 v_normalized[b, f],
                 a_normalized[b, f],
+                next_positions=next_pos,
                 visual_range=visual_range,
                 max_radius=max_radius
             )
@@ -493,17 +501,27 @@ def train_interaction_particle(
         train_batches = 0
 
         if rollout_steps == 1:
-            # Single-step training: standard batch loop
+            # Single-step training: position-based loss (one-step rollout)
             for batch in tqdm(train_loader, desc=f"Epoch {epoch+1}/{epochs} [Train]", leave=False):
                 batch = batch.to(device)
 
                 optimizer.zero_grad()
 
-                # Forward pass
-                pred = model(batch)
+                # Forward pass: predict acceleration
+                pred_acc = model(batch)
 
-                # Compute loss (acceleration MSE)
-                loss = F.mse_loss(pred, batch.y)
+                # Perform one-step integration to get predicted next position
+                # Extract positions and velocities from batch
+                # batch.pos is [N, 2], velocities are in batch.x
+                current_pos = batch.pos
+                current_vel = batch.x[:, 3:5]  # Extract velocities from node features (columns 3:5)
+
+                # Semi-implicit Euler integration
+                next_vel = current_vel + pred_acc * 1.0  # dt = 1.0
+                pred_next_pos = current_pos + next_vel * 1.0
+
+                # Compute loss (position MSE)
+                loss = F.mse_loss(pred_next_pos, batch.next_pos)
 
                 # Backward pass
                 loss.backward()
@@ -521,7 +539,7 @@ def train_interaction_particle(
                 batch_sequences = train_loader[i:i+batch_size]
 
                 optimizer.zero_grad()
-                batch_loss = 0.0
+                batch_loss_accum = 0.0
 
                 # Process each sequence in the batch
                 for seq in batch_sequences:
@@ -538,17 +556,29 @@ def train_interaction_particle(
 
                     # Compute position MSE loss
                     loss = F.mse_loss(pred_positions, gt_positions)
-                    batch_loss += loss
 
-                # Average loss over batch
-                batch_loss = batch_loss / len(batch_sequences)
+                    # Scale loss by batch size and backward immediately
+                    # This prevents accumulating computation graphs in memory
+                    scaled_loss = loss / len(batch_sequences)
+                    scaled_loss.backward()
 
-                # Backward pass
-                batch_loss.backward()
+                    # Accumulate loss value for logging (detached)
+                    batch_loss_accum += loss.item()
+
+                # Average loss for logging
+                batch_loss = batch_loss_accum / len(batch_sequences)
+
+                # Update parameters (gradients already accumulated)
                 optimizer.step()
 
-                train_loss += batch_loss.item()
+                train_loss += batch_loss
                 train_batches += 1
+
+                # Periodically clear GPU/CPU cache to prevent memory fragmentation
+                if train_batches % 50 == 0:
+                    gc.collect()
+                    if device.type == 'cuda':
+                        torch.cuda.empty_cache()
 
         # Average training loss
         if train_batches > 0:
@@ -563,12 +593,24 @@ def train_interaction_particle(
         val_batches = 0
 
         if rollout_steps == 1:
-            # Single-step validation
+            # Single-step validation: position-based loss (one-step rollout)
             with torch.no_grad():
                 for batch in tqdm(val_loader, desc=f"Epoch {epoch+1}/{epochs} [Val]", leave=False):
                     batch = batch.to(device)
-                    pred = model(batch)
-                    loss = F.mse_loss(pred, batch.y)
+
+                    # Predict acceleration
+                    pred_acc = model(batch)
+
+                    # Perform one-step integration
+                    current_pos = batch.pos
+                    current_vel = batch.x[:, 3:5]
+
+                    # Semi-implicit Euler integration
+                    next_vel = current_vel + pred_acc * 1.0
+                    pred_next_pos = current_pos + next_vel * 1.0
+
+                    # Compute position loss
+                    loss = F.mse_loss(pred_next_pos, batch.next_pos)
                     val_loss += loss.item()
                     val_batches += 1
         else:
@@ -577,7 +619,7 @@ def train_interaction_particle(
                 for i in tqdm(range(0, len(val_loader), batch_size), desc=f"Epoch {epoch+1}/{epochs} [Val]", leave=False):
                     batch_sequences = val_loader[i:i+batch_size]
 
-                    batch_loss = 0.0
+                    batch_loss_accum = 0.0
                     for seq in batch_sequences:
                         initial_pos = seq['initial_pos'].to(device)
                         initial_vel = seq['initial_vel'].to(device)
@@ -590,12 +632,13 @@ def train_interaction_particle(
                             requires_grad=False, return_intermediates=True
                         )
 
-                        # Compute position MSE loss
+                        # Compute position MSE loss and immediately extract scalar
                         loss = F.mse_loss(pred_positions, gt_positions)
-                        batch_loss += loss
+                        batch_loss_accum += loss.item()  # Extract scalar immediately
 
-                    batch_loss = batch_loss / len(batch_sequences)
-                    val_loss += batch_loss.item()
+                    # Average loss for this batch
+                    batch_loss = batch_loss_accum / len(batch_sequences)
+                    val_loss += batch_loss
                     val_batches += 1
 
         # Average validation loss
@@ -635,6 +678,11 @@ def train_interaction_particle(
         # Call epoch callback if provided
         if epoch_callback is not None:
             epoch_callback(model, epoch + 1, train_loss, val_loss, save_dir)
+
+        # Clear memory after each epoch
+        gc.collect()
+        if device.type == 'cuda':
+            torch.cuda.empty_cache()
 
     # Save final model
     if save_dir:
@@ -819,9 +867,12 @@ def differentiable_rollout(model, initial_positions, initial_velocities, n_steps
             # Predict acceleration
             pred_acc = model(graph)
 
-            # Euler integration
-            vel = vel + pred_acc * delta_t
-            pos = pos + vel * delta_t
+            # Semi-implicit Euler integration (matching ground truth in boid.py)
+            # Ground truth: velocity changes are applied, then position updated with NEW velocity
+            # Training data: a[t] = v[t+1] - v[t], so model predicts acceleration
+            # Correct integration: v_{t+1} = v_t + a_t*dt, then x_{t+1} = x_t + v_{t+1}*dt
+            vel = vel + pred_acc * delta_t  # Update velocity FIRST
+            pos = pos + vel * delta_t       # Update position with NEW velocity
 
             # Store predictions
             if return_intermediates:

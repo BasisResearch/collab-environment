@@ -17,18 +17,18 @@
 # Full training (100 epochs) on basic dataset
 python -m collab_env.gnn.interaction_particles.run_training \
     --dataset simulated_data/boid_single_species_basic.pt \
-    --epochs 300 \
+    --epochs 2000 \
     --batch-size 32 \
     --visual-range 0.2 \
-    --plot-every 50 \
+    --plot-every 500 \
     --evaluate-rollout \
-    --n-rollout-steps 80 \
+    --n-rollout-steps 10 \
     --learning-rate 1e-3 \
-    --n-layers 2 \
-    --hidden-dim 256 \
+    --n-layers 3 \
+    --hidden-dim 64 \
     --embedding-dim 0 \
-    --rollout-steps 5 \
-    --save-dir trained_models/interaction_particle_2d_basic_rollout5 \
+    --rollout-steps 10 \
+    --save-dir trained_models/interaction_particle_2d_basic_rollout10 \
     --device cpu
 
 # weak alignment dataset
@@ -53,19 +53,19 @@ python -m collab_env.gnn.interaction_particles.run_training \
 # NOTE: Requires much smaller batch size due to long trajectories
 python -m collab_env.gnn.interaction_particles.run_training \
     --dataset simulated_data/runpod/boid_single_species_basic.pt \
-    --epochs 10 \
-    --batch-size 1024 \
+    --epochs 20 \
+    --batch-size 32 \
     --visual-range 0.2 \
-    --plot-every 1 \
+    --plot-every 2 \
     --evaluate-rollout \
     --n-rollout-steps 50 \
     --save-dir trained_models/interaction_particle_2d_runpod \
     --device cpu \
     --learning-rate 1e-4 \
-    --n-layers 3 \
+    --n-layers 4 \
     --embedding-dim 0 \
-    --rollout-steps 20 \
-    --hidden-dim 256
+    --rollout-steps 10 \
+    --hidden-dim 64
 
 # weak alignment dataset
 python -m collab_env.gnn.interaction_particles.run_training \

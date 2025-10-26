@@ -1416,6 +1416,16 @@ def plot_rollout_comparison(ground_truth, predicted, trajectory_idx=0, n_particl
         ax.scatter(ground_truth[-1, i, 0], ground_truth[-1, i, 1],
                   c='red', s=100, marker='s', zorder=5, edgecolors='black', linewidth=1)
 
+        # Add initial velocity vector
+        if T >= 2:
+            initial_vel = ground_truth[1, i] - ground_truth[0, i]
+            # Scale for visibility (multiply by 3 for better visualization)
+            scale = 3.0
+            ax.arrow(ground_truth[0, i, 0], ground_truth[0, i, 1],
+                    initial_vel[0] * scale, initial_vel[1] * scale,
+                    head_width=0.02, head_length=0.015, fc='blue', ec='blue',
+                    alpha=0.7, linewidth=1.5, zorder=4)
+
     ax.set_xlabel('X Position', fontsize=12)
     ax.set_ylabel('Y Position', fontsize=12)
     ax.set_title('Ground Truth', fontsize=14, fontweight='bold')
@@ -1435,6 +1445,16 @@ def plot_rollout_comparison(ground_truth, predicted, trajectory_idx=0, n_particl
         ax.scatter(predicted[-1, i, 0], predicted[-1, i, 1],
                   c='red', s=100, marker='s', zorder=5, edgecolors='black', linewidth=1)
 
+        # Add initial velocity vector (same initial velocity as ground truth)
+        if T >= 2:
+            initial_vel = ground_truth[1, i] - ground_truth[0, i]
+            # Scale for visibility (multiply by 3 for better visualization)
+            scale = 3.0
+            ax.arrow(predicted[0, i, 0], predicted[0, i, 1],
+                    initial_vel[0] * scale, initial_vel[1] * scale,
+                    head_width=0.02, head_length=0.015, fc='blue', ec='blue',
+                    alpha=0.7, linewidth=1.5, zorder=4)
+
     ax.set_xlabel('X Position', fontsize=12)
     ax.set_ylabel('Y Position', fontsize=12)
     ax.set_title('Predicted (Model)', fontsize=14, fontweight='bold')
@@ -1444,12 +1464,13 @@ def plot_rollout_comparison(ground_truth, predicted, trajectory_idx=0, n_particl
     ax.set_ylim([-0.3, 1.3])
 
     # Add legend
-    from matplotlib.patches import Patch
+    from matplotlib.patches import Patch, FancyArrow
     legend_elements = [
         Patch(facecolor='green', edgecolor='black', label='Start'),
-        Patch(facecolor='red', edgecolor='black', label='End')
+        Patch(facecolor='red', edgecolor='black', label='End'),
+        Patch(facecolor='blue', edgecolor='blue', label='Initial Velocity (3x scaled)')
     ]
-    fig.legend(handles=legend_elements, loc='upper center', ncol=2, fontsize=11)
+    fig.legend(handles=legend_elements, loc='upper center', ncol=3, fontsize=11)
 
     plt.suptitle(f'Trajectory Comparison (Sample {trajectory_idx})',
                  fontsize=16, fontweight='bold', y=0.98)

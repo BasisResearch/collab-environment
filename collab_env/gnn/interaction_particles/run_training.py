@@ -32,6 +32,7 @@ from .plotting import (
     plot_force_decomposition,
     plot_symmetric_force_decomposition,
     evaluate_true_boid_forces,
+    evaluate_true_boid_velocity_forces,
     plot_rollout_comparison
 )
 from collab_env.data.file_utils import expand_path
@@ -249,7 +250,7 @@ def main():
         'hidden_dim': args.hidden_dim,
         'embedding_dim': args.embedding_dim,
         'n_mp_layers': args.n_layers,
-        'input_size': 7,  # delta_pos(2) + r(1) + delta_vel(2) + pos_i(2)
+        'input_size': 11,  # delta_pos(2) + r(1) + delta_vel(2) + pos_i(2) + vel_i(2) + boundary_complement(2)
         'output_size': 2,
     }
 
@@ -317,6 +318,53 @@ def main():
             logger.info(f"Saved force decomposition plots to {epoch_dir}")
         except Exception as e:
             logger.warning(f"Failed to generate force decomposition plots: {e}")
+
+        # Plot symmetric decomposition
+        try:
+            logger.info(f"Generating symmetric force decomposition for epoch {epoch}...")
+
+            # Compute velocity statistics for max_rel_vel
+            max_rel_vel = 0.05  # Use same default as after-training plots
+
+            # Evaluate learned forces on velocity grid (delta_pos = 0)
+            learned_vel_forces = evaluate_velocity_forces_on_grid(
+                model,
+                grid_size=50,
+                max_vel=max_rel_vel,
+                particle_idx=0
+            )
+
+            # Evaluate true boid forces on velocity grid (delta_pos = 0)
+            true_vel_forces = evaluate_true_boid_velocity_forces(
+                boids_config,
+                grid_size=50,
+                max_vel=max_rel_vel,
+                scene_size=args.scene_size
+            )
+
+            # Plot learned symmetric decomposition
+            learned_symmetric_path = os.path.join(epoch_dir, 'learned_symmetric_decomposition.png')
+            plot_symmetric_force_decomposition(
+                learned_forces,  # position-dependent (already computed above)
+                learned_vel_forces,  # velocity-dependent
+                save_path=learned_symmetric_path,
+                title_prefix=f"Learned (Epoch {epoch})",
+                visual_range=args.visual_range
+            )
+
+            # Plot true boid symmetric decomposition
+            true_symmetric_path = os.path.join(epoch_dir, 'true_boid_symmetric_decomposition.png')
+            plot_symmetric_force_decomposition(
+                true_forces,  # position-dependent (already computed above)
+                true_vel_forces,  # velocity-dependent
+                save_path=true_symmetric_path,
+                title_prefix=f"True Boid (Epoch {epoch})",
+                visual_range=args.visual_range
+            )
+
+            logger.info(f"Saved symmetric decomposition plots to {epoch_dir}")
+        except Exception as e:
+            logger.warning(f"Failed to generate symmetric decomposition plots: {e}")
 
         # Plot rollout comparison
         if args.evaluate_rollout:
@@ -461,6 +509,31 @@ def main():
             vel_forces_learned,
             save_path=symmetric_learned_path,
             title_prefix="Learned",
+            visual_range=args.visual_range
+        )
+
+        # Generate TRUE BOID symmetric decomposition for comparison
+        logger.info("Generating true boid symmetric force decomposition...")
+
+        # Position-dependent forces (true boids, delta_vel = 0)
+        # Reuse the position grid from true_forces (already computed with vel=0)
+        pos_forces_true = true_forces  # This has away_pos which is computed with vel=0
+
+        # Velocity-dependent forces (true boids, delta_pos = 0)
+        vel_forces_true = evaluate_true_boid_velocity_forces(
+            boids_config,
+            grid_size=50,
+            max_vel=max_rel_vel,
+            scene_size=args.scene_size
+        )
+
+        # Plot symmetric decomposition for true boid forces
+        symmetric_true_path = os.path.join(save_dir, 'true_boid_symmetric_decomposition.png')
+        plot_symmetric_force_decomposition(
+            pos_forces_true,
+            vel_forces_true,
+            save_path=symmetric_true_path,
+            title_prefix="True Boid",
             visual_range=args.visual_range
         )
 
