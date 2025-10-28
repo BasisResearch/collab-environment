@@ -141,7 +141,7 @@ def compute_velocity_statistics(dataset_path):
     return stats
 
 
-def prepare_dataset(dataset_path, visual_range=0.5, max_radius=1.0, input_differentiation='finite_diff'):
+def prepare_dataset(dataset_path, visual_range=0.5, max_radius=1.0, input_differentiation='finite_diff', trajectory_indices=None):
     """
     Load and prepare 2D boids dataset for training.
 
@@ -155,6 +155,8 @@ def prepare_dataset(dataset_path, visual_range=0.5, max_radius=1.0, input_differ
         Maximum radius for normalization
     input_differentiation : str
         Method for computing velocities/accelerations ('finite_diff' or 'spline')
+    trajectory_indices : list of int, optional
+        If provided, only process these trajectory indices from the dataset
 
     Returns
     -------
@@ -174,10 +176,18 @@ def prepare_dataset(dataset_path, visual_range=0.5, max_radius=1.0, input_differ
     dataset = torch.load(dataset_path, weights_only=False)
     logger.info(f"Loaded dataset with {len(dataset)} samples")
 
-    # Extract all positions from the dataset
+    # Determine which trajectories to process
+    if trajectory_indices is not None:
+        indices_to_process = trajectory_indices
+        logger.info(f"Processing {len(indices_to_process)} selected trajectories")
+    else:
+        indices_to_process = range(len(dataset))
+        logger.info(f"Processing all {len(dataset)} trajectories")
+
+    # Extract positions from selected trajectories
     # Each sample is (positions, species) where positions: [steps, N, 2]
     all_positions = []
-    for i in range(len(dataset)):
+    for i in indices_to_process:
         pos, species = dataset[i]  # [steps, N, 2], [N]
         # Add batch dimension: [1, steps, N, 2]
         all_positions.append(pos.unsqueeze(0))
@@ -539,37 +549,29 @@ def train_interaction_particle(
                 batch_sequences = train_loader[i:i+batch_size]
 
                 optimizer.zero_grad()
-                batch_loss_accum = 0.0
 
-                # Process each sequence in the batch
-                for seq in batch_sequences:
-                    initial_pos = seq['initial_pos'].to(device)
-                    initial_vel = seq['initial_vel'].to(device)
-                    gt_positions = seq['gt_positions'].to(device)  # [M, N, 2]
+                # Stack all initial conditions and ground truths
+                initial_pos_batch = torch.stack([seq['initial_pos'] for seq in batch_sequences]).to(device)
+                initial_vel_batch = torch.stack([seq['initial_vel'] for seq in batch_sequences]).to(device)
+                gt_positions_batch = torch.stack([seq['gt_positions'] for seq in batch_sequences]).to(device)
 
-                    # Perform differentiable rollout (dt=1.0, natural timestep)
-                    pred_positions, _ = differentiable_rollout(
-                        model, initial_pos, initial_vel, rollout_steps,
-                        visual_range=visual_range, delta_t=1.0, device=device,
-                        requires_grad=True, return_intermediates=True
-                    )
+                # Perform batched differentiable rollout (processes all sequences in parallel!)
+                pred_positions_batch, _ = differentiable_rollout_batched(
+                    model, initial_pos_batch, initial_vel_batch, rollout_steps,
+                    visual_range=visual_range, delta_t=1.0, device=device,
+                    requires_grad=True
+                )
 
-                    # Compute position MSE loss
-                    loss = F.mse_loss(pred_positions, gt_positions)
+                # Compute batched loss
+                loss = F.mse_loss(pred_positions_batch, gt_positions_batch)
 
-                    # Scale loss by batch size and backward immediately
-                    # This prevents accumulating computation graphs in memory
-                    scaled_loss = loss / len(batch_sequences)
-                    scaled_loss.backward()
+                # Single backward pass
+                loss.backward()
 
-                    # Accumulate loss value for logging (detached)
-                    batch_loss_accum += loss.item()
-
-                # Average loss for logging
-                batch_loss = batch_loss_accum / len(batch_sequences)
-
-                # Update parameters (gradients already accumulated)
+                # Update parameters
                 optimizer.step()
+
+                batch_loss = loss.item()
 
                 train_loss += batch_loss
                 train_batches += 1
@@ -619,26 +621,22 @@ def train_interaction_particle(
                 for i in tqdm(range(0, len(val_loader), batch_size), desc=f"Epoch {epoch+1}/{epochs} [Val]", leave=False):
                     batch_sequences = val_loader[i:i+batch_size]
 
-                    batch_loss_accum = 0.0
-                    for seq in batch_sequences:
-                        initial_pos = seq['initial_pos'].to(device)
-                        initial_vel = seq['initial_vel'].to(device)
-                        gt_positions = seq['gt_positions'].to(device)
+                    # Stack all initial conditions and ground truths
+                    initial_pos_batch = torch.stack([seq['initial_pos'] for seq in batch_sequences]).to(device)
+                    initial_vel_batch = torch.stack([seq['initial_vel'] for seq in batch_sequences]).to(device)
+                    gt_positions_batch = torch.stack([seq['gt_positions'] for seq in batch_sequences]).to(device)
 
-                        # Perform rollout (dt=1.0, natural timestep)
-                        pred_positions, _ = differentiable_rollout(
-                            model, initial_pos, initial_vel, rollout_steps,
-                            visual_range=visual_range, delta_t=1.0, device=device,
-                            requires_grad=False, return_intermediates=True
-                        )
+                    # Perform batched rollout
+                    pred_positions_batch, _ = differentiable_rollout_batched(
+                        model, initial_pos_batch, initial_vel_batch, rollout_steps,
+                        visual_range=visual_range, delta_t=1.0, device=device,
+                        requires_grad=False
+                    )
 
-                        # Compute position MSE loss and immediately extract scalar
-                        loss = F.mse_loss(pred_positions, gt_positions)
-                        batch_loss_accum += loss.item()  # Extract scalar immediately
+                    # Compute batched loss
+                    loss = F.mse_loss(pred_positions_batch, gt_positions_batch)
 
-                    # Average loss for this batch
-                    batch_loss = batch_loss_accum / len(batch_sequences)
-                    val_loss += batch_loss
+                    val_loss += loss.item()
                     val_batches += 1
 
         # Average validation loss
@@ -699,7 +697,7 @@ def train_interaction_particle(
     return model, history
 
 
-def evaluate_model(model, dataset_path, visual_range=0.5, device=None):
+def evaluate_model(model, dataset_path, visual_range=0.5, device=None, train_split=None):
     """
     Evaluate model on dataset.
 
@@ -713,6 +711,9 @@ def evaluate_model(model, dataset_path, visual_range=0.5, device=None):
         Maximum distance for edges
     device : str or torch.device, optional
         Device to use
+    train_split : float, optional
+        If provided, only evaluate on validation set (indices >= train_split * dataset_size)
+        If None, evaluates on entire dataset
 
     Returns
     -------
@@ -722,8 +723,17 @@ def evaluate_model(model, dataset_path, visual_range=0.5, device=None):
     if device is None:
         device = next(model.parameters()).device
 
-    # Prepare dataset
-    graphs, _ = prepare_dataset(dataset_path, visual_range=visual_range)
+    # Determine which trajectories to evaluate
+    trajectory_indices = None
+    if train_split is not None:
+        # Load dataset to get size
+        dataset = torch.load(dataset_path, weights_only=False)
+        n_train = int(len(dataset) * train_split)
+        trajectory_indices = list(range(n_train, len(dataset)))
+        logger.info(f"Evaluating on validation set only ({len(trajectory_indices)} trajectories)")
+
+    # Prepare dataset (only validation set if train_split specified)
+    graphs, _ = prepare_dataset(dataset_path, visual_range=visual_range, trajectory_indices=trajectory_indices)
     loader = DataLoader(graphs, batch_size=32, shuffle=False)
 
     # Evaluate
@@ -776,17 +786,17 @@ def build_graph_from_current_state(positions, velocities, visual_range, device):
     N = positions.shape[0]
 
     # Build edges based on visual range
-    dist = torch.cdist(positions, positions, p=2)
+    dist = torch.cdist(positions.unsqueeze(0), positions.unsqueeze(0), p=2).squeeze(0)
     adj = (dist < visual_range).to(torch.bool)
     adj.fill_diagonal_(False)
-    edge_index = adj.nonzero(as_tuple=False).T
+    edge_index = adj.nonzero(as_tuple=False).T.to(device)
 
     # Create node features: [particle_id, pos_x, pos_y, vel_x, vel_y]
     particle_ids = torch.arange(N, dtype=torch.float32, device=device).unsqueeze(1)
     node_features = torch.cat([particle_ids, positions, velocities], dim=1)
 
     # Create dummy accelerations (not used for prediction)
-    dummy_acc = torch.zeros_like(positions)
+    dummy_acc = torch.zeros_like(positions, device=device)
 
     # Create graph
     data = Data(
@@ -794,9 +804,95 @@ def build_graph_from_current_state(positions, velocities, visual_range, device):
         edge_index=edge_index,
         y=dummy_acc,
         pos=positions
-    )
+    ).to(device)
 
     return data
+
+
+def differentiable_rollout_batched(model, initial_positions_batch, initial_velocities_batch, n_steps,
+                                   visual_range=0.5, delta_t=0.1, device=None, requires_grad=False):
+    """
+    Perform batched differentiable multi-step rollout for multiple sequences in parallel.
+
+    Parameters
+    ----------
+    model : InteractionParticle
+        Model to use for prediction
+    initial_positions_batch : torch.Tensor
+        Initial positions [B, N, 2] where B is batch size
+    initial_velocities_batch : torch.Tensor
+        Initial velocities [B, N, 2]
+    n_steps : int
+        Number of steps to predict (including initial state)
+    visual_range : float
+        Maximum distance for edges
+    delta_t : float
+        Time step for integration
+    device : torch.device, optional
+        Device to use
+    requires_grad : bool
+        If True, enables gradient computation
+
+    Returns
+    -------
+    predicted_positions : torch.Tensor
+        Predicted positions [B, n_steps, N, 2]
+    predicted_velocities : torch.Tensor
+        Predicted velocities [B, n_steps, N, 2]
+    """
+    if device is None:
+        device = next(model.parameters()).device
+
+    B, N, D = initial_positions_batch.shape
+
+    # Initialize
+    pos_batch = initial_positions_batch.clone().to(device)  # [B, N, 2]
+    vel_batch = initial_velocities_batch.clone().to(device)  # [B, N, 2]
+
+    # Store all predictions
+    all_positions = [pos_batch.unsqueeze(1)]  # [B, 1, N, 2]
+    all_velocities = [vel_batch.unsqueeze(1)]  # [B, 1, N, 2]
+
+    def rollout_step():
+        nonlocal pos_batch, vel_batch
+
+        for step in range(n_steps - 1):
+            # Build graphs for all sequences in the batch
+            graphs = []
+            for b in range(B):
+                graph = build_graph_from_current_state(
+                    pos_batch[b], vel_batch[b], visual_range, device
+                )
+                graphs.append(graph)
+
+            # Batch the graphs using PyG Batch
+            batched_graph = Batch.from_data_list(graphs)
+
+            # Single forward pass for all graphs in parallel!
+            pred_acc_batched = model(batched_graph)
+
+            # Reshape back to [B, N, 2]
+            pred_acc_batch = pred_acc_batched.view(B, N, D)
+
+            # Semi-implicit Euler integration for all sequences
+            vel_batch = vel_batch + pred_acc_batch * delta_t
+            pos_batch = pos_batch + vel_batch * delta_t
+
+            # Store predictions
+            all_positions.append(pos_batch.unsqueeze(1))  # [B, 1, N, 2]
+            all_velocities.append(vel_batch.unsqueeze(1))  # [B, 1, N, 2]
+
+    if requires_grad:
+        rollout_step()
+    else:
+        with torch.no_grad():
+            rollout_step()
+
+    # Concatenate: [B, n_steps, N, 2]
+    predicted_positions = torch.cat(all_positions, dim=1)
+    predicted_velocities = torch.cat(all_velocities, dim=1)
+
+    return predicted_positions, predicted_velocities
 
 
 def differentiable_rollout(model, initial_positions, initial_velocities, n_steps,
@@ -935,7 +1031,7 @@ def generate_rollout(model, initial_positions, initial_velocities, n_steps,
     )
 
 
-def evaluate_rollout(model, dataset_path, visual_range=0.5, n_rollout_steps=50, delta_t=1.0, device=None):
+def evaluate_rollout(model, dataset_path, visual_range=0.5, n_rollout_steps=50, delta_t=1.0, device=None, train_split=0.8):
     """
     Evaluate model with multi-step rollout on validation data.
 
@@ -953,6 +1049,8 @@ def evaluate_rollout(model, dataset_path, visual_range=0.5, n_rollout_steps=50, 
         Time step for integration (default: 1.0, natural simulation timestep)
     device : str or torch.device, optional
         Device to use
+    train_split : float
+        Train/val split ratio (default: 0.8) - should match training split
 
     Returns
     -------
@@ -972,11 +1070,11 @@ def evaluate_rollout(model, dataset_path, visual_range=0.5, n_rollout_steps=50, 
     # Load dataset
     dataset = torch.load(dataset_path, weights_only=False)
 
-    # Use validation split (last 20%)
-    n_train = int(len(dataset) * 0.8)
+    # Use validation split (consistent with training)
+    n_train = int(len(dataset) * train_split)
     val_dataset = [dataset[i] for i in range(n_train, len(dataset))]
 
-    logger.info(f"Evaluating rollout on {len(val_dataset)} validation samples")
+    logger.info(f"Using train_split={train_split:.2f}, evaluating rollout on {len(val_dataset)} validation samples")
 
     all_gt_positions = []
     all_pred_positions = []

@@ -544,6 +544,10 @@ def evaluate_forces_on_grid(model, grid_size=60, max_dist=50.0, particle_idx=0, 
     # This is important because the model uses absolute position as a feature
     pos_i = torch.full((n_points, 2), 0.5, dtype=torch.float32, device=model.device)
 
+    # Set particle i's velocity to zero (stationary)
+    # This is important because the model uses self velocity as a feature
+    vel_i = torch.zeros((n_points, 2), dtype=torch.float32, device=model.device)
+
     # Compute distances and velocity directions with REALISTIC MAGNITUDES
     distances = torch.sqrt(torch.sum(delta_pos_t ** 2, dim=1, keepdim=True))
     r_hat = delta_pos_t / (distances + 1e-8)  # Unit vector away from i
@@ -559,13 +563,13 @@ def evaluate_forces_on_grid(model, grid_size=60, max_dist=50.0, particle_idx=0, 
     # So we negate the model output to match the true boid force convention
 
     # 1. Away: j moving away from i
-    away_total = -model.evaluate_interaction(delta_pos_t, vel_away, pos_i=pos_i, embedding_idx=particle_idx).cpu().numpy()
-    away_pos = -model.evaluate_interaction(delta_pos_t, vel_zero, pos_i=pos_i, embedding_idx=particle_idx).cpu().numpy()
+    away_total = -model.evaluate_interaction(delta_pos_t, vel_away, pos_i=pos_i, vel_i=vel_i, embedding_idx=particle_idx).cpu().numpy()
+    away_pos = -model.evaluate_interaction(delta_pos_t, vel_zero, pos_i=pos_i, vel_i=vel_i, embedding_idx=particle_idx).cpu().numpy()
     away_vel = away_total - away_pos
 
     # 2. Towards: j moving towards i
-    towards_total = -model.evaluate_interaction(delta_pos_t, vel_towards, pos_i=pos_i, embedding_idx=particle_idx).cpu().numpy()
-    towards_pos = -model.evaluate_interaction(delta_pos_t, vel_zero, pos_i=pos_i, embedding_idx=particle_idx).cpu().numpy()
+    towards_total = -model.evaluate_interaction(delta_pos_t, vel_towards, pos_i=pos_i, vel_i=vel_i, embedding_idx=particle_idx).cpu().numpy()
+    towards_pos = -model.evaluate_interaction(delta_pos_t, vel_zero, pos_i=pos_i, vel_i=vel_i, embedding_idx=particle_idx).cpu().numpy()
     towards_vel = towards_total - towards_pos
 
     # Reshape to grid
@@ -632,11 +636,14 @@ def evaluate_velocity_forces_on_grid(model, grid_size=60, max_vel=0.05, particle
     # Set absolute position to square center (0.5, 0.5)
     pos_i = torch.full((n_points, 2), 0.5, dtype=torch.float32, device=model.device)
 
+    # Set particle i's velocity to zero (stationary)
+    vel_i = torch.zeros((n_points, 2), dtype=torch.float32, device=model.device)
+
     # Evaluate forces
     # NOTE: Model computes force ON i DUE TO j
     # With delta_pos=0, both particles are at same location (square center)
     # Force should depend only on relative velocity
-    forces = -model.evaluate_interaction(delta_pos_t, delta_vel_t, pos_i=pos_i, embedding_idx=particle_idx).cpu().numpy()
+    forces = -model.evaluate_interaction(delta_pos_t, delta_vel_t, pos_i=pos_i, vel_i=vel_i, embedding_idx=particle_idx).cpu().numpy()
 
     # Reshape to grid
     forces_x = forces[:, 0].reshape(grid_size, grid_size)

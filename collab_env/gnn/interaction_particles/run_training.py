@@ -23,8 +23,6 @@ from loguru import logger
 
 from .train import train_interaction_particle, evaluate_model, evaluate_rollout, compute_velocity_statistics
 from .plotting import (
-    plot_interaction_functions,
-    compare_with_true_boids,
     plot_training_history,
     create_rollout_report,
     evaluate_forces_on_grid,
@@ -220,17 +218,138 @@ def main():
         model.eval()
 
         logger.info("Evaluating model...")
-        metrics = evaluate_model(model, dataset_path, visual_range=args.visual_range, device=device)
+        metrics = evaluate_model(model, dataset_path, visual_range=args.visual_range, device=device, train_split=args.train_split)
         logger.info(f"Evaluation metrics: {metrics}")
 
-        # Plot
+        # Generate plots (same as post-training)
         if not args.no_plot:
-            logger.info("Generating plots...")
-            plot_path = os.path.join(save_dir, 'interaction_functions_eval.png')
-            plot_interaction_functions(model, save_path=plot_path)
+            logger.info("\nGenerating plots...")
 
-            compare_path = os.path.join(save_dir, 'comparison_with_boids_eval.png')
-            compare_with_true_boids(model, save_path=compare_path, config=boids_config)
+            # Generate 2D force decomposition plots (2x3 layout)
+            logger.info("Generating 2D force decomposition plots...")
+
+            # Use the training visual_range parameter for BOTH learned and true forces
+            # This ensures fair comparison (same plot range for both)
+            plot_max_dist = args.visual_range * 1.5  # 50% cushion
+
+            # Evaluate learned forces on grid (use same speed magnitude as true forces)
+            learned_forces = evaluate_forces_on_grid(
+                model,
+                grid_size=50,
+                max_dist=plot_max_dist,
+                particle_idx=0,
+                speed_magnitude=speed_magnitude
+            )
+
+            # Evaluate ground truth boid forces (use SAME range as learned for comparison)
+            true_forces = evaluate_true_boid_forces(
+                boids_config,
+                grid_size=50,
+                max_dist=plot_max_dist,
+                scene_size=args.scene_size
+            )
+
+            # Plot learned forces
+            learned_plot_path = os.path.join(save_dir, 'learned_force_decomposition.png')
+            plot_force_decomposition(
+                learned_forces,
+                save_path=learned_plot_path,
+                title_prefix="Learned",
+                visual_range=args.visual_range
+            )
+
+            # Plot ground truth forces
+            true_plot_path = os.path.join(save_dir, 'true_boid_force_decomposition.png')
+            # Extract min_distance from boids_config (normalized to [0,1] space)
+            min_distance_normalized = None
+            if boids_config and 'min_distance' in boids_config:
+                min_distance_normalized = boids_config['min_distance'] / args.scene_size
+
+            plot_force_decomposition(
+                true_forces,
+                save_path=true_plot_path,
+                title_prefix="True Boid",
+                visual_range=args.visual_range,
+                min_distance=min_distance_normalized
+            )
+
+            # Generate SYMMETRIC force decomposition plots
+            logger.info("Generating symmetric force decomposition plots...")
+
+            # Position-dependent forces (with delta_vel = 0)
+            pos_forces_learned = evaluate_forces_on_grid(
+                model,
+                grid_size=50,
+                max_dist=plot_max_dist,
+                particle_idx=0,
+                speed_magnitude=0.0  # Zero velocity for position-only term
+            )
+
+            # Velocity-dependent forces (with delta_pos = 0)
+            vel_forces_learned = evaluate_velocity_forces_on_grid(
+                model,
+                grid_size=50,
+                max_vel=max_rel_vel,
+                particle_idx=0
+            )
+
+            # Plot symmetric decomposition for learned forces
+            symmetric_learned_path = os.path.join(save_dir, 'learned_symmetric_decomposition.png')
+            plot_symmetric_force_decomposition(
+                pos_forces_learned,
+                vel_forces_learned,
+                save_path=symmetric_learned_path,
+                title_prefix="Learned",
+                visual_range=args.visual_range
+            )
+
+            # Generate TRUE BOID symmetric decomposition for comparison
+            logger.info("Generating true boid symmetric force decomposition...")
+
+            # Position-dependent forces (true boids, delta_vel = 0)
+            # Reuse the position grid from true_forces (already computed with vel=0)
+            pos_forces_true = true_forces  # This has away_pos which is computed with vel=0
+
+            # Velocity-dependent forces (true boids, delta_pos = 0)
+            vel_forces_true = evaluate_true_boid_velocity_forces(
+                boids_config,
+                grid_size=50,
+                max_vel=max_rel_vel,
+                scene_size=args.scene_size
+            )
+
+            # Plot symmetric decomposition for true boid forces
+            symmetric_true_path = os.path.join(save_dir, 'true_boid_symmetric_decomposition.png')
+            plot_symmetric_force_decomposition(
+                pos_forces_true,
+                vel_forces_true,
+                save_path=symmetric_true_path,
+                title_prefix="True Boid",
+                visual_range=args.visual_range
+            )
+
+            logger.info(f"Plots saved to {save_dir}")
+
+        # Rollout evaluation (if requested)
+        if args.evaluate_rollout:
+            logger.info("\nEvaluating model with multi-step rollout...")
+            rollout_results = evaluate_rollout(
+                model,
+                dataset_path,
+                visual_range=args.visual_range,
+                n_rollout_steps=args.n_rollout_steps,
+                device=device,
+                train_split=args.train_split
+            )
+
+            # Create rollout report
+            rollout_dir = os.path.join(save_dir, 'rollout_evaluation')
+            os.makedirs(rollout_dir, exist_ok=True)
+
+            logger.info(f"Creating rollout visualizations...")
+            create_rollout_report(rollout_results, save_dir=rollout_dir)
+
+            logger.info(f"Rollout evaluation saved to {rollout_dir}")
 
         return
 
@@ -374,7 +493,8 @@ def main():
                     dataset_path,
                     visual_range=args.visual_range,
                     n_rollout_steps=args.n_rollout_steps,
-                    device=device
+                    device=device,
+                    train_split=args.train_split
                 )
 
                 # Save rollout comparison (use first trajectory)
@@ -547,7 +667,8 @@ def main():
             dataset_path,
             visual_range=args.visual_range,
             n_rollout_steps=args.n_rollout_steps,
-            device=device
+            device=device,
+            train_split=args.train_split
         )
 
         # Create rollout report
