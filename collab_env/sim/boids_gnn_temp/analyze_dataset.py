@@ -33,8 +33,12 @@ import seaborn as sns
 from pathlib import Path
 from loguru import logger
 
-# Add parent directory to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from collab_env.sim.boids_gnn_temp.plotting import (
+    evaluate_true_boid_forces,
+    evaluate_true_boid_velocity_forces,
+    plot_force_decomposition,
+    plot_symmetric_force_decomposition
+)
 
 
 def compute_pairwise_features(positions, velocities):
@@ -337,22 +341,6 @@ def analyze_dataset(dataset_path, save_dir=None, device='cpu', scene_size=480.0)
         logger.info(f"Found config at {config_path}")
 
         try:
-            # Import plotting functions
-            try:
-                from .plotting import (
-                    evaluate_true_boid_forces,
-                    evaluate_true_boid_velocity_forces,
-                    plot_force_decomposition,
-                    plot_symmetric_force_decomposition
-                )
-            except ImportError:
-                # If relative import fails, try absolute import
-                from collab_env.gnn.interaction_particles.plotting import (
-                    evaluate_true_boid_forces,
-                    evaluate_true_boid_velocity_forces,
-                    plot_force_decomposition,
-                    plot_symmetric_force_decomposition
-                )
 
             boids_config = torch.load(config_path, weights_only=False)
             logger.info(f"Using config: {boids_config}")
