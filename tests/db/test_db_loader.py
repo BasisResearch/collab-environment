@@ -115,8 +115,8 @@ class TestDataLoader:
         result = db.fetch_one("SELECT COUNT(*) FROM observations")
         assert result[0] > 0, "Should have loaded some observations"
 
-        # Expected: 5 agents * 10 frames = 50 observations
-        assert result[0] == 50, f"Expected 50 observations, found {result[0]}"
+        # Expected: (5 agents + 2 env entities) * 10 frames = 70 observations
+        assert result[0] == 70, f"Expected 70 observations (5 agents + 2 env), found {result[0]}"
 
         # Cleanup
         db.execute("DELETE FROM extended_properties WHERE observation_id IN (SELECT observation_id FROM observations WHERE episode_id LIKE :pattern)", {'pattern': f'%test%'})
@@ -133,11 +133,11 @@ class TestDataLoader:
         loader = Boids3DLoader(db)
         loader.load_simulation(sample_boids_data)
 
-        # Check specific observation values
+        # Check specific observation values (filter by agent_type_id to get agent, not env entity)
         result = db.fetch_one("""
             SELECT x, y, z, v_x, v_y, v_z
             FROM observations
-            WHERE agent_id = 0 AND time_index = 0
+            WHERE agent_id = 0 AND time_index = 0 AND agent_type_id = 'agent'
             ORDER BY episode_id DESC
             LIMIT 1
         """)
@@ -204,7 +204,7 @@ class TestDataLoaderPerformance:
         loader.load_simulation(sample_boids_data)
         elapsed = time.time() - start
 
-        # Should load 50 observations in under 2 seconds
+        # Should load 70 observations (5 agents + 2 env * 10 frames) in under 2 seconds
         assert elapsed < 2.0, f"Loading took {elapsed:.2f}s, expected < 2s"
 
         # Cleanup

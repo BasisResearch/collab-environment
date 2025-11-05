@@ -120,12 +120,14 @@ def sample_boids_data(tmp_path: Path) -> Path:
     with open(config_path, 'w') as f:
         yaml.dump(config, f)
 
-    # Create sample episode data
+    # Create sample episode data with both agents and environment entities
     num_agents = 5
+    num_env_entities = 2  # Environment entities (walls, obstacles)
     num_frames = 10
 
     data = []
     for t in range(num_frames):
+        # Agent entities
         for agent_id in range(num_agents):
             data.append({
                 'time': t,
@@ -138,6 +140,21 @@ def sample_boids_data(tmp_path: Path) -> Path:
                 'v_y': 0.5,
                 'v_z': 0.0,
                 'distance_to_target_center': float(100 - t * agent_id)
+            })
+
+        # Environment entities (can have same IDs as agents - now supported!)
+        for env_id in range(num_env_entities):
+            data.append({
+                'time': t,
+                'id': env_id,  # Same IDs as agents - no conflict with new schema
+                'type': 'env',
+                'x': float(500 + env_id * 100),
+                'y': float(500 + env_id * 100),
+                'z': 0.0,
+                'v_x': 0.0,  # Environment entities don't move
+                'v_y': 0.0,
+                'v_z': 0.0,
+                'distance_to_target_center': None
             })
 
     df = pd.DataFrame(data)

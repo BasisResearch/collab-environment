@@ -10,6 +10,7 @@
 
 INSERT INTO agent_types (type_id, type_name, description) VALUES
     ('agent', 'agent', 'Generic simulated agent (boid)'),
+    ('env', 'environment', 'Environment entity (walls, obstacles, boundaries)'),
     ('target', 'target', 'Target object in simulation'),
     ('bird', 'bird', 'Bird detected in video tracking'),
     ('rat', 'rat', 'Rat detected in video tracking'),

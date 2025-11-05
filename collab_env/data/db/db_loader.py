@@ -286,12 +286,9 @@ class Boids3DLoader(BaseDataLoader):
         # Read parquet file
         df = pd.read_parquet(file_path)
 
-        # Filter out 'env' type (environment entities that may have duplicate agent_ids)
-        # TODO: Consider handling env entities separately or adjusting schema to include type in PK
+        # Log entity types (includes both agents and environment entities)
         if 'type' in df.columns:
-            logger.info(f"Original row count: {len(df)}, Types: {df['type'].value_counts().to_dict()}")
-            df = df[df['type'] != 'env'].copy()
-            logger.info(f"Filtered row count: {len(df)} (removed env entities)")
+            logger.info(f"Row count: {len(df)}, Types: {df['type'].value_counts().to_dict()}")
 
         # Extract metadata (convert numpy types to native Python types)
         num_frames = int(df['time'].max() + 1)

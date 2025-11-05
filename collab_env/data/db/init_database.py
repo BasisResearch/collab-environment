@@ -230,13 +230,61 @@ def print_summary(backend: DatabaseBackend):
     print_success("Database initialization complete!")
 
 
+def recreate_database(config: DBConfig):
+    """Drop and recreate the database"""
+    import os
+
+    if config.backend == 'postgres':
+        # For PostgreSQL, connect to 'postgres' database to drop/create target database
+        temp_dbname = config.postgres.dbname
+
+        # Connect to 'postgres' database
+        config.postgres.dbname = 'postgres'
+        temp_engine = create_engine(config.sqlalchemy_url(), isolation_level='AUTOCOMMIT')
+
+        try:
+            with temp_engine.connect() as conn:
+                # Terminate existing connections to target database
+                print_info(f"Terminating connections to {temp_dbname}...")
+                conn.execute(text(f"""
+                    SELECT pg_terminate_backend(pg_stat_activity.pid)
+                    FROM pg_stat_activity
+                    WHERE pg_stat_activity.datname = '{temp_dbname}'
+                      AND pid <> pg_backend_pid()
+                """))
+
+                # Drop database if it exists
+                print_info(f"Dropping database {temp_dbname}...")
+                conn.execute(text(f"DROP DATABASE IF EXISTS {temp_dbname}"))
+
+                # Create database
+                print_success(f"Creating database {temp_dbname}...")
+                conn.execute(text(f"CREATE DATABASE {temp_dbname}"))
+
+        finally:
+            temp_engine.dispose()
+            # Restore original database name
+            config.postgres.dbname = temp_dbname
+
+    else:  # DuckDB
+        # For DuckDB, just delete the file
+        if os.path.exists(config.duckdb.dbpath):
+            print_info(f"Removing existing DuckDB file: {config.duckdb.dbpath}")
+            os.remove(config.duckdb.dbpath)
+            # Also remove .wal file if it exists
+            wal_file = config.duckdb.dbpath + '.wal'
+            if os.path.exists(wal_file):
+                os.remove(wal_file)
+        print_success(f"Creating new DuckDB file: {config.duckdb.dbpath}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Initialize tracking_analytics database (PostgreSQL or DuckDB)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-    # PostgreSQL (default)
+    # PostgreSQL (recreates database)
     python -m collab_env.data.init_database --backend postgres
 
     # DuckDB
@@ -261,6 +309,8 @@ Examples:
                         help='Database file path (DuckDB, default: from DUCKDB_PATH env or tracking.duckdb)')
     parser.add_argument('--schema-dir', type=Path, default=None,
                         help='Schema directory (default: <project_root>/schema)')
+    parser.add_argument('--no-drop', action='store_true',
+                        help='Do not drop existing database (only create tables, fails if tables exist)')
 
     args = parser.parse_args()
 
@@ -304,6 +354,13 @@ Examples:
     # Get schema files
     schema_files = get_schema_files(schema_dir)
     print_info(f"Found {len(schema_files)} schema files")
+
+    # Drop and recreate database (unless --no-drop specified)
+    if not args.no_drop:
+        print_header("Recreating Database")
+        print_info("⚠️  This will drop the existing database and all data!")
+        recreate_database(config)
+        print()
 
     # Create unified backend with SQLAlchemy
     backend = DatabaseBackend(config)

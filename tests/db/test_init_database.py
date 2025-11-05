@@ -48,7 +48,7 @@ class TestDatabaseInitialization:
 
         db.close()
 
-        assert count == 5, f"Expected 5 agent types, found {count}"
+        assert count == 6, f"Expected 6 agent types (agent, env, target, bird, rat, gerbil), found {count}"
 
     def test_property_definitions_seeded(self, backend_config: DBConfig):
         """Test that property definitions seed data is loaded."""
@@ -227,13 +227,17 @@ class TestDatabaseBackendExecuteQuery:
         backend = DatabaseBackend(backend_config)
         backend.connect()
 
-        # Query all agent types (should return 5 rows)
+        # Query all agent types (should return 6 rows)
         query = "SELECT type_id, type_name FROM agent_types ORDER BY type_id"
         result = backend.execute_query(query)
 
         assert result is not None, "Should return results"
-        assert len(result) == 5, f"Expected 5 agent types, got {len(result)}"
-        assert result[0][0] == 'agent', "First type should be 'agent'"
+        assert len(result) == 6, f"Expected 6 agent types, got {len(result)}"
+        # Check specific types are present (alphabetically: agent, bird, env, gerbil, rat, target)
+        type_ids = [row[0] for row in result]
+        assert 'agent' in type_ids, "Should have 'agent' type"
+        assert 'env' in type_ids, "Should have 'env' type"
+        assert type_ids[0] == 'agent', "First type (alphabetically) should be 'agent'"
 
         backend.close()
 

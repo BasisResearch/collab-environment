@@ -83,13 +83,15 @@ CREATE TABLE observations (
     confidence DOUBLE PRECISION,      -- Detection confidence [0-1]
     detection_class VARCHAR,          -- Detected object class
 
-    -- Primary key: ensures unique (episode, time, agent) tuple
-    PRIMARY KEY (episode_id, time_index, agent_id)
+    -- Primary key: ensures unique (episode, time, agent, type) tuple
+    -- Includes agent_type_id to allow same agent_id for different entity types (agent vs env)
+    PRIMARY KEY (episode_id, time_index, agent_id, agent_type_id)
 );
 
 -- Essential indexes
 CREATE INDEX idx_obs_episode ON observations(episode_id);
 CREATE INDEX idx_obs_episode_time ON observations(episode_id, time_index);
+CREATE INDEX idx_obs_agent_type ON observations(agent_type_id);
 
 COMMENT ON TABLE observations IS 'Core time-series data: positions and velocities. Extended properties in separate table.';
 COMMENT ON COLUMN observations.observation_id IS 'Surrogate key for foreign key references (auto-increment)';
