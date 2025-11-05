@@ -5,6 +5,7 @@ Tests for database initialization (schema creation).
 import pytest
 from collab_env.data.db.config import DBConfig
 from collab_env.data.db.db_loader import DatabaseConnection
+from collab_env.data.db.init_database import DatabaseBackend
 
 
 class TestDatabaseInitialization:
@@ -192,3 +193,89 @@ class TestPostgreSQLSpecific:
         # Cleanup
         db.execute("DELETE FROM sessions WHERE session_id = :sid", {'sid': 'test-json'})
         db.close()
+
+
+class TestDatabaseBackendExecuteQuery:
+    """Test DatabaseBackend.execute_query method specifically."""
+
+    def test_execute_query_returns_select_results(self, backend_config: DBConfig):
+        """Test that execute_query returns results from SELECT queries."""
+        backend = DatabaseBackend(backend_config)
+        backend.connect()
+
+        # Query table count (this was the failing scenario)
+        if backend_config.backend == 'postgres':
+            query = """
+                SELECT count(*)
+                FROM information_schema.tables
+                WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
+            """
+        else:  # duckdb
+            query = "SELECT count(*) FROM information_schema.tables WHERE table_schema = 'main'"
+
+        result = backend.execute_query(query)
+
+        # This would fail with "list index out of range" if commit happens before fetchall
+        assert result is not None, "execute_query should return results for SELECT queries"
+        assert len(result) > 0, "Should have at least one row"
+        assert result[0][0] == 8, f"Expected 8 tables, got {result[0][0]}"
+
+        backend.close()
+
+    def test_execute_query_returns_multiple_rows(self, backend_config: DBConfig):
+        """Test that execute_query returns all rows from multi-row SELECT."""
+        backend = DatabaseBackend(backend_config)
+        backend.connect()
+
+        # Query all agent types (should return 5 rows)
+        query = "SELECT type_id, type_name FROM agent_types ORDER BY type_id"
+        result = backend.execute_query(query)
+
+        assert result is not None, "Should return results"
+        assert len(result) == 5, f"Expected 5 agent types, got {len(result)}"
+        assert result[0][0] == 'agent', "First type should be 'agent'"
+
+        backend.close()
+
+    def test_execute_query_handles_ddl_statements(self, backend_config: DBConfig):
+        """Test that execute_query handles DDL statements that don't return rows."""
+        backend = DatabaseBackend(backend_config)
+        backend.connect()
+
+        # Create a temporary table
+        if backend_config.backend == 'postgres':
+            result = backend.execute_query("""
+                CREATE TEMPORARY TABLE test_temp (id INTEGER, name VARCHAR)
+            """)
+        else:  # duckdb
+            result = backend.execute_query("""
+                CREATE TEMPORARY TABLE test_temp (id INTEGER, name VARCHAR)
+            """)
+
+        # DDL statements should return None (not an empty list)
+        assert result is None or result == [], "DDL statements should not return rows"
+
+        backend.close()
+
+    def test_execute_query_with_aggregate_functions(self, backend_config: DBConfig):
+        """Test execute_query with aggregate functions and GROUP BY."""
+        backend = DatabaseBackend(backend_config)
+        backend.connect()
+
+        # Query count of property definitions by data type
+        query = """
+            SELECT data_type, COUNT(*) as count
+            FROM property_definitions
+            GROUP BY data_type
+            ORDER BY data_type
+        """
+        result = backend.execute_query(query)
+
+        assert result is not None, "Should return aggregate results"
+        assert len(result) > 0, "Should have at least one row"
+        # Verify structure: each row should have (data_type, count)
+        for row in result:
+            assert len(row) == 2, "Each row should have 2 columns"
+            assert isinstance(row[1], int), "Count should be an integer"
+
+        backend.close()

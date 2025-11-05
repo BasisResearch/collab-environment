@@ -114,11 +114,14 @@ class DatabaseBackend:
         """Execute single query and return results (if any)"""
         with self.engine.connect() as conn:
             result = conn.execute(text(query))
-            conn.commit()
-            # Only try to fetch results if the query returns rows
+            # Fetch results before commit (commit closes the result object)
             if result.returns_rows:
-                return result.fetchall()
-            return None
+                rows = result.fetchall()
+                conn.commit()
+                return rows
+            else:
+                conn.commit()
+                return None
 
     def close(self):
         """Close database connection"""

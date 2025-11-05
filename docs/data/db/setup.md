@@ -29,11 +29,17 @@ cp .env.example .env
 
 Environment variables will be used as defaults. Command-line arguments override them.
 
+Optional - install postgres server
+```bash
+docker run -v .data/pgdata:/pgdata -e PGDATA=/pgdata \
+    -d --name timescaledb -p 127.0.0.1:5432:5432 -e POSTGRES_PASSWORD=password timescale/timescaledb:latest-pg17
+```
+
 ### 3. Initialize Database
 
 **Option A: DuckDB (recommended for local development)**
 ```bash
-python -m collab_env.data.db.init_database --backend duckdb --dbpath tracking.duckdb
+python -m collab_env.data.db.init_database --backend duckdb --dbpath ./data/tracking.duckdb
 ```
 
 **Option B: PostgreSQL (for production/Grafana)**
@@ -73,9 +79,9 @@ python -m collab_env.data.db.db_loader \
 # With specific backend
 python -m collab_env.data.db.db_loader \
     --source boids3d \
-    --path simulated_data/hackathon/my-simulation \
+    --path simulated_data/hackathon/hackathon-boid-small-200-sim_run-started-20250926-220926 \
     --backend duckdb \
-    --dbpath tracking.duckdb
+    --dbpath ./data/tracking.duckdb
 ```
 
 The loader will:
