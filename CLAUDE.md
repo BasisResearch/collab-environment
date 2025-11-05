@@ -9,7 +9,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Development Commands
 
 ### Setup
+
+**IMPORTANT**: Always use the `.venv-310` virtual environment for this project.
+
 ```bash
+# Activate the virtual environment (REQUIRED)
+source .venv-310/bin/activate
+
 # Install development dependencies
 pip install -e ".[dev]"
 
@@ -17,6 +23,8 @@ pip install -e ".[dev]"
 conda env create -n collab-env -f env.yml
 conda activate collab-env
 ```
+
+**Note for Claude**: When running Python commands (python, pytest, etc.), always use the `.venv-310` environment by prefixing commands with `source .venv-310/bin/activate &&` or by using the full path to the virtualenv's Python: `.venv-310/bin/python`
 
 ### Testing and Quality Assurance
 ```bash

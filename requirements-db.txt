@@ -1,0 +1,21 @@
+# Database requirements for tracking analytics
+# Install: pip install -r requirements-db.txt
+
+# Unified database interface
+sqlalchemy>=2.0.0
+
+# PostgreSQL adapter for SQLAlchemy
+psycopg2-binary>=2.9.0
+
+# DuckDB and SQLAlchemy dialect
+duckdb>=1.0.0
+duckdb-engine>=0.12.0
+
+# Data handling
+pandas>=2.0.0
+pyarrow>=14.0.0
+pyyaml>=6.0.0
+
+# Optional: Advanced data loading tools
+dlt[duckdb,postgres]>=1.0.0
+ibis-framework[duckdb,postgres]>=9.0.0
