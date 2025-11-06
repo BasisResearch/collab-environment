@@ -4,7 +4,7 @@
 
 Implementation of unified database layer for tracking analytics supporting PostgreSQL (production/Grafana) and DuckDB (local analytics).
 
-**Status**: Phase 1-3 Complete ✅ | Phase 4-5 In Progress
+**Status**: Phase 1-4 Complete ✅ (3D Boids) | Phase 5-7 TODO ⏳
 
 ---
 
@@ -27,10 +27,11 @@ Implementation of unified database layer for tracking analytics supporting Postg
 
 ## Phase 2: Schema Design ✅ COMPLETE
 
-**Status**: ✅ Complete
+**Status**: ✅ Complete (Updated 2025-11-06)
 
 ### Deliverables
-- [x] [schema/01_core_tables.sql](../../../schema/01_core_tables.sql) - Core dimension and fact tables
+
+- [x] [schema/01_core_tables.sql](../../../schema/01_core_tables.sql) - Core dimension and fact tables (includes categories)
 - [x] [schema/02_extended_properties.sql](../../../schema/02_extended_properties.sql) - EAV pattern for flexible properties
 - [x] [schema/03_seed_data.sql](../../../schema/03_seed_data.sql) - Default agent types and 18 property definitions
 - [x] [schema/04_views_examples.sql](../../../schema/04_views_examples.sql) - Example query templates
@@ -38,7 +39,7 @@ Implementation of unified database layer for tracking analytics supporting Postg
 
 ### Design Decisions
 - **EAV Pattern**: Flexible extended properties without hardcoded columns
-- **Property Categories**: Organize properties by data source (boids_3d, boids_2d, tracking_csv, computed)
+- **Unified Categories**: Single `categories` table referenced by both sessions and extended properties
 - **Composite Primary Keys**: Natural keys `(episode_id, time_index, agent_id)` ensure uniqueness
 - **Surrogate Keys**: observation_id for FK references
 - **Bare-Bones Indexes**: Only essential indexes for query performance
@@ -47,14 +48,21 @@ Implementation of unified database layer for tracking analytics supporting Postg
 ### Schema Tables
 | Table | Purpose | Status |
 |-------|---------|--------|
-| sessions | Top-level grouping | ✅ |
+| sessions | Top-level grouping with category_id FK | ✅ |
 | episodes | Individual simulation runs | ✅ |
-| agent_types | Type definitions (agent, target, bird, etc.) | ✅ |
+| agent_types | Type definitions (agent, env, target, bird, etc.) | ✅ |
 | observations | Core time-series data (positions, velocities) | ✅ |
-| property_categories | Data source categories | ✅ |
+| categories | Unified category table (boids_3d, boids_2d, tracking_csv, computed) | ✅ |
 | property_definitions | Extended property definitions | ✅ |
 | property_category_mapping | M2M property-to-category | ✅ |
 | extended_properties | EAV storage for flexible properties | ✅ |
+
+### Schema Refactoring (2025-11-06)
+
+- ✅ **Unified Categories**: Merged `property_categories` → `categories`
+- ✅ **Sessions-Categories Link**: Added `category_id` FK to sessions (replaces data_source/category columns)
+- ✅ **Inline FK Constraints**: Categories created before sessions for proper FK definition
+- ✅ **DuckDB Compatibility**: Removed ALTER TABLE for FK, now defined inline
 
 ---
 
@@ -100,30 +108,43 @@ Implementation of unified database layer for tracking analytics supporting Postg
 
 ---
 
-## Phase 4: Data Loading ⚠️ PARTIAL
+## Phase 4: Data Loading ✅ COMPLETE (3D Boids) / ⏳ TODO (2D Boids, CSV)
 
-**Status**: ⚠️ Partial (3D Boids Complete, 2D/CSV TODO)
+**Status**: ✅ 3D Boids Complete | ⏳ 2D/CSV TODO
 
 ### Deliverables
+
 - [x] [collab_env/data/db/db_loader.py](../../../collab_env/data/db/db_loader.py) - Data loading framework
 
 ### Implementation Status
 
-#### ✅ 3D Boids Loader (Boids3DLoader)
-- [x] Load session metadata from config.yaml
+#### ✅ 3D Boids Loader (Boids3DLoader) - COMPLETE
+
+- [x] Load session metadata from config.yaml with category assignment
 - [x] Load episode metadata from parquet files
 - [x] Load observations (positions, velocities) with batch inserts
 - [x] Load extended properties (distances to target/mesh, closest points)
-- [x] Filter out 'env' entities to avoid duplicate primary keys
+- [x] Handle 'env' entities (stored with type='env')
 - [x] Convert numpy types to native Python types
 - [x] Handle DuckDB sequence for observation_id
+- [x] Parse array columns (target_mesh_closest_point, scene_mesh_closest_point)
+- [x] Filter None values from extended properties (env entities don't have target data)
+- [x] Vectorized numpy operations for coordinate arrays
 
-**Test Results**:
-- ✅ Successfully loaded 1 session
-- ✅ Loading 10 episodes (in progress)
-- ✅ 90,030 observations per episode
-- ✅ Batch insert performance: ~40 seconds per episode
-- ✅ Extended properties loading: distances, mesh closest points
+**Test Results (3 episodes, 2025-11-06)**:
+
+- ✅ Sessions: 1 session with `category_id='boids_3d'`
+- ✅ Episodes: 3 episodes, each with 3,001 frames, 30 agents
+- ✅ Observations: 279,093 total (93,031 per episode including 90,030 agents + 3,001 env entities)
+- ✅ Extended Properties: **2,430,810 total values** (810,270 per episode)
+  - 9 properties per agent observation (3 distances + 6 coordinates)
+  - Distance to Target Center: 270,090 values
+  - Distance to Target Mesh: 270,090 values
+  - Distance to Scene Mesh: 270,090 values
+  - Target Mesh Closest Point (X,Y,Z): 270,090 values each
+  - Scene Mesh Closest Point (X,Y,Z): 270,090 values each
+- ✅ Loading performance: ~1 minute per episode (13s observations + 47s extended properties)
+- ✅ Category FK constraints: Enforced and verified
 
 #### ⏳ 2D Boids Loader (TODO)
 - [ ] Load PyTorch .pt files
@@ -141,8 +162,9 @@ Implementation of unified database layer for tracking analytics supporting Postg
 
 - ~~⚠️ **Architecture**: Separate PostgreSQL/DuckDB logic (should use unified API like SQLAlchemy)~~ ✅ **FIXED**
 - ~~⚠️ **Performance**: Slow batch inserts (~40s per 90K rows)~~ ✅ **IMPROVED** (now ~18s per 90K rows)
-- ⚠️ **Environment Entities**: Currently filtered out, may need separate handling
-- ⚠️ **Primary Key Design**: May need to include `type` in PK to support env entities
+- ~~⚠️ **Environment Entities**: Currently filtered out, may need separate handling~~ ✅ **FIXED** (now stored with type='env')
+- ~~⚠️ **Primary Key Design**: May need to include `type` in PK to support env entities~~ ✅ **RESOLVED** (not needed - env entities have different time indices)
+- ~~⚠️ **Extended Properties**: Not loading from parquet~~ ✅ **FIXED** (all 9 properties loading correctly)
 
 ---
 
@@ -219,15 +241,18 @@ Implementation of unified database layer for tracking analytics supporting Postg
    - Method: pandas to_sql with SQLAlchemy
    - Future: Could potentially use COPY for 10-100x improvement, but current speed is acceptable
 
-3. **Environment Entity Handling**: Design solution for env entities
-   - Current: Filtered out completely
-   - Options: Separate table, compound PK with type, ignore if not needed
-   - Benefit: Complete data representation
+3. ~~**Environment Entity Handling**: Design solution for env entities~~ ✅ **COMPLETE**
+   - ~~Current: Filtered out completely~~
+   - ✅ **Implemented**: Stored with type='env', naturally avoid PK conflicts via different time indices
+   - ✅ **Benefit**: Complete data representation achieved
 
 ### Medium Priority 🟡
-4. **Extended Properties Loading**: Currently not loading any extended properties
-   - Fix: Implement property extraction from parquet columns
-   - Test: Verify distance_to_target_center, mesh distances
+
+4. ~~**Extended Properties Loading**: Currently not loading any extended properties~~ ✅ **COMPLETE**
+   - ✅ **Fixed**: Implemented property extraction from parquet columns
+   - ✅ **Tested**: All 9 properties loading (3 distances + 6 coordinates from 2 mesh closest points)
+   - ✅ **Performance**: Vectorized numpy operations for array columns
+   - ✅ **Data Quality**: None values filtered for env entities
 
 5. **Connection Pooling**: Add connection pool for concurrent queries
    - Use: SQLAlchemy connection pooling
@@ -290,11 +315,12 @@ collab-environment/
 - [ ] PostgreSQL: Verify table count
 
 ### Data Loading
-- [x] 3D Boids: Load session metadata
+
+- [x] 3D Boids: Load session metadata with category assignment
 - [x] 3D Boids: Load episode metadata
-- [x] 3D Boids: Load observations
-- [ ] 3D Boids: Load extended properties (partially working, needs testing)
-- [ ] 3D Boids: Handle all parquet column types
+- [x] 3D Boids: Load observations (including env entities)
+- [x] 3D Boids: Load extended properties (all 9 properties: 3 distances + 6 coordinates)
+- [x] 3D Boids: Handle all parquet column types (scalars, arrays, None filtering)
 - [ ] 2D Boids: Complete loader implementation
 - [ ] Tracking CSV: Complete loader implementation
 
@@ -337,19 +363,32 @@ collab-environment/
    - ✅ Tested with DuckDB (PostgreSQL pending)
    - ✅ 2x performance improvement via pandas to_sql
 
-2. **🟡 MEDIUM**: Test and fix extended properties loading
-   - Verify distance properties are extracted
-   - Test mesh closest point properties
+2. ~~**🟡 MEDIUM**: Test and fix extended properties loading~~ ✅ **COMPLETE**
+   - ✅ All distance properties extracted (target center, target mesh, scene mesh)
+   - ✅ All mesh closest point coordinates loaded (6 coordinates: 2 meshes × XYZ)
+   - ✅ Vectorized numpy operations for array columns
+   - ✅ None value filtering for env entities
+   - ✅ Tested with 3 episodes: 2.4M extended property values loaded
 
-3. **🟢 LOW**: Implement 2D boids loader
+3. ~~**🟡 MEDIUM**: Handle environment entities~~ ✅ **COMPLETE**
+   - ✅ Env entities now stored with type='env'
+   - ✅ No PK conflicts (different time indices)
+   - ✅ Complete data representation achieved
+
+4. ~~**🟡 MEDIUM**: Unify category schema~~ ✅ **COMPLETE**
+   - ✅ Single categories table replaces property_categories
+   - ✅ Sessions reference categories via category_id FK
+   - ✅ FK constraints enforced and verified
+
+5. **🟢 LOW**: Implement 2D boids loader
    - Design approach for PyTorch .pt files
    - Handle graph structure
 
-4. **🟢 LOW**: Implement tracking CSV loader
+6. **🟢 LOW**: Implement tracking CSV loader
    - Design approach for CSV files
    - Handle bounding boxes
 
-5. **🟢 LOW**: Create query backend interface
+7. **🟢 LOW**: Create query backend interface
    - Basic session/episode queries
    - Observation filtering
    - Property pivoting
@@ -384,7 +423,13 @@ collab-environment/
   - **Options**: Pre-compute (speed, acceleration), compute on query
   - **Decision**: TBD based on query patterns
 
+- **Q**: Will the extended_properties table scale to tens of millions of rows?
+  - **A**: Yes. PostgreSQL handles 100M+ row tables routinely with proper indexing.
+  - **Current scale**: 3 episodes = 2.4M rows, 10M observations would = ~90M rows (~7-10 GB with indexes)
+  - **Optimizations available**: Partitioning by episode_id, materialized views, composite indexes
+  - **Snowflake migration**: Straightforward with minimal changes (JSONB→VARIANT, use COPY INTO for bulk loading)
+
 ---
 
-**Last Updated**: 2025-11-05
-**Status**: Phase 1-3 Complete, Phase 4 Partial, Phase 5-7 TODO
+**Last Updated**: 2025-11-06
+**Status**: Phase 1-4 Complete (3D Boids), Phase 5-7 TODO

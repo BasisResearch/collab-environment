@@ -101,7 +101,7 @@ python -m collab_env.data.db.init_database
 
 ```bash
 # DuckDB
-duckdb tracking.duckdb -c "SHOW TABLES;"
+duckdb ./data/tracking.duckdb -c "SHOW TABLES;"
 
 # PostgreSQL
 psql tracking_analytics -c "\dt"
@@ -413,7 +413,8 @@ docs/data/db/
 - [ ] Tracking CSV loader
 - [ ] Query backend interface
 - [ ] Extended properties loading (partially implemented)
-- [ ] Dashboard integration
+- [ ] Dashboard integration as an additional data source
+- [ ] Spatial queries and statistics, in a separate dashboard, see `./docs/dashboard/spatial_analysis.md`
 - [ ] Grafana dashboards
 
 ## Troubleshooting
