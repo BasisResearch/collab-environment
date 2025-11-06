@@ -118,6 +118,7 @@ Web-based data browser for GCS buckets and local simulation data via rclone inte
 - **Smart File Filtering**: Only displays files that can be viewed/edited by the dashboard
 - **Multi-Format Viewer**: Text (YAML/XML/JSON/MD), tables (CSV/Parquet), video (MP4/AVI/MOV/MKV), 3D meshes (PLY)
 - **Video Bbox Overlay Viewer**: Interactive video player with synchronized bounding box/tracking overlays from CSV data
+- **Dual-Video Viewer**: Side-by-side synchronized playback of two videos with independent tracking overlays (perfect for RGB + thermal pairs)
 - **3D Mesh Viewer**: Interactive PLY file viewer with VTK-based rendering, automatic camera positioning from pickle parameters
 - **3D Track Viewer**: View 3D tracking data overlaid on meshes with playback controls and camera frustum display
 - **Simulation Viewer**: Specialized mode for viewing boid simulation outputs with episode playback and multi-mesh support
@@ -191,6 +192,31 @@ Advanced video analysis feature for viewing tracking data overlays:
 - **Resource Efficient**: One server process regardless of number of videos viewed
 - **Clean Lifecycle**: Start/stop server management integrated with dashboard
 
+**Dual-Video Synchronized Viewer:**
+
+Compare and analyze two videos side-by-side with synchronized playback (e.g., RGB + thermal camera pairs):
+
+- **Simple Two-Dropdown Interface**: Select any two videos from dropdowns - no pair management needed
+- **Master-Slave Synchronization**: Video 1 drives Video 2 playback with 0.1s tolerance for smooth sync
+- **Independent Overlays**: Each video has its own tracking overlay controls (IDs, trails, opacity)
+- **Consistent Track Colors**: Same track ID gets same color across both videos for easy correlation
+- **Unified Playback Controls**: Single play/pause, timeline, speed, and frame controls for both videos
+- **Assumes Same FPS**: Designed for video pairs with matching frame rates and durations
+- **URL**: `http://localhost:5050/dual-video` (when persistent server is running)
+
+**Dual-Video Usage:**
+
+```bash
+# Start persistent server (if not already running)
+python -m collab_env.dashboard.persistent_video_server --port 5050
+
+# Add videos to server (from dashboard or via API)
+# Then navigate to http://localhost:5050/dual-video
+# Select Video 1 from dropdown
+# Select Video 2 from dropdown
+# Videos load and play automatically in sync
+```
+
 **Simulation Viewer Mode:**
 
 The dashboard includes a specialized simulation viewer for boid simulation outputs:
@@ -224,7 +250,7 @@ Simulation folders should contain:
 - `SessionManager`: Session discovery and management across buckets
 - `FileContentManager`: File viewing/editing with pluggable viewer registry
 - `DataDashboard`: Main Panel/HoloViz reactive UI application
-- `PersistentVideoServer`: Flask server for video/mesh viewing and simulation mode support
+- `PersistentVideoServer`: Flask server for single video, dual-video, 3D mesh viewing, and simulation mode support
 - `SimulationDataLoader`: Parquet episode loader and config parser for simulation mode
 
 ### Notebook Testing

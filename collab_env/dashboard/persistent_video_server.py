@@ -91,6 +91,12 @@ def sync_viewer():
     return render_template("sync_viewer.html", simulation_mode=simulation_mode)
 
 
+@app.route("/dual-video")
+def dual_video_viewer():
+    """Dual-video synchronized viewer."""
+    return render_template("dual_video_viewer.html", simulation_mode=simulation_mode)
+
+
 @app.route("/simulation")
 def simulation_viewer():
     """Simulation viewer with episode playback."""
