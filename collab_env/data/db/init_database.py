@@ -90,6 +90,8 @@ class DatabaseBackend:
                 sql_content = sql_content.replace(' ON DELETE CASCADE', '')
                 # Remove ON CONFLICT clauses
                 sql_content = re.sub(r'\s+ON CONFLICT[^;]+DO NOTHING', '', sql_content)
+                # DuckDB doesn't support ALTER TABLE ADD CONSTRAINT for FK
+                sql_content = re.sub(r'ALTER TABLE[^;]+ADD CONSTRAINT[^;]+FOREIGN KEY[^;]+;', '', sql_content)
 
                 # Create sequence if needed
                 if 'observations' in sql_content.lower() and 'obs_id_seq' in sql_content:
@@ -185,12 +187,12 @@ def verify_setup(backend: DatabaseBackend):
         print_error(f"Expected at least 10 property definitions, found {prop_count}")
         return False
 
-    result = backend.execute_query("SELECT count(*) FROM property_categories;")
+    result = backend.execute_query("SELECT count(*) FROM categories;")
     cat_count = result[0][0]
     if cat_count == 4:
-        print_success(f"Property categories loaded ({cat_count} rows)")
+        print_success(f"Categories loaded ({cat_count} rows)")
     else:
-        print_error(f"Expected 4 property categories, found {cat_count}")
+        print_error(f"Expected 4 categories, found {cat_count}")
         return False
 
     return True

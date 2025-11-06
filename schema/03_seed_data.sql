@@ -18,13 +18,13 @@ INSERT INTO agent_types (type_id, type_name, description) VALUES
 ON CONFLICT (type_id) DO NOTHING;
 
 -- =============================================================================
--- PROPERTY CATEGORIES - Data source types
+-- CATEGORIES - Session and property categories
 -- =============================================================================
 
-INSERT INTO property_categories (category_id, category_name, description) VALUES
-    ('boids_3d', '3D Boids Simulations', 'Properties specific to 3D boid simulations (distances to targets/meshes)'),
-    ('boids_2d', '2D Boids Simulations', 'Properties specific to 2D boid simulations'),
-    ('tracking_csv', 'Real-World Tracking', 'Properties from video tracking (bounding boxes, confidence)'),
+INSERT INTO categories (category_id, category_name, description) VALUES
+    ('boids_3d', '3D Boids Simulations', 'Properties and sessions for 3D boid simulations (distances to targets/meshes)'),
+    ('boids_2d', '2D Boids Simulations', 'Properties and sessions for 2D boid simulations'),
+    ('tracking_csv', 'Real-World Tracking', 'Properties and sessions from video tracking (bounding boxes, confidence)'),
     ('computed', 'Computed Properties', 'Derived properties (accelerations, speeds, etc.)')
 ON CONFLICT (category_id) DO NOTHING;
 

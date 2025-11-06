@@ -5,19 +5,6 @@
 -- =============================================================================
 
 -- =============================================================================
--- PROPERTY CATEGORIES - Organize properties by data source type
--- =============================================================================
-
-CREATE TABLE property_categories (
-    category_id VARCHAR PRIMARY KEY,
-    category_name VARCHAR NOT NULL,
-    description TEXT
-);
-
-COMMENT ON TABLE property_categories IS 'Categories for grouping properties by data source type';
-COMMENT ON COLUMN property_categories.category_id IS 'Unique category identifier (e.g., boids_3d, tracking_csv)';
-
--- =============================================================================
 -- PROPERTY DEFINITIONS - Define available extended properties
 -- =============================================================================
 
@@ -39,7 +26,7 @@ COMMENT ON COLUMN property_definitions.unit IS 'Unit of measurement (e.g., scene
 
 CREATE TABLE property_category_mapping (
     property_id VARCHAR NOT NULL REFERENCES property_definitions(property_id) ON DELETE CASCADE,
-    category_id VARCHAR NOT NULL REFERENCES property_categories(category_id) ON DELETE CASCADE,
+    category_id VARCHAR NOT NULL REFERENCES categories(category_id) ON DELETE CASCADE,
 
     PRIMARY KEY (property_id, category_id)
 );

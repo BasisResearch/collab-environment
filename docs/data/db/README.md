@@ -156,7 +156,7 @@ The unified schema supports three data sources:
 2. **episodes** - Individual runs within a session
 3. **agent_types** - Type definitions (agent, env, target, bird, rat, gerbil)
 4. **observations** - Core time-series data (positions, velocities)
-5. **property_categories** - Data source categories (boids_3d, boids_2d, tracking_csv, computed)
+5. **categories** - Session and property categories (boids_3d, boids_2d, tracking_csv, computed)
 6. **property_definitions** - Extended property definitions (distances, accelerations, etc.)
 7. **property_category_mapping** - M2M relationship between properties and categories
 8. **extended_properties** - EAV storage for flexible properties
@@ -165,7 +165,7 @@ The unified schema supports three data sources:
 
 - **Composite Primary Keys**: Natural keys on observations `(episode_id, time_index, agent_id, agent_type_id)` - allows same agent_id for different entity types
 - **EAV Pattern**: Flexible extended properties without hardcoded columns
-- **Property Categories**: Group properties by data source type
+- **Unified Categories**: Single categories table for both sessions and extended properties
 - **Unified Interface**: Same schema works for PostgreSQL and DuckDB
 
 For complete schema documentation, see [schema/README.md](../../../schema/README.md).
@@ -274,9 +274,9 @@ import duckdb
 
 conn = duckdb.connect('tracking.duckdb')
 
-# Query property categories
+# Query categories
 df = conn.execute("""
-    SELECT * FROM property_categories
+    SELECT * FROM categories
 """).df()
 
 # Query observations with extended properties
@@ -308,7 +308,7 @@ conn = psycopg2.connect(
 )
 
 cur = conn.cursor()
-cur.execute("SELECT * FROM property_categories")
+cur.execute("SELECT * FROM categories")
 rows = cur.fetchall()
 
 conn.close()
@@ -367,7 +367,7 @@ conn.close()
 
 ### Performance Tips
 
-1. **Use property categories** to filter only relevant extended properties
+1. **Use categories** to filter only relevant extended properties and sessions
 2. **Filter by episode_id** early in queries (indexed)
 3. **Batch inserts** when loading data (10K+ rows at once)
 4. **Consider materialized views** for frequently-accessed aggregations

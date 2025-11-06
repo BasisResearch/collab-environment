@@ -35,8 +35,7 @@ class SessionMetadata:
     """Metadata for a simulation/tracking session."""
     session_id: str
     session_name: str
-    data_source: str  # 'boids_3d', 'boids_2d', 'tracking_csv'
-    category: str  # 'simulated', 'birds', 'rats', 'gerbils'
+    category_id: str  # 'boids_3d', 'boids_2d', 'tracking_csv' (references categories table)
     config: Dict[str, Any]
     metadata: Optional[Dict[str, Any]] = None
 
@@ -117,15 +116,14 @@ class BaseDataLoader:
         metadata_json = json.dumps(metadata.metadata) if metadata.metadata else None
 
         query = """
-        INSERT INTO sessions (session_id, session_name, data_source, category, config, metadata)
-        VALUES (:session_id, :session_name, :data_source, :category, :config, :metadata)
+        INSERT INTO sessions (session_id, session_name, category_id, config, metadata)
+        VALUES (:session_id, :session_name, :category_id, :config, :metadata)
         """
 
         self.db.execute(query, {
             'session_id': metadata.session_id,
             'session_name': metadata.session_name,
-            'data_source': metadata.data_source,
-            'category': metadata.category,
+            'category_id': metadata.category_id,
             'config': config_json,
             'metadata': metadata_json
         })
@@ -255,8 +253,7 @@ class Boids3DLoader(BaseDataLoader):
         session_metadata = SessionMetadata(
             session_id=session_id,
             session_name=simulation_dir.name,
-            data_source='boids_3d',
-            category='simulated',
+            category_id='boids_3d',
             config=config,
             metadata={
                 'simulation_dir': str(simulation_dir),
@@ -325,25 +322,69 @@ class Boids3DLoader(BaseDataLoader):
         self.load_observations_batch(observations, episode_id)
 
         # Load extended properties if they exist
+        import numpy as np
         extended_props = {}
 
-        # Check for distance_to_target_center
-        if 'distance_to_target_center' in df.columns:
-            extended_props['distance_to_target_center'] = df.set_index(['time', 'id'])['distance_to_target_center']
+        # Map actual parquet column names to property IDs
+        # Distance to target center (may have suffix like _1)
+        target_center_cols = [c for c in df.columns if c.startswith('distance_target_center')]
+        if target_center_cols:
+            extended_props['distance_to_target_center'] = df.set_index(['time', 'id'])[target_center_cols[0]]
 
-        # Check for mesh distances
-        for col in ['distance_to_target_mesh', 'distance_to_scene_mesh']:
-            if col in df.columns:
-                extended_props[col] = df.set_index(['time', 'id'])[col]
+        # Distance to target mesh (may have suffix like _1)
+        target_mesh_cols = [c for c in df.columns if 'distance_to_target_mesh' in c]
+        if target_mesh_cols:
+            extended_props['distance_to_target_mesh'] = df.set_index(['time', 'id'])[target_mesh_cols[0]]
 
-        # Check for closest points
-        for prefix in ['target_mesh_closest', 'scene_mesh_closest']:
-            for suffix in ['x', 'y', 'z']:
-                col = f'{prefix}_{suffix}'
-                if col in df.columns:
-                    extended_props[col] = df.set_index(['time', 'id'])[col]
+        # Distance to scene mesh
+        if 'mesh_scene_distance' in df.columns:
+            extended_props['distance_to_scene_mesh'] = df.set_index(['time', 'id'])['mesh_scene_distance']
+
+        # Handle array-type closest point columns
+        # Target mesh closest point (stored as array [x, y, z])
+        # Match columns like 'target_mesh_closest_point_1' but NOT 'distance_to_target_mesh_closest_point_1'
+        target_closest_cols = [c for c in df.columns if 'target_mesh_closest_point' in c and not c.startswith('distance')]
+        if target_closest_cols:
+            # Extract array column and filter out None values
+            arr_col = df[target_closest_cols[0]]
+            # Create mask for non-None values
+            mask = arr_col.notna()
+            filtered_df = df[mask]
+            filtered_arr_col = arr_col[mask]
+
+            if len(filtered_arr_col) > 0:
+                # Stack arrays into 2D numpy array
+                logger.info(f"Before stack: filtered_arr_col length={len(filtered_arr_col)}, first element type={type(filtered_arr_col.iloc[0])}")
+                coords_array = np.stack(filtered_arr_col.to_numpy())
+                logger.info(f"After stack: coords_array shape={coords_array.shape}, dtype={coords_array.dtype}")
+
+                # Create Series for each coordinate with (time, id) multi-index (only for non-None values)
+                idx = pd.MultiIndex.from_arrays([filtered_df['time'], filtered_df['id']])
+                for i, suffix in enumerate(['x', 'y', 'z']):
+                    prop_id = f'target_mesh_closest_{suffix}'
+                    extended_props[prop_id] = pd.Series(coords_array[:, i], index=idx)
+
+        # Scene mesh closest point (stored as array [x, y, z])
+        if 'mesh_scene_closest_point' in df.columns:
+            # Extract array column and filter out None values
+            arr_col = df['mesh_scene_closest_point']
+            # Create mask for non-None values
+            mask = arr_col.notna()
+            filtered_df = df[mask]
+            filtered_arr_col = arr_col[mask]
+
+            if len(filtered_arr_col) > 0:
+                # Stack arrays into 2D numpy array
+                coords_array = np.stack(filtered_arr_col.to_numpy())
+
+                # Create Series for each coordinate with (time, id) multi-index (only for non-None values)
+                idx = pd.MultiIndex.from_arrays([filtered_df['time'], filtered_df['id']])
+                for i, suffix in enumerate(['x', 'y', 'z']):
+                    prop_id = f'scene_mesh_closest_{suffix}'
+                    extended_props[prop_id] = pd.Series(coords_array[:, i], index=idx)
 
         if extended_props:
+            logger.info(f"Loading {len(extended_props)} extended properties for episode {episode_id}")
             self.load_extended_properties_batch(episode_id, extended_props)
 
 

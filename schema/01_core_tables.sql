@@ -8,19 +8,30 @@
 -- DIMENSION TABLES
 -- =============================================================================
 
+CREATE TABLE categories (
+    category_id VARCHAR PRIMARY KEY,
+    category_name VARCHAR NOT NULL,
+    description TEXT
+);
+
+COMMENT ON TABLE categories IS 'Categories for sessions and extended properties (boids_3d, boids_2d, tracking_csv, computed)';
+COMMENT ON COLUMN categories.category_id IS 'Unique category identifier (e.g., boids_3d, tracking_csv)';
+
+-- =============================================================================
+
 CREATE TABLE sessions (
     session_id VARCHAR PRIMARY KEY,
     session_name VARCHAR NOT NULL,
-    data_source VARCHAR NOT NULL,  -- boids_3d, boids_2d, tracking_csv
-    category VARCHAR NOT NULL,      -- simulated, birds, rats, gerbils
+    category_id VARCHAR NOT NULL REFERENCES categories(category_id),
     created_at TIMESTAMP DEFAULT now(),
     config JSONB,                   -- Full configuration from YAML/config.pt
     metadata JSONB                  -- Environment, mesh paths, notes
 );
 
-CREATE INDEX idx_sessions_source ON sessions(data_source);
+CREATE INDEX idx_sessions_category ON sessions(category_id);
 
 COMMENT ON TABLE sessions IS 'Top-level container for related episodes (simulation run or fieldwork session)';
+COMMENT ON COLUMN sessions.category_id IS 'Category reference (defined in categories table)';
 COMMENT ON COLUMN sessions.config IS 'Full configuration as JSON (from YAML or .pt config)';
 COMMENT ON COLUMN sessions.metadata IS 'Additional metadata: notes, environment, mesh references';
 
