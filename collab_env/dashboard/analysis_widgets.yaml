@@ -1,0 +1,52 @@
+# Analysis Widget Configuration
+#
+# This file defines which analysis widgets are enabled and their default parameters.
+# Widgets are loaded in order and appear as tabs in the spatial analysis GUI.
+
+# Default shared parameters (used across all widgets unless overridden)
+defaults:
+  spatial_bin_size: 10.0        # Spatial discretization for heatmaps
+  temporal_window_size: 100     # Time window for windowed analyses
+  min_samples: 100              # Minimum samples for statistical validity (matches QueryBackend default)
+
+# Widget registry
+# Each widget must specify:
+#   - class: Full Python module path to widget class
+#   - enabled: true/false to enable/disable widget
+#   - order: Display order (lower numbers appear first)
+#   - category: Grouping category (spatial, temporal, behavioral)
+
+widgets:
+  - class: collab_env.dashboard.widgets.heatmap_widget.HeatmapWidget
+    enabled: true
+    order: 1
+    category: spatial
+    description: "3D spatial density heatmap"
+
+  - class: collab_env.dashboard.widgets.velocity_widget.VelocityStatsWidget
+    enabled: true
+    order: 2
+    category: temporal
+    description: "Speed statistics over time"
+
+  - class: collab_env.dashboard.widgets.distance_widget.DistanceStatsWidget
+    enabled: true
+    order: 3
+    category: spatial
+    description: "Distance to target and boundary"
+
+  - class: collab_env.dashboard.widgets.correlation_widget.CorrelationWidget
+    enabled: true
+    order: 4
+    category: behavioral
+    description: "Agent velocity correlations"
+
+# Example: To disable a widget, set enabled to false
+#   - class: collab_env.dashboard.widgets.correlation_widget.CorrelationWidget
+#     enabled: false
+
+# Example: To add a custom widget
+#   - class: my_package.widgets.custom_widget.CustomWidget
+#     enabled: true
+#     order: 5
+#     category: custom

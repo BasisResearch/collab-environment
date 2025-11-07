@@ -213,20 +213,24 @@ class QueryBackend:
 
     def get_spatial_heatmap(
         self,
-        episode_id: str,
+        episode_id: Optional[str] = None,
+        session_id: Optional[str] = None,
         bin_size: float = 10.0,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
         agent_type: str = 'agent',
-        min_count: int = 1
+        min_count: int = 1,
+        **kwargs  # Accept extra parameters (e.g., window_size, min_samples from shared context)
     ) -> pd.DataFrame:
         """
         Compute spatial density heatmap with binned positions.
 
         Parameters
         ----------
-        episode_id : str
-            Episode to analyze
+        episode_id : str, optional
+            Episode to analyze (mutually exclusive with session_id)
+        session_id : str, optional
+            Session to analyze - aggregates all episodes in session (mutually exclusive with episode_id)
         bin_size : float, default=10.0
             Spatial bin size in scene units
         start_time : int, optional
@@ -237,15 +241,23 @@ class QueryBackend:
             Agent type to filter ('agent', 'target', 'all')
         min_count : int, default=1
             Minimum observations per bin to include
+        **kwargs
+            Additional parameters (ignored)
 
         Returns
         -------
         pd.DataFrame
             Heatmap with columns: x_bin, y_bin, z_bin, density, avg_vx, avg_vy, avg_vz
         """
+        if episode_id is None and session_id is None:
+            raise ValueError("Either episode_id or session_id must be provided")
+        if episode_id is not None and session_id is not None:
+            raise ValueError("Cannot specify both episode_id and session_id")
+
         return self._execute_query(
             'get_spatial_heatmap',
             episode_id=episode_id,
+            session_id=session_id,
             bin_size=bin_size,
             start_time=start_time,
             end_time=end_time,
@@ -332,19 +344,23 @@ class QueryBackend:
 
     def get_speed_statistics(
         self,
-        episode_id: str,
+        episode_id: Optional[str] = None,
+        session_id: Optional[str] = None,
         window_size: int = 100,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
-        agent_type: str = 'agent'
+        agent_type: str = 'agent',
+        **kwargs  # Accept extra parameters (e.g., bin_size, min_samples from shared context)
     ) -> pd.DataFrame:
         """
         Compute speed statistics over time windows.
 
         Parameters
         ----------
-        episode_id : str
-            Episode to analyze
+        episode_id : str, optional
+            Episode to analyze (mutually exclusive with session_id)
+        session_id : str, optional
+            Session to analyze - aggregates all episodes in session (mutually exclusive with episode_id)
         window_size : int, default=100
             Number of frames per window
         start_time : int, optional
@@ -353,6 +369,8 @@ class QueryBackend:
             End time index
         agent_type : str, default='agent'
             Agent type to filter ('agent', 'target', 'all')
+        **kwargs
+            Additional parameters (ignored)
 
         Returns
         -------
@@ -360,9 +378,15 @@ class QueryBackend:
             Speed statistics with columns: time_window, n_observations,
             avg_speed, std_speed, min_speed, max_speed, median_speed
         """
+        if episode_id is None and session_id is None:
+            raise ValueError("Either episode_id or session_id must be provided")
+        if episode_id is not None and session_id is not None:
+            raise ValueError("Cannot specify both episode_id and session_id")
+
         return self._execute_query(
             'get_speed_statistics',
             episode_id=episode_id,
+            session_id=session_id,
             window_size=window_size,
             start_time=start_time,
             end_time=end_time,
@@ -371,19 +395,23 @@ class QueryBackend:
 
     def get_distance_to_target(
         self,
-        episode_id: str,
+        episode_id: Optional[str] = None,
+        session_id: Optional[str] = None,
         window_size: int = 100,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
-        agent_type: str = 'agent'
+        agent_type: str = 'agent',
+        **kwargs  # Accept extra parameters (e.g., bin_size, min_samples from shared context)
     ) -> pd.DataFrame:
         """
         Compute distance to target statistics over time windows.
 
         Parameters
         ----------
-        episode_id : str
-            Episode to analyze
+        episode_id : str, optional
+            Episode to analyze (mutually exclusive with session_id)
+        session_id : str, optional
+            Session to analyze - aggregates all episodes in session (mutually exclusive with episode_id)
         window_size : int, default=100
             Number of frames per window
         start_time : int, optional
@@ -392,6 +420,8 @@ class QueryBackend:
             End time index
         agent_type : str, default='agent'
             Agent type to filter ('agent', 'target', 'all')
+        **kwargs
+            Additional parameters (ignored)
 
         Returns
         -------
@@ -399,9 +429,15 @@ class QueryBackend:
             Distance statistics with columns: time_window, n_observations,
             avg_distance, std_distance, min_distance, max_distance
         """
+        if episode_id is None and session_id is None:
+            raise ValueError("Either episode_id or session_id must be provided")
+        if episode_id is not None and session_id is not None:
+            raise ValueError("Cannot specify both episode_id and session_id")
+
         return self._execute_query(
             'get_distance_to_target',
             episode_id=episode_id,
+            session_id=session_id,
             window_size=window_size,
             start_time=start_time,
             end_time=end_time,
@@ -410,19 +446,23 @@ class QueryBackend:
 
     def get_distance_to_boundary(
         self,
-        episode_id: str,
+        episode_id: Optional[str] = None,
+        session_id: Optional[str] = None,
         window_size: int = 100,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
-        agent_type: str = 'agent'
+        agent_type: str = 'agent',
+        **kwargs  # Accept extra parameters (e.g., bin_size, min_samples from shared context)
     ) -> pd.DataFrame:
         """
         Compute distance to scene boundary statistics over time windows.
 
         Parameters
         ----------
-        episode_id : str
-            Episode to analyze
+        episode_id : str, optional
+            Episode to analyze (mutually exclusive with session_id)
+        session_id : str, optional
+            Session to analyze - aggregates all episodes in session (mutually exclusive with episode_id)
         window_size : int, default=100
             Number of frames per window
         start_time : int, optional
@@ -431,6 +471,8 @@ class QueryBackend:
             End time index
         agent_type : str, default='agent'
             Agent type to filter ('agent', 'target', 'all')
+        **kwargs
+            Additional parameters (ignored)
 
         Returns
         -------
@@ -438,9 +480,15 @@ class QueryBackend:
             Distance statistics with columns: time_window, n_observations,
             avg_distance, std_distance, min_distance, max_distance
         """
+        if episode_id is None and session_id is None:
+            raise ValueError("Either episode_id or session_id must be provided")
+        if episode_id is not None and session_id is not None:
+            raise ValueError("Cannot specify both episode_id and session_id")
+
         return self._execute_query(
             'get_distance_to_boundary',
             episode_id=episode_id,
+            session_id=session_id,
             window_size=window_size,
             start_time=start_time,
             end_time=end_time,
@@ -455,12 +503,14 @@ class QueryBackend:
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
         min_samples: int = 100,
-        agent_type: str = 'agent'
+        agent_type: str = 'agent',
+        **kwargs  # Accept extra parameters (e.g., bin_size, window_size from shared context)
     ) -> pd.DataFrame:
         """
         Compute pairwise velocity correlations between agents.
 
         Warning: O(n²) computation, can be slow for many agents.
+        Note: Only supports episode-level analysis. Session-level correlation is disabled.
 
         Parameters
         ----------
@@ -474,6 +524,8 @@ class QueryBackend:
             Minimum number of time points required for correlation
         agent_type : str, default='agent'
             Agent type to filter ('agent', 'target', 'all')
+        **kwargs
+            Additional parameters (ignored)
 
         Returns
         -------
@@ -495,12 +547,14 @@ class QueryBackend:
         episode_id: str,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
-        min_samples: int = 100
+        min_samples: int = 100,
+        **kwargs  # Accept extra parameters (e.g., bin_size, window_size from shared context)
     ) -> pd.DataFrame:
         """
         Compute pairwise distance-to-target correlations between agents.
 
         Warning: O(n²) computation, can be slow for many agents.
+        Note: Only supports episode-level analysis. Session-level correlation is disabled.
 
         Parameters
         ----------
@@ -512,6 +566,8 @@ class QueryBackend:
             End time index
         min_samples : int, default=100
             Minimum number of time points required for correlation
+        **kwargs
+            Additional parameters (ignored)
 
         Returns
         -------

@@ -3,6 +3,7 @@
 -- name: get_velocity_correlations
 -- Compute pairwise velocity correlations between agents
 -- Warning: O(n²) computation, can be slow for many agents
+-- Only supports episode_id (single episode). Session-level correlation disabled.
 WITH agent_velocities AS (
     SELECT
         time_index,
@@ -36,6 +37,7 @@ ORDER BY v_x_correlation DESC;
 -- name: get_distance_correlations
 -- Compute pairwise distance-to-target correlations between agents
 -- Warning: O(n²) computation, can be slow for many agents
+-- Only supports episode_id (single episode). Session-level correlation disabled.
 WITH agent_distances AS (
     SELECT
         o.time_index,

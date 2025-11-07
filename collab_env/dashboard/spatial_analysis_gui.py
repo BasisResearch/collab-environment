@@ -1,17 +1,22 @@
 """
-Spatial Analysis GUI for 3D Boids Data.
+Spatial Analysis GUI for 3D Boids Data - Refactored with Widget System.
 
-Panel/HoloViz-based web dashboard for interactive spatial analysis.
+Panel/HoloViz-based web dashboard for interactive spatial analysis using
+modular widget architecture.
 """
 
 import panel as pn
 import param
-import pandas as pd
-import holoviews as hv
-from holoviews import opts
 import logging
+from pathlib import Path
 
 from collab_env.data.db.query_backend import QueryBackend
+from collab_env.dashboard.widgets import (
+    WidgetRegistry,
+    AnalysisContext,
+    QueryScope,
+    ScopeType
+)
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -19,27 +24,30 @@ logger = logging.getLogger(__name__)
 
 # Enable Panel extensions
 pn.extension("tabulator", "plotly")
+import holoviews as hv
 hv.extension("plotly", "bokeh")  # plotly first for Scatter3D support
 
 
 class SpatialAnalysisGUI(param.Parameterized):
     """
-    Main GUI for spatial analysis of 3D boids data.
+    Main GUI for spatial analysis of 3D boids data with modular widgets.
 
-    Provides interactive controls for selecting sessions/episodes and
-    visualizing spatial statistics (heatmaps, velocities, distances, correlations).
+    Provides:
+    - Flexible data scope selection (episode, session, custom)
+    - Shared analysis parameters
+    - Plugin-based analysis widgets loaded from config
     """
 
-    # Reactive parameters
+    # Reactive parameters for scope selection
     selected_session = param.String(default="", doc="Selected session ID")
     selected_episode = param.String(default="", doc="Selected episode ID")
-    agent_type = param.Selector(
-        default="agent",
-        objects=["agent", "target", "all"],
-        doc="Agent type filter"
+    scope_type = param.Selector(
+        default="Episode",
+        objects=["Episode", "Session"],
+        doc="Analysis scope type"
     )
 
-    def __init__(self, **params):
+    def __init__(self, widget_config: str = None, **params):
         super().__init__(**params)
 
         # Initialize query backend
@@ -50,6 +58,16 @@ class SpatialAnalysisGUI(param.Parameterized):
             logger.error(f"Failed to connect to database: {e}")
             raise
 
+        # Load widgets from registry
+        if widget_config is None:
+            # Default config location
+            config_path = Path(__file__).parent / "analysis_widgets.yaml"
+            widget_config = str(config_path)
+
+        self.registry = WidgetRegistry(widget_config)
+        self.widgets = self.registry.get_enabled_widgets()
+        logger.info(f"Loaded {len(self.widgets)} widgets")
+
         # Create UI components
         self._create_widgets()
 
@@ -59,10 +77,20 @@ class SpatialAnalysisGUI(param.Parameterized):
         # Load initial data
         self._load_sessions()
 
+        # Initialize widget contexts
+        self._update_widget_contexts()
+
     def _create_widgets(self):
         """Create all UI widgets."""
 
-        # Session/Episode selectors
+        # === Data Scope Selection ===
+        self.scope_type_select = pn.widgets.RadioButtonGroup(
+            name="Analysis Scope",
+            options=["Episode", "Session"],
+            value="Episode",
+            button_type="success"
+        )
+
         self.session_select = pn.widgets.Select(
             name="Session",
             options=[],
@@ -77,6 +105,7 @@ class SpatialAnalysisGUI(param.Parameterized):
             sizing_mode="stretch_width"
         )
 
+        # === Agent Filtering ===
         self.agent_type_select = pn.widgets.RadioButtonGroup(
             name="Agent Type",
             options=["agent", "target", "all"],
@@ -84,7 +113,7 @@ class SpatialAnalysisGUI(param.Parameterized):
             button_type="success"
         )
 
-        # Time range controls
+        # === Time Range Controls ===
         self.start_time_slider = pn.widgets.IntSlider(
             name="Start Time",
             value=0,
@@ -122,72 +151,36 @@ class SpatialAnalysisGUI(param.Parameterized):
             width=110
         )
 
-        # Analysis parameters
-        self.bin_size_input = pn.widgets.FloatInput(
+        # === Shared Analysis Parameters ===
+        defaults = self.registry.get_defaults()
+
+        self.spatial_bin_input = pn.widgets.FloatInput(
             name="Spatial Bin Size",
-            value=10.0,
+            value=defaults.get('spatial_bin_size', 10.0),
             start=1.0,
             end=100.0,
             step=1.0,
             width=350
         )
 
-        self.window_size_input = pn.widgets.IntInput(
+        self.temporal_window_input = pn.widgets.IntInput(
             name="Time Window Size",
-            value=100,
+            value=defaults.get('temporal_window_size', 100),
             start=10,
             end=1000,
             step=10,
             width=350
         )
 
-        # Load buttons for each analysis type
-        self.load_heatmap_btn = pn.widgets.Button(
-            name="Load Heatmap",
-            button_type="primary",
-            width=200
+        self.min_samples_input = pn.widgets.IntInput(
+            name="Min Samples",
+            value=defaults.get('min_samples', 10),
+            start=1,
+            end=1000,
+            width=350
         )
 
-        self.load_velocity_btn = pn.widgets.Button(
-            name="Load Velocity Stats",
-            button_type="primary",
-            width=200
-        )
-
-        self.load_distances_btn = pn.widgets.Button(
-            name="Load Distances",
-            button_type="primary",
-            width=200
-        )
-
-        self.load_correlations_btn = pn.widgets.Button(
-            name="Load Correlations",
-            button_type="primary",
-            width=200
-        )
-
-        # Display panes
-        self.heatmap_pane = pn.pane.HoloViews(
-            hv.Curve([]).opts(width=700, height=500),
-            sizing_mode="stretch_both"
-        )
-
-        self.velocity_plot_pane = pn.pane.HoloViews(
-            hv.Curve([]).opts(width=700, height=400),
-            sizing_mode="stretch_both"
-        )
-
-        self.distance_plot_pane = pn.pane.HoloViews(
-            hv.Curve([]).opts(width=700, height=400),
-            sizing_mode="stretch_both"
-        )
-
-        self.correlation_pane = pn.pane.HoloViews(
-            hv.Curve([]).opts(width=700, height=500),
-            sizing_mode="stretch_both"
-        )
-
-        # Status and loading indicators
+        # === Status and Loading Indicators ===
         self.status_pane = pn.pane.HTML(
             "<p>Ready. Select a session to begin.</p>",
             sizing_mode="stretch_width"
@@ -211,11 +204,18 @@ class SpatialAnalysisGUI(param.Parameterized):
         self.btn_after_500.on_click(self._set_after_500)
         self.btn_full_range.on_click(self._set_full_range)
 
-        # Load buttons
-        self.load_heatmap_btn.on_click(self._load_heatmap)
-        self.load_velocity_btn.on_click(self._load_velocity_stats)
-        self.load_distances_btn.on_click(self._load_distances)
-        self.load_correlations_btn.on_click(self._load_correlations)
+        # Update contexts when scope parameters change
+        self.scope_type_select.param.watch(lambda e: self._update_widget_contexts(), 'value')
+        self.agent_type_select.param.watch(lambda e: self._update_widget_contexts(), 'value')
+        self.start_time_slider.param.watch(lambda e: self._update_widget_contexts(), 'value')
+        self.end_time_slider.param.watch(lambda e: self._update_widget_contexts(), 'value')
+
+        # Shared parameter changes
+        self.spatial_bin_input.param.watch(lambda e: self._update_widget_contexts(), 'value')
+        self.temporal_window_input.param.watch(lambda e: self._update_widget_contexts(), 'value')
+        self.min_samples_input.param.watch(lambda e: self._update_widget_contexts(), 'value')
+
+    # ==================== Status Helpers ====================
 
     def _show_loading(self, message: str = "Loading..."):
         """Show loading indicator with message."""
@@ -228,10 +228,12 @@ class SpatialAnalysisGUI(param.Parameterized):
 
     def _show_success(self, message: str):
         """Show success message."""
+        self._hide_loading()
         self.status_pane.object = f"<p style='color:green'>✅ {message}</p>"
 
     def _show_error(self, message: str):
         """Show error message."""
+        self._hide_loading()
         self.status_pane.object = f"<p style='color:red'>❌ Error: {message}</p>"
 
     # ==================== Data Loading ====================
@@ -280,6 +282,10 @@ class SpatialAnalysisGUI(param.Parameterized):
                 self._episode_map = episode_options
                 self._show_success(f"Loaded {len(episodes_df)} episodes")
                 logger.info(f"Loaded {len(episodes_df)} episodes")
+
+                # Update widget contexts for session scope
+                self._update_widget_contexts()
+
         except Exception as e:
             logger.error(f"Failed to load episodes: {e}")
             self._show_error(f"Failed to load episodes: {e}")
@@ -315,6 +321,10 @@ class SpatialAnalysisGUI(param.Parameterized):
 
                 self._show_success(f"Episode selected ({num_frames} frames, {len(agent_types_df)} agent types)")
                 logger.info(f"Selected episode {episode_id} ({num_frames} frames)")
+
+                # Update widget contexts for episode scope
+                self._update_widget_contexts()
+
         except Exception as e:
             logger.error(f"Failed to load episode metadata: {e}")
             self._show_error(f"Failed to load episode metadata: {e}")
@@ -336,254 +346,68 @@ class SpatialAnalysisGUI(param.Parameterized):
         self.start_time_slider.value = 0
         self.end_time_slider.value = self.end_time_slider.end
 
-    # ==================== Analysis Loading ====================
+    # ==================== Context Management ====================
 
-    def _load_heatmap(self, event):
-        """Load and display 3D spatial heatmap."""
-        if not self.selected_episode:
-            self._show_error("Please select an episode first")
-            return
+    def _get_current_scope(self) -> QueryScope:
+        """Build QueryScope from current UI state."""
+        scope_type_str = self.scope_type_select.value.lower()
 
-        self._show_loading("Loading 3D spatial heatmap...")
-        try:
-            # Query heatmap data
-            df = self.query.get_spatial_heatmap(
+        if scope_type_str == "episode":
+            if not self.selected_episode:
+                return None
+
+            return QueryScope.from_episode(
                 episode_id=self.selected_episode,
-                bin_size=self.bin_size_input.value,
                 start_time=self.start_time_slider.value,
                 end_time=self.end_time_slider.value,
                 agent_type=self.agent_type_select.value
             )
 
-            if len(df) == 0:
-                self._hide_loading()
-                self._show_error("No data found for selected parameters")
-                return
+        elif scope_type_str == "session":
+            if not self.selected_session:
+                return None
 
-            # Create 3D scatter plot with density as color and size
-            scatter = hv.Scatter3D(
-                df,
-                kdims=['x_bin', 'y_bin', 'z_bin'],
-                vdims='density'
-            ).opts(
-                color='density',
-                cmap='viridis',
-                size='density',
-                width=800,
-                height=600,
-                colorbar=True,
-                title=f'3D Spatial Density (bin size={self.bin_size_input.value})'
-            )
-
-            self.heatmap_pane.object = scatter
-            self._hide_loading()
-            self._show_success(f"3D heatmap loaded ({len(df)} bins)")
-            logger.info(f"Loaded 3D heatmap with {len(df)} bins")
-
-        except Exception as e:
-            self._hide_loading()
-            logger.error(f"Failed to load heatmap: {e}")
-            self._show_error(f"Failed to load heatmap: {e}")
-
-    def _load_velocity_stats(self, event):
-        """Load velocity statistics."""
-        if not self.selected_episode:
-            self._show_error("Please select an episode first")
-            return
-
-        self._show_loading("Loading velocity statistics...")
-        try:
-            # Query speed statistics
-            df = self.query.get_speed_statistics(
-                episode_id=self.selected_episode,
-                window_size=self.window_size_input.value,
-                start_time=self.start_time_slider.value,
-                end_time=self.end_time_slider.value,
+            return QueryScope.from_session(
+                session_id=self.selected_session,
                 agent_type=self.agent_type_select.value
             )
 
-            if len(df) == 0:
-                self._hide_loading()
-                self._show_error("No data found for selected parameters")
-                return
+        return None
 
-            # Create line plot with error bands
-            curve = hv.Curve(df, kdims='time_window', vdims='avg_speed', label='Mean Speed')
-            curve.opts(
-                opts.Curve(
-                    color='blue',
-                    line_width=2,
-                    width=700,
-                    height=400,
-                    xlabel='Time',
-                    ylabel='Speed',
-                    title=f'Speed Over Time (window={self.window_size_input.value})',
-                    tools=['hover'],
-                    backend='bokeh'
-                )
-            )
+    def _get_context(self) -> AnalysisContext:
+        """Build AnalysisContext from current UI state."""
+        scope = self._get_current_scope()
+        if scope is None:
+            return None
 
-            # Add std deviation as error bars if available
-            if 'std_speed' in df.columns:
-                df['upper'] = df['avg_speed'] + df['std_speed']
-                df['lower'] = df['avg_speed'] - df['std_speed']
-                area = hv.Area(df, kdims='time_window', vdims=['lower', 'upper'])
-                area.opts(opts.Area(alpha=0.3, color='blue', backend='bokeh'))
-                plot = curve * area
-            else:
-                plot = curve
+        return AnalysisContext(
+            query_backend=self.query,
+            scope=scope,
+            spatial_bin_size=self.spatial_bin_input.value,
+            temporal_window_size=self.temporal_window_input.value,
+            min_samples=self.min_samples_input.value,
+            on_loading=self._show_loading,
+            on_success=self._show_success,
+            on_error=self._show_error
+        )
 
-            self.velocity_plot_pane.object = plot
-            self._hide_loading()
-            self._show_success(f"Velocity stats loaded ({len(df)} windows)")
-            logger.info(f"Loaded velocity stats with {len(df)} windows")
-
-        except Exception as e:
-            self._hide_loading()
-            logger.error(f"Failed to load velocity stats: {e}")
-            self._show_error(f"Failed to load velocity stats: {e}")
-
-    def _load_distances(self, event):
-        """Load distance statistics."""
-        if not self.selected_episode:
-            self._show_error("Please select an episode first")
-            return
-
-        self._show_loading("Loading distance statistics...")
-        try:
-            # Query distance to target
-            df_target = self.query.get_distance_to_target(
-                episode_id=self.selected_episode,
-                window_size=self.window_size_input.value,
-                start_time=self.start_time_slider.value,
-                end_time=self.end_time_slider.value,
-                agent_type=self.agent_type_select.value
-            )
-
-            # Query distance to boundary
-            df_boundary = self.query.get_distance_to_boundary(
-                episode_id=self.selected_episode,
-                window_size=self.window_size_input.value,
-                start_time=self.start_time_slider.value,
-                end_time=self.end_time_slider.value,
-                agent_type=self.agent_type_select.value
-            )
-
-            if len(df_target) == 0 and len(df_boundary) == 0:
-                self._hide_loading()
-                self._show_error("No distance data found")
-                return
-
-            # Create overlay plot
-            curves = []
-
-            if len(df_target) > 0:
-                curve_target = hv.Curve(df_target, kdims='time_window', vdims='avg_distance', label='Distance to Target')
-                curve_target.opts(opts.Curve(color='orange', line_width=2, backend='bokeh'))
-                curves.append(curve_target)
-
-            if len(df_boundary) > 0:
-                curve_boundary = hv.Curve(df_boundary, kdims='time_window', vdims='avg_distance', label='Distance to Boundary')
-                curve_boundary.opts(opts.Curve(color='purple', line_width=2, backend='bokeh'))
-                curves.append(curve_boundary)
-
-            if curves:
-                overlay = hv.Overlay(curves)
-                overlay.opts(
-                    opts.Overlay(
-                        width=700,
-                        height=400,
-                        xlabel='Time',
-                        ylabel='Distance',
-                        title=f'Distances Over Time (window={self.window_size_input.value})',
-                        tools=['hover'],
-                        legend_position='top_right',
-                        backend='bokeh'
-                    )
-                )
-                self.distance_plot_pane.object = overlay
-            else:
-                self.distance_plot_pane.object = hv.Curve([]).opts(width=700, height=400)
-
-            self._hide_loading()
-            self._show_success(f"Distance stats loaded")
-            logger.info(f"Loaded distance stats (target: {len(df_target)}, boundary: {len(df_boundary)} windows)")
-
-        except Exception as e:
-            self._hide_loading()
-            logger.error(f"Failed to load distances: {e}")
-            self._show_error(f"Failed to load distances: {e}")
-
-    def _load_correlations(self, event):
-        """Load and visualize correlation statistics as 3D heatmap."""
-        if not self.selected_episode:
-            self._show_error("Please select an episode first")
-            return
-
-        self._show_loading("Loading correlations (this may take a while)...")
-        try:
-            # Query velocity correlations with lower min_samples threshold
-            df = self.query.get_velocity_correlations(
-                episode_id=self.selected_episode,
-                start_time=self.start_time_slider.value,
-                end_time=self.end_time_slider.value,
-                min_samples=10,  # Reduced from 100 to 10
-                agent_type=self.agent_type_select.value
-            )
-
-            logger.info(f"Query returned {len(df)} correlation pairs")
-
-            if len(df) == 0:
-                self._hide_loading()
-                self._show_error("No correlation data found. Try adjusting time range or agent type.")
-                return
-
-            # Calculate average correlation magnitude across all dimensions
-            df['avg_correlation'] = df[['v_x_correlation', 'v_y_correlation', 'v_z_correlation']].abs().mean(axis=1)
-
-            logger.info(f"Correlation range: {df['avg_correlation'].min():.3f} to {df['avg_correlation'].max():.3f}")
-
-            # Scale correlation for better visibility (normalize to 0-1 then scale for size)
-            # Use constant marker size for better visibility
-            marker_size = 8
-
-            # Create 3D scatter plot where each point represents an agent pair
-            # Use agent_i and agent_j as spatial coordinates, correlation as z-axis and color
-            scatter = hv.Scatter3D(
-                df,
-                kdims=['agent_i', 'agent_j', 'avg_correlation'],
-                vdims=['v_x_correlation', 'v_y_correlation', 'v_z_correlation', 'n_samples']
-            ).opts(
-                color='avg_correlation',
-                cmap='Viridis',  # Yellow-green-blue colormap for better visibility
-                size=marker_size,  # Fixed size for visibility
-                width=800,
-                height=600,
-                colorbar=True,
-                title=f'Velocity Correlations (3D: agent_i × agent_j × avg_corr) - {len(df)} pairs',
-                zlabel='Average Correlation',
-                xlim=(df['agent_i'].min()-1, df['agent_i'].max()+1),
-                ylim=(df['agent_j'].min()-1, df['agent_j'].max()+1)
-            )
-
-            self.correlation_pane.object = scatter
-            self._hide_loading()
-            self._show_success(f"Correlations loaded ({len(df)} agent pairs)")
-            logger.info(f"Loaded correlations for {len(df)} agent pairs")
-
-        except Exception as e:
-            self._hide_loading()
-            logger.error(f"Failed to load correlations: {e}")
-            self._show_error(f"Failed to load correlations: {e}")
+    def _update_widget_contexts(self):
+        """Update context for all widgets when scope changes."""
+        context = self._get_context()
+        if context:
+            for widget in self.widgets:
+                widget.context = context
+            logger.debug(f"Updated widget contexts: {context.scope}")
 
     # ==================== Layout ====================
 
     def create_layout(self):
-        """Create the dashboard layout."""
+        """Create the dashboard layout with dynamic widget tabs."""
 
-        # Sidebar with controls
+        # Sidebar with scope selection + shared parameters
         sidebar = pn.Column(
-            "## Session Selection",
+            "## Analysis Scope",
+            self.scope_type_select,
             self.session_select,
             self.episode_select,
             pn.layout.Divider(),
@@ -602,36 +426,18 @@ class SpatialAnalysisGUI(param.Parameterized):
             ),
             pn.layout.Divider(),
 
-            "## Analysis Parameters",
-            self.bin_size_input,
-            self.window_size_input,
+            "## Shared Parameters",
+            self.spatial_bin_input,
+            self.temporal_window_input,
+            self.min_samples_input,
 
             width=400,
             sizing_mode="stretch_height"
         )
 
-        # Main content with tabs
-        content = pn.Tabs(
-            ("Heatmap", pn.Column(
-                self.load_heatmap_btn,
-                self.heatmap_pane,
-                sizing_mode="stretch_both"
-            )),
-            ("Velocity Stats", pn.Column(
-                self.load_velocity_btn,
-                self.velocity_plot_pane,
-                sizing_mode="stretch_both"
-            )),
-            ("Distances", pn.Column(
-                self.load_distances_btn,
-                self.distance_plot_pane,
-                sizing_mode="stretch_both"
-            )),
-            ("Correlations", pn.Column(
-                self.load_correlations_btn,
-                self.correlation_pane,
-                sizing_mode="stretch_both"
-            )),
+        # Main content: Dynamic tabs from widgets
+        tabs = pn.Tabs(
+            *[(w.widget_name, w.get_tab_content()) for w in self.widgets],
             sizing_mode="stretch_both"
         )
 
@@ -646,7 +452,7 @@ class SpatialAnalysisGUI(param.Parameterized):
         template = pn.template.MaterialTemplate(
             title="Spatial Analysis Dashboard - 3D Boids",
             sidebar=[sidebar],
-            main=[status_bar, content],
+            main=[status_bar, tabs],
             header_background="#2596be",
             sidebar_width=400,
         )
