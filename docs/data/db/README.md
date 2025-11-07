@@ -314,39 +314,112 @@ rows = cur.fetchall()
 conn.close()
 ```
 
-## Grafana Setup
+## Grafana Integration ✅
 
-1. **Add Data Source**
+**Status**: Prototype complete - ready to use!
+
+Visualize your boid simulation data with ready-to-use Grafana dashboards and query templates.
+
+### Grafana Quick Start
+
+1. **Install Grafana**:
+
+   ```bash
+   # macOS
+   brew install grafana
+   brew services start grafana
+
+   # Access at http://localhost:3000 (admin/admin)
+   ```
+
+2. **Configure Data Source**:
    - Type: PostgreSQL
    - Host: `localhost:5432`
    - Database: `tracking_analytics`
-   - User: `dima`
+   - User: `postgres`
+   - Password: `password`
    - SSL Mode: `disable` (for local)
 
-2. **Example Time-Series Query**
-   ```sql
-   SELECT
-       to_timestamp(o.time_index * (1.0 / e.frame_rate)) as time,
-       sqrt(o.v_x*o.v_x + o.v_y*o.v_y + COALESCE(o.v_z*o.v_z, 0)) as speed,
-       o.agent_id::text as metric
-   FROM observations o
-   JOIN episodes e ON o.episode_id = e.episode_id
-   WHERE o.episode_id = $episode_id
-     AND o.v_x IS NOT NULL
-   ORDER BY o.time_index
-   ```
+3. **Import Dashboard**:
+   - Go to **Dashboards** → **Import**
+   - Upload: `docs/data/db/grafana_dashboard_template.json`
+   - Select data source: `tracking_analytics`
 
-3. **Example Heatmap Query**
-   ```sql
-   SELECT
-       floor(x / 10) * 10 as x_bin,
-       floor(y / 10) * 10 as y_bin,
-       count(*) as value
-   FROM observations
-   WHERE episode_id = $episode_id
-     AND time_index BETWEEN $__timeFrom() AND $__timeTo()
-   GROUP BY x_bin, y_bin
-   ```
+### Available Dashboards
+
+#### 1. Time Series Overview
+
+- Agent speed over time (individual and average)
+- Distance to target tracking
+- Current statistics (stat panels)
+- Episode selector variable
+
+#### 2. Spatial Analysis
+
+- Position density heatmaps
+- Speed distribution histograms
+- Agent state tables with color coding
+
+#### 3. Time-Windowed Statistics
+
+- 100-frame window aggregations
+- Before/after t=500 comparisons
+- Distance convergence analysis
+
+### Documentation
+
+- **[📖 Complete Integration Guide](grafana_integration.md)** - Setup, dashboard creation, troubleshooting
+- **[📝 Query Library](grafana_queries.md)** - 30+ tested SQL queries for all visualizations
+- **[📊 Dashboard Template](grafana_dashboard_template.json)** - Importable Grafana dashboard JSON
+
+### Example Queries
+
+#### Time-Series Speed
+
+```sql
+SELECT
+    to_timestamp(o.time_index * (1.0 / e.frame_rate)) as time,
+    sqrt(o.v_x*o.v_x + o.v_y*o.v_y + COALESCE(o.v_z*o.v_z, 0)) as speed,
+    o.agent_id::text as metric
+FROM observations o
+JOIN episodes e ON o.episode_id = e.episode_id
+WHERE o.episode_id = $episode_id
+  AND o.agent_type_id = 'agent'
+  AND o.v_x IS NOT NULL
+ORDER BY o.time_index
+```
+
+#### Spatial Heatmap
+
+```sql
+SELECT
+    floor(x / 10) * 10 as x_bin,
+    floor(y / 10) * 10 as y_bin,
+    count(*) as value
+FROM observations
+WHERE episode_id = $episode_id
+  AND agent_type_id = 'agent'
+  AND time_index BETWEEN $start_frame AND $end_frame
+GROUP BY x_bin, y_bin
+```
+
+#### Distance to Target
+
+```sql
+SELECT
+    to_timestamp(o.time_index * (1.0 / e.frame_rate)) as time,
+    avg(ep.value_float) as avg_distance
+FROM observations o
+JOIN episodes e ON o.episode_id = e.episode_id
+JOIN extended_properties ep ON o.observation_id = ep.observation_id
+JOIN property_definitions pd ON ep.property_id = pd.property_id
+WHERE o.episode_id = $episode_id
+  AND pd.property_name = 'Distance to Target Center'
+GROUP BY o.time_index, e.frame_rate
+ORDER BY o.time_index
+```
+
+See [grafana_queries.md](grafana_queries.md) for the complete query library.
 
 ## Performance
 
@@ -406,16 +479,17 @@ docs/data/db/
 - [x] 3D boids data loader (parquet files)
 - [x] Batch loading with pandas to_sql
 - [x] Environment entity support with composite primary keys
+- [x] Extended properties loading (all 9 properties: distances + mesh coordinates)
+- [x] Grafana dashboards (prototype with query library and templates)
 
 ### TODO ⏳
 
 - [ ] 2D boids loader (PyTorch .pt files)
 - [ ] Tracking CSV loader
 - [ ] Query backend interface
-- [ ] Extended properties loading (partially implemented)
 - [ ] Dashboard integration as an additional data source
 - [ ] Spatial queries and statistics, in a separate dashboard, see `./docs/dashboard/spatial_analysis.md`
-- [ ] Grafana dashboards
+- [ ] Advanced Grafana features (correlations, pairwise statistics, alerts)
 
 ## Troubleshooting
 

@@ -16,6 +16,15 @@ pandas>=2.0.0
 pyarrow>=14.0.0
 pyyaml>=6.0.0
 
+# SQL query management
+aiosql>=9.0
+
+# Dashboard and visualization (for spatial_analysis_gui)
+panel>=1.3.0
+holoviews>=1.18.0
+bokeh>=3.3.0
+plotly>=5.18.0
+
 # Optional: Advanced data loading tools
 dlt[duckdb,postgres]>=1.0.0
 ibis-framework[duckdb,postgres]>=9.0.0
