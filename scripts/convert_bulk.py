@@ -1,18 +1,35 @@
 from collab_env.data.file_utils import get_project_root
 from collab_env.tracking.csq import csq_to_avi, choose_vmin_vmax
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from rich import print
 import os
 
-root = get_project_root() / "data" / "fieldwork_curated"
+root = get_project_root() / "data" / "fieldwork_curated" / "todo"
+AUTO = False
 
-dates = [f for f in os.listdir(root) if os.path.isdir(root / f)]
-
+if AUTO:
+    dates = [f for f in os.listdir(root) if os.path.isdir(root / f)]
+else:
+    dates = [
+        '2024_05_27-session_0006',
+        '2024_05_27-session_0001',
+        '2024_05_27-session_0007',
+        # '2023_11_05-session_0003',
+        # '2023_11_05-session_0002',
+        #'2024_02_06-session_0001',
+        #'2024_06_01-session_0003',
+        #'2024_06_01-session_0002',
+        '2024_05_27-session_0002',
+        '2024_05_27-session_0005',
+        #'2024_05_19-session_0001',
+        '2024_05_27-session_0004',
+        '2024_05_27-session_0003'
+    ]
 
 thermal_folders = ["thermal_1", "thermal_2"]
 MAX_LENGTH = 20  # in minutes
 
-MAX_WORKERS = 4
+MAX_WORKERS = 20
 
 def run_conversion_job(input_file, output_file, vmin, vmax):
     print(f"\nConverting {input_file} to {output_file}...\n")
@@ -23,7 +40,7 @@ def run_conversion_job(input_file, output_file, vmin, vmax):
         print(f"Error converting {input_file}: {e}")
 
 def run_all_conversions():
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = []
         for date in dates:
             date_folder = root / date
@@ -46,5 +63,6 @@ def run_all_conversions():
             future.result()
 
 if __name__ == "__main__":
-    print(f"Converting CSQ in folders: {dates}")
+    # s = ",\n".join([f"'{str(d)}'" for d in dates])
+    # print(f"Converting CSQ in folders:\n[\n{str(s)}\n]")
     run_all_conversions()
