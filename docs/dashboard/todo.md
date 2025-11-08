@@ -1,144 +1,30 @@
-# Dashboard Extension & Category System Refactoring - TODO
+# Dashboard Extension - Widget Development TODO
 
 **Created:** 2025-11-07
-**Status:** Planning Phase - DO NOT IMPLEMENT YET
+**Updated:** 2025-11-08
+**Status:** Planning Phase - Ready to Implement
 
 ---
 
 ## Overview
 
-This document outlines planned changes to:
-1. Refactor the category system to be semantic rather than procedural
-2. Add new pairwise analysis queries and widgets
-3. Add distribution/histogram visualization widgets
-4. Implement property computation for speed and acceleration
+This document outlines planned dashboard extensions:
+1. Property computation for speed and acceleration
+2. Distribution/histogram visualization widgets
+3. Pairwise analysis queries and widgets
+
+**Prerequisites:**
+
+- ✅ **Database schema refactoring COMPLETE** (2025-11-08) - See [archive/schema_refactoring.md](../data/db/archive/schema_refactoring.md)
+- ✅ **Widget system refactoring complete**
+- ✅ **Session-level correlation disabled**
+- ✅ **Logging upgraded to loguru**
 
 ---
 
-## 1. Category System Refactoring
+## 1. Pairwise Analysis Queries
 
-### Current State Analysis
-
-**Current Category Structure:**
-```
-categories table:
-- boids_3d: 3D Boids Simulations
-- boids_2d: 2D Boids Simulations
-- tracking_csv: Real-World Tracking
-- computed: Computed Properties  ← TO BE REMOVED
-```
-
-**Current Usage:**
-- Sessions reference category_id: `boids_3d`, `boids_2d`, `tracking_csv` (NOT `computed`)
-- Extended properties map to categories via M2M relationship
-- Computed properties (speed, acceleration) map to BOTH:
-  - `computed` category (procedural classification) ← PROBLEM
-  - Specific session categories: `boids_3d`, `boids_2d`, `tracking_csv` (applicability)
-
-**Problem Identified:**
-- `computed` category is **procedural** (describes HOW property is created)
-- Other categories are **data source** types (describes WHERE data comes from)
-- This creates confusion and unnecessary complexity
-- Properties don't need separate categorization - they're just properties!
-
-### Proposed New Design: Maximally Flat Structure
-
-**Extremely Simple Design:**
-- **Categories** = Data source types ONLY (boids_3d, boids_2d, tracking_csv)
-  - Only used for `sessions.category_id` to identify data source
-- **Properties** = Flat list in `property_definitions`
-  - No categorization, no mapping tables
-- **Discovery** = Query what actually exists in `extended_properties`
-  - Source of truth is always the data
-
-**Rationale:**
-- This is an **analytics/research database** - discover what's in the data, don't enforce schemas
-- A property is a property, regardless of whether it's "computed" or "raw"
-- If a property exists in `extended_properties`, it's available. Period.
-- No need for M2M mapping - can always query to discover:
-  - "What properties exist for this session?" → Query extended_properties
-  - "What sessions use this property?" → Query extended_properties
-- Simpler schema = easier to maintain, no sync issues
-
-**Result:**
-- **Remove** `computed` category entirely
-- **Remove** `property_category_mapping` table entirely
-- **Keep** session categories (boids_3d, boids_2d, tracking_csv) for sessions only
-- **Widget categories** (spatial, temporal, behavioral) remain separate - UI organization only
-
-**Tables:**
-```
-categories: Just 3 rows (boids_3d, boids_2d, tracking_csv)
-sessions: References category_id for data source type
-property_definitions: All available properties (flat list)
-extended_properties: Actual property values (source of truth for what exists)
-```
-
-### Database Changes Required
-
-**Files to Modify:**
-
-1. **schema/02_extended_properties.sql**
-   - **DROP TABLE** `property_category_mapping` entirely
-   - Update comments to clarify property_definitions is a flat list
-
-2. **schema/01_core_tables.sql**
-   - Update COMMENT on categories table: "Categories for data source types (sessions only)"
-   - No structural changes
-
-3. **schema/03_seed_data.sql**
-   - **Remove** 'computed' category from categories INSERT (only keep boids_3d, boids_2d, tracking_csv)
-   - **Remove** all property_category_mapping INSERTs (table no longer exists)
-   - Keep property_definitions INSERTs (unchanged)
-
-4. **collab_env/data/db/init_database.py**
-   - No changes needed (generic schema loader)
-
-5. **collab_env/data/db/db_loader.py**
-   - Verify session loading uses correct category_id (boids_3d, boids_2d, tracking_csv)
-   - Ensure no references to 'computed' category anywhere
-   - Add property computation logic (see Section 4)
-
-**Property Discovery Pattern:**
-```python
-# Get available properties for a session (query actual data)
-def get_session_properties(session_id):
-    return db.query("""
-        SELECT DISTINCT pd.property_id, pd.property_name, pd.description
-        FROM property_definitions pd
-        WHERE pd.property_id IN (
-            SELECT DISTINCT ep.property_id
-            FROM extended_properties ep
-            JOIN observations o ON ep.observation_id = o.observation_id
-            JOIN episodes e ON o.episode_id = e.episode_id
-            WHERE e.session_id = :session_id
-        )
-        ORDER BY pd.property_id
-    """, session_id=session_id)
-```
-
-### Migration Strategy
-
-**Option A: Fresh Database Initialization (Recommended for Dev)**
-- Update schema files
-- Drop and recreate database
-- Re-import data with new categories
-
-**Option B: Migration Script (For Production Data)**
-- Create migration SQL script:
-  1. Insert new semantic categories
-  2. Update property_category_mapping to use semantic categories
-  3. Delete 'computed' category
-- Test migration on copy of production database
-- Apply to production
-
-**Decision:** Start with Option A for development, create Option B script if needed later
-
----
-
-## 2. Pairwise Analysis Queries
-
-### 2.1 Pairwise Distances
+### 1.1 Pairwise Distances
 
 **Query Design:**
 
@@ -216,7 +102,7 @@ def get_pairwise_distances(
   - Distance threshold filter
   - Visualization type selector
 
-### 2.2 Pairwise Relative Velocities
+### 1.2 Pairwise Relative Velocities
 
 **Query Design:**
 
@@ -285,7 +171,7 @@ Similar to pairwise distances, returns: time_index, agent_i, agent_j, relative_v
 
 ---
 
-## 3. Distribution/Histogram Widgets
+## 2. Distribution/Histogram Widgets
 
 ### Purpose
 
@@ -369,9 +255,9 @@ log_scale = param.Boolean(default=False, doc="Use log scale for y-axis")
 
 ---
 
-## 4. Property Computation
+## 3. Property Computation
 
-### 4.1 Speed Computation
+### 3.1 Speed Computation
 
 **Properties to Compute:**
 - `speed`: sqrt(v_x² + v_y² + v_z²) - scalar magnitude
@@ -405,7 +291,7 @@ def compute_speed(df: pd.DataFrame) -> pd.Series:
     return np.sqrt(df['v_x']**2 + df['v_y']**2 + v_z**2)
 ```
 
-### 4.2 Acceleration Computation
+### 3.2 Acceleration Computation
 
 **Properties to Compute:**
 - `acceleration_x`: Δv_x / Δt (finite difference)
@@ -436,7 +322,7 @@ def compute_acceleration(df: pd.DataFrame, dt: float = 1.0) -> pd.DataFrame:
     # Handle edge cases (first/last frames)
 ```
 
-### 4.3 Integration Points
+### 3.3 Integration Points
 
 **A. During Data Import**
 
@@ -504,37 +390,9 @@ python -m collab_env.data.db.compute_properties_cli --session-id sess_456 --prop
 
 ---
 
-## 5. Implementation Plan & Order
+## 4. Implementation Plan & Order
 
-### Phase 1: Category System Refactoring
-**Priority:** HIGH (Foundation for other work)
-**Estimated Effort:** 1-2 hours (MAXIMALLY SIMPLIFIED)
-
-1. Update schema/02_extended_properties.sql:
-   - DROP TABLE property_category_mapping
-   - Update comments
-2. Update schema/03_seed_data.sql:
-   - Remove 'computed' category (keep only boids_3d, boids_2d, tracking_csv)
-   - Remove ALL property_category_mapping INSERTs
-3. Update comments in schema/01_core_tables.sql (clarify categories = session types only)
-4. Grep codebase for any references to 'computed' category or property_category_mapping and remove
-5. Test fresh database initialization
-6. Update documentation
-
-**Files:**
-- schema/02_extended_properties.sql (DROP property_category_mapping table)
-- schema/01_core_tables.sql (comments only)
-- schema/03_seed_data.sql (remove computed category, remove all property mappings)
-- docs/database/category_system.md (NEW - document maximally flat design)
-
-**Testing:**
-- Manual: Initialize fresh database
-- Verify exactly 3 categories exist (boids_3d, boids_2d, tracking_csv)
-- Verify property_category_mapping table does NOT exist
-- Verify all properties still in property_definitions
-- Verify existing data loaders still work
-
-### Phase 2: Property Computation
+### Phase 1: Property Computation
 **Priority:** HIGH (Needed for distributions)
 **Estimated Effort:** 6-8 hours
 
@@ -556,7 +414,7 @@ python -m collab_env.data.db.compute_properties_cli --session-id sess_456 --prop
 - Integration tests with database
 - CLI argument validation
 
-### Phase 3: Distribution Widgets
+### Phase 2: Distribution Widgets
 **Priority:** MEDIUM (Useful for data exploration)
 **Estimated Effort:** 6-8 hours
 
@@ -580,7 +438,7 @@ python -m collab_env.data.db.compute_properties_cli --session-id sess_456 --prop
 - Widget rendering and parameter validation
 - Session vs episode scope behavior
 
-### Phase 4: Pairwise Analysis
+### Phase 3: Pairwise Analysis
 **Priority:** MEDIUM-LOW (Specialized use case)
 **Estimated Effort:** 10-12 hours
 
@@ -609,16 +467,7 @@ python -m collab_env.data.db.compute_properties_cli --session-id sess_456 --prop
 
 ---
 
-## 6. Success Criteria
-
-### Category System
-- [ ] 'computed' category removed from database
-- [ ] property_category_mapping table dropped entirely
-- [ ] Only 3 categories remain: boids_3d, boids_2d, tracking_csv (for sessions only)
-- [ ] property_definitions remains as flat list of all properties
-- [ ] Sessions still correctly reference category_id
-- [ ] Existing data loading works with simplified schema
-- [ ] Documentation updated with property discovery pattern
+## 5. Success Criteria
 
 ### Property Computation
 - [ ] Speed computation works for 2D and 3D data
@@ -648,13 +497,7 @@ python -m collab_env.data.db.compute_properties_cli --session-id sess_456 --prop
 
 ---
 
-## 7. Risks & Mitigations
-
-### Risk: Breaking Existing Data
-**Mitigation:**
-- Test schema changes on copy of database first
-- Create rollback migration script
-- Document migration steps clearly
+## 6. Risks & Mitigations
 
 ### Risk: Performance Issues with Pairwise Queries
 **Mitigation:**
@@ -679,31 +522,35 @@ python -m collab_env.data.db.compute_properties_cli --session-id sess_456 --prop
 
 ---
 
-## 8. Open Questions
+## 7. Open Questions
 
-1. ~~**Category Naming:**~~ **RESOLVED** - Using flat property structure with only data source categories (boids_3d, boids_2d, tracking_csv)
+1. **Session Scope for Distributions:** Should histograms aggregate across episodes in a session, or compute per-episode distributions?
+   - **Recommendation:** Support both - aggregate by default, with option to view per-episode
 
-2. **Session Scope for Distributions:** Should histograms aggregate across episodes in a session, or compute per-episode distributions?
+2. **Pairwise Analysis Performance:** What's the maximum number of agents we need to support? Should we implement sampling/approximation?
+   - **Recommendation:** Document limits, warn at >50 agents, consider sampling for >100
 
-3. **Pairwise Analysis Performance:** What's the maximum number of agents we need to support? Should we implement sampling/approximation?
+3. **Acceleration Method:** Forward difference, backward difference, or central difference? Trade-offs?
+   - **Recommendation:** Forward difference (simpler), document in code, allow parameter if needed
 
-4. **Acceleration Method:** Forward difference, backward difference, or central difference? Trade-offs?
-
-5. **Property Computation Timing:** Should property computation be:
+4. **Property Computation Timing:** Should property computation be:
    - Automatic during import (default enabled)?
    - Optional flag during import?
    - Always manual via CLI tool?
+   - **Recommendation:** Optional flag during import (default OFF), manual CLI always available
 
-6. **Widget Organization:** Should pairwise widgets be separate, or combine into single "Interaction Analysis" widget with tabs?
+5. **Widget Organization:** Should pairwise widgets be separate, or combine into single "Interaction Analysis" widget with tabs?
+   - **Recommendation:** Start with separate widgets, can combine later if desired
 
 ---
 
 ## Next Steps
 
-1. **Review this plan** - Get feedback on approach, priorities, open questions
-2. **Finalize category design** - Confirm semantic category names and mappings
-3. **Begin Phase 1** - Update schema and test migration
-4. **Iterate** - Implement phases sequentially, testing thoroughly
+1. ~~**Complete schema refactoring**~~ - ✅ COMPLETE (2025-11-08) - See [archive](../data/db/archive/schema_refactoring.md)
+2. **Begin Phase 1: Property Computation** - Implement computation functions and CLI
+3. **Phase 2: Distribution Widgets** - Add histogram visualization
+4. **Phase 3: Pairwise Analysis** - Implement interaction analysis widgets
+5. **Iterate** - Test thoroughly with real data
 
 ---
 

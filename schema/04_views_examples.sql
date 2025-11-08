@@ -5,11 +5,11 @@
 -- =============================================================================
 
 -- =============================================================================
--- EXAMPLE 1: Query observations with extended properties for a category
+-- EXAMPLE 1: Query observations with extended properties for a session
 -- =============================================================================
 
 /*
--- Get all observations with 3D boids properties
+-- Get all observations with extended properties for a session's episodes
 SELECT
     o.episode_id,
     o.time_index,
@@ -23,27 +23,30 @@ SELECT
 FROM observations o
 JOIN extended_properties ep ON o.observation_id = ep.observation_id
 JOIN property_definitions pd ON ep.property_id = pd.property_id
-JOIN property_category_mapping pcm ON pd.property_id = pcm.property_id
 WHERE o.episode_id = 'episode-0-...'
-  AND pcm.category_id = 'boids_3d'
 ORDER BY o.time_index, o.agent_id, pd.property_name;
 */
 
 -- =============================================================================
--- EXAMPLE 2: Get available properties for a category
+-- EXAMPLE 2: Get available properties for a session (property discovery)
 -- =============================================================================
 
 /*
--- List all properties available for 3D boids
-SELECT
+-- Discover all properties that exist for a session (query actual data)
+SELECT DISTINCT
     pd.property_id,
     pd.property_name,
     pd.data_type,
     pd.description,
     pd.unit
 FROM property_definitions pd
-JOIN property_category_mapping pcm ON pd.property_id = pcm.property_id
-WHERE pcm.category_id = 'boids_3d'
+WHERE pd.property_id IN (
+    SELECT DISTINCT ep.property_id
+    FROM extended_properties ep
+    JOIN observations o ON ep.observation_id = o.observation_id
+    JOIN episodes e ON o.episode_id = e.episode_id
+    WHERE e.session_id = 'session-...'
+)
 ORDER BY pd.property_name;
 */
 
@@ -246,8 +249,6 @@ SELECT
     MAX(CASE WHEN ep.property_id = 'distance_to_scene_mesh' THEN ep.value_float END) as distance_to_scene_mesh
 FROM observations o
 LEFT JOIN extended_properties ep ON o.observation_id = ep.observation_id
-LEFT JOIN property_category_mapping pcm ON ep.property_id = pcm.property_id
-WHERE pcm.category_id = 'boids_3d' OR pcm.category_id IS NULL
 GROUP BY o.observation_id, o.episode_id, o.time_index, o.agent_id, o.agent_type_id,
          o.x, o.y, o.z, o.v_x, o.v_y, o.v_z;
 

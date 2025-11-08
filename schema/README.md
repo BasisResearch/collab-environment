@@ -13,28 +13,28 @@ PostgreSQL-based database schema for unified time-series animal tracking data fr
 
 ## Schema Design
 
-### Core Principle: EAV with Property Categories
+### Core Principle: EAV with Flat Property List
 
-- **Core observations**: Positions and velocities in main `observations` table
-- **Extended properties**: Flexible EAV (Entity-Attribute-Value) pattern
-- **Property categories**: Organize properties by data source type
+- **Core observations**: Positions and velocities in main `observations` table (universal data only)
+- **Extended properties**: Flexible EAV (Entity-Attribute-Value) pattern for all other data
+- **Flat property definitions**: All properties in a simple list, no categorization
+- **Property discovery**: Query what actually exists in the data, not what's defined
 - **No hardcoded columns**: All extended properties defined in `property_definitions` table
 
 ### Entity-Relationship Structure
 
 ```
-sessions
-  └─> episodes
-       └─> observations (PK: episode_id, time_index, agent_id)
-            └─> extended_properties (PK: observation_id, property_id)
+categories (session data source types only)
+  └─> sessions
+       └─> episodes
+            └─> observations (PK: episode_id, time_index, agent_id, agent_type_id)
+                 └─> extended_properties (PK: observation_id, property_id)
 
 agent_types
   └─> observations (FK: agent_type_id)
 
-property_categories
-  └─> property_category_mapping (M2M)
-       └─> property_definitions
-            └─> extended_properties (FK: property_id)
+property_definitions (flat list)
+  └─> extended_properties (FK: property_id)
 ```
 
 ## Quick Start
@@ -66,17 +66,16 @@ psql tracking_analytics
 
 tracking_analytics=# \dt
 # Should show: sessions, episodes, agent_types, observations,
-#              property_categories, property_definitions,
-#              property_category_mapping, extended_properties
+#              categories, property_definitions, extended_properties
 
-tracking_analytics=# SELECT * FROM property_categories;
-# Should show: boids_3d, boids_2d, tracking_csv, computed
+tracking_analytics=# SELECT * FROM categories;
+# Should show: boids_3d, boids_2d, tracking_csv
 
 # DuckDB
 duckdb tracking.duckdb
 
 D> SHOW TABLES;
-D> SELECT * FROM property_categories;
+D> SELECT * FROM categories;
 ```
 
 ### 3. Connect Grafana
@@ -105,8 +104,7 @@ Top-level container for related episodes (simulation run or fieldwork session).
 
 **Columns**:
 - `session_name`: Human-readable name
-- `data_source`: Source type (boids_3d, boids_2d, tracking_csv)
-- `category`: Data category (simulated, birds, rats, gerbils)
+- `category_id`: Data source type (boids_3d, boids_2d, tracking_csv) - references categories table
 - `config`: Full configuration as JSONB
 - `metadata`: Additional metadata (environment, mesh paths, notes)
 
@@ -141,8 +139,8 @@ Core time-series data: positions and velocities.
 **Core Columns**:
 - `x, y, z`: Spatial coordinates (z NULL for 2D)
 - `v_x, v_y, v_z`: Velocity components (may be NULL)
-- `confidence`: Detection confidence for tracking data
-- `detection_class`: Detected object class
+
+**Note**: Tracking metadata (confidence, detection_class) moved to extended_properties table
 
 **Why composite PK?**
 - Ensures uniqueness: One observation per (episode, time, agent)
@@ -150,15 +148,6 @@ Core time-series data: positions and velocities.
 - observation_id available for FK references
 
 ### Extended Properties (EAV)
-
-#### `property_categories`
-Categories for organizing properties by data source type.
-
-**Examples**:
-- `boids_3d`: 3D simulation properties
-- `boids_2d`: 2D simulation properties
-- `tracking_csv`: Video tracking properties
-- `computed`: Derived properties
 
 #### `property_definitions`
 Defines all available extended properties.
@@ -173,11 +162,8 @@ Defines all available extended properties.
 - `distance_to_target_center`: Distance to target
 - `bbox_x1, bbox_y1, bbox_x2, bbox_y2`: Bounding boxes
 - `acceleration_x, acceleration_y`: Computed accelerations
-
-#### `property_category_mapping`
-M2M relationship: properties can belong to multiple categories.
-
-**Primary Key**: Composite `(property_id, category_id)`
+- `confidence`: Detection confidence (tracking data)
+- `detection_class`: Detected object class (tracking data)
 
 #### `extended_properties`
 EAV table storing property values.
@@ -190,16 +176,22 @@ EAV table storing property values.
 
 ## Query Patterns
 
-### 1. Get Available Properties for a Category
+### 1. Get Available Properties for a Session (Property Discovery)
 
 ```sql
-SELECT
+-- Discover which properties actually exist for a session
+SELECT DISTINCT
     pd.property_id,
     pd.property_name,
     pd.unit
 FROM property_definitions pd
-JOIN property_category_mapping pcm ON pd.property_id = pcm.property_id
-WHERE pcm.category_id = 'boids_3d';
+WHERE pd.property_id IN (
+    SELECT DISTINCT ep.property_id
+    FROM extended_properties ep
+    JOIN observations o ON ep.observation_id = o.observation_id
+    JOIN episodes e ON o.episode_id = e.episode_id
+    WHERE e.session_id = 'session-...'
+);
 ```
 
 ### 2. Query Observations with Extended Properties
@@ -263,31 +255,28 @@ ORDER BY o.time_index;
 
 See `04_views_examples.sql` for more query templates.
 
-## Property Categories Reference
+## Session Categories Reference
+
+Categories define data source types (used only for `sessions.category_id`):
 
 ### boids_3d
-Properties specific to 3D boid simulations:
+3D boid simulation sessions. Common properties include:
 - `distance_to_target_center`
 - `distance_to_target_mesh`
 - `distance_to_scene_mesh`
 - `target_mesh_closest_x/y/z`
 - `scene_mesh_closest_x/y/z`
+- Computed: `speed`, `acceleration_x/y/z`
 
 ### boids_2d
-Properties specific to 2D boid simulations:
-- Currently none (uses only core observations)
-- Can add computed properties (speed, acceleration)
+2D boid simulation sessions. Common properties include:
+- Computed: `speed`, `acceleration_x/y`
 
 ### tracking_csv
-Properties from video tracking:
-- `bbox_x1, bbox_y1, bbox_x2, bbox_y2`
-- Confidence stored in observations table
-
-### computed
-Derived properties (can be computed from core observations):
-- `acceleration_x, acceleration_y, acceleration_z`
-- `speed`
-- `acceleration_magnitude`
+Real-world tracking sessions from video data. Common properties include:
+- `bbox_x1, bbox_y1, bbox_x2, bbox_y2` (bounding boxes)
+- `confidence` (detection confidence)
+- `detection_class` (object class label)
 
 ## Adding New Properties
 
@@ -298,15 +287,19 @@ Derived properties (can be computed from core observations):
 INSERT INTO property_definitions (property_id, property_name, data_type, description, unit)
 VALUES ('distance_to_boundary', 'Distance to Boundary', 'float', 'Minimum distance to any boundary', 'scene_units');
 
--- 2. Assign to category
-INSERT INTO property_category_mapping (property_id, category_id)
-VALUES ('distance_to_boundary', 'boids_3d');
-
--- 3. Insert values (during data loading)
+-- 2. Insert values (during data loading)
 INSERT INTO extended_properties (observation_id, property_id, value_float)
 SELECT observation_id, 'distance_to_boundary', computed_distance_value
 FROM observations o
 WHERE ...;
+
+-- 3. Discover where it's used
+SELECT DISTINCT s.session_name, s.category_id
+FROM sessions s
+JOIN episodes e ON s.session_id = e.session_id
+JOIN observations o ON e.episode_id = o.episode_id
+JOIN extended_properties ep ON o.observation_id = ep.observation_id
+WHERE ep.property_id = 'distance_to_boundary';
 ```
 
 ## Performance Considerations

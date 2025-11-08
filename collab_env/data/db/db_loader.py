@@ -8,8 +8,8 @@ Loads data from various sources into PostgreSQL or DuckDB:
 """
 
 import argparse
-import logging
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -17,17 +17,26 @@ from typing import Any, Dict, List, Optional, Union
 import pandas as pd
 import pyarrow.parquet as pq
 import yaml
+from loguru import logger
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from collab_env.data.db.config import DBConfig, get_db_config
 
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# Configure loguru logging
+logger.remove()  # Remove default handler
+logger.add(sys.stderr, format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}", level="INFO")
+
+# Add file output to logs directory
+log_dir = Path(__file__).parent.parent.parent.parent / "logs"
+log_dir.mkdir(exist_ok=True)
+logger.add(
+    log_dir / "db_loader_{time:YYYY-MM-DD}.log",
+    rotation="00:00",  # Rotate at midnight
+    retention="30 days",  # Keep logs for 30 days
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+    level="DEBUG"
 )
-logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -166,9 +175,7 @@ class BaseDataLoader:
             'z': observations['z'].astype(float) if 'z' in observations else None,
             'v_x': observations['v_x'].astype(float) if 'v_x' in observations else None,
             'v_y': observations['v_y'].astype(float) if 'v_y' in observations else None,
-            'v_z': observations['v_z'].astype(float) if 'v_z' in observations else None,
-            'confidence': observations['confidence'].astype(float) if 'confidence' in observations else None,
-            'detection_class': observations.get('detection_class', None)
+            'v_z': observations['v_z'].astype(float) if 'v_z' in observations else None
         })
 
         # Use pandas to_sql for fast bulk insert
@@ -189,6 +196,7 @@ class BaseDataLoader:
                           Series index should match observations (time_index, agent_id)
         """
         # Get observation IDs for this episode
+        # Optimize: try simple 2-tuple mapping first (fastest path for 90% of episodes)
         query = """
         SELECT observation_id, time_index, agent_id
         FROM observations
@@ -198,16 +206,52 @@ class BaseDataLoader:
 
         obs_rows = self.db.fetch_all(query, {'episode_id': episode_id})
 
-        # Build mapping from (time_index, agent_id) to observation_id
-        obs_id_map = {(row[1], row[2]): row[0] for row in obs_rows}
+        # Build simple 2-tuple mapping - works for most cases
+        obs_id_map = {}
+        has_collision = False
+        for row in obs_rows:
+            key = (row[1], row[2])  # (time_index, agent_id)
+            if key in obs_id_map:
+                # Collision detected - need to use 3-tuple mapping
+                has_collision = True
+                break
+            obs_id_map[key] = row[0]
+
+        # If collision detected, rebuild with 3-tuple mapping
+        if has_collision:
+            logger.info(f"Multiple agent types detected for episode {episode_id}, using 3-tuple mapping")
+            query_3tuple = """
+            SELECT observation_id, time_index, agent_id, agent_type_id
+            FROM observations
+            WHERE episode_id = :episode_id
+            ORDER BY time_index, agent_id, agent_type_id
+            """
+            obs_rows = self.db.fetch_all(query_3tuple, {'episode_id': episode_id})
+            obs_id_map = {(row[1], row[2], row[3]): row[0] for row in obs_rows}
+            # Also create 2-tuple fallback for 'agent' type (property data uses 2-tuples)
+            obs_id_map_2tuple = {(row[1], row[2]): row[0] for row in obs_rows if row[3] == 'agent'}
+        else:
+            obs_id_map_2tuple = None
 
         # Prepare data for batch insert
         records = []
         for property_id, values in property_data.items():
-            for (time_idx, agent_id), value in values.items():
-                obs_id = obs_id_map.get((time_idx, agent_id))
+            for idx, value in values.items():
+                # Determine observation_id based on index structure
+                if isinstance(idx, tuple):
+                    if len(idx) == 2:
+                        # Try 2-tuple mapping (most common)
+                        obs_id = obs_id_map_2tuple.get(idx) if obs_id_map_2tuple is not None else obs_id_map.get(idx)
+                    elif len(idx) == 3 and has_collision:
+                        # Try 3-tuple mapping
+                        obs_id = obs_id_map.get(idx)
+                    else:
+                        obs_id = None
+                else:
+                    obs_id = None
+
                 if obs_id is None:
-                    logger.warning(f"No observation found for ({time_idx}, {agent_id})")
+                    logger.warning(f"No observation found for index {idx}")
                     continue
 
                 if pd.notna(value):
@@ -326,8 +370,8 @@ class Boids3DLoader(BaseDataLoader):
         extended_props = {}
 
         # Map actual parquet column names to property IDs
-        # Distance to target center (may have suffix like _1)
-        target_center_cols = [c for c in df.columns if c.startswith('distance_target_center')]
+        # Distance to target center (may have suffix like _1, and may or may not have '_to_')
+        target_center_cols = [c for c in df.columns if c.startswith('distance_target_center') or c.startswith('distance_to_target_center')]
         if target_center_cols:
             extended_props['distance_to_target_center'] = df.set_index(['time', 'id'])[target_center_cols[0]]
 
@@ -454,7 +498,7 @@ Examples:
         logger.info("Data loading completed successfully")
 
     except Exception as e:
-        logger.error(f"Error loading data: {e}", exc_info=True)
+        logger.exception(f"Error loading data: {e}")
         raise
     finally:
         db_conn.close()

@@ -12,7 +12,7 @@ class TestDatabaseInitialization:
     """Test database schema creation and seed data."""
 
     def test_tables_created(self, backend_config: DBConfig):
-        """Test that all 8 tables are created."""
+        """Test that all 7 tables are created."""
         db = DatabaseConnection(backend_config)
         db.connect()
 
@@ -36,7 +36,7 @@ class TestDatabaseInitialization:
 
         db.close()
 
-        assert table_count == 8, f"Expected 8 tables, found {table_count}"
+        assert table_count == 7, f"Expected 7 tables, found {table_count}"
 
     def test_agent_types_seeded(self, backend_config: DBConfig):
         """Test that agent types seed data is loaded."""
@@ -60,19 +60,19 @@ class TestDatabaseInitialization:
 
         db.close()
 
-        assert count == 18, f"Expected 18 property definitions, found {count}"
+        assert count == 20, f"Expected 20 property definitions, found {count}"
 
-    def test_property_categories_seeded(self, backend_config: DBConfig):
-        """Test that property categories seed data is loaded."""
+    def test_categories_seeded(self, backend_config: DBConfig):
+        """Test that session categories seed data is loaded."""
         db = DatabaseConnection(backend_config)
         db.connect()
 
-        result = db.fetch_one("SELECT COUNT(*) FROM property_categories")
+        result = db.fetch_one("SELECT COUNT(*) FROM categories")
         count = result[0]
 
         db.close()
 
-        assert count == 4, f"Expected 4 property categories, found {count}"
+        assert count == 3, f"Expected 3 categories (boids_3d, boids_2d, tracking_csv), found {count}"
 
     def test_foreign_key_relationships(self, backend_config: DBConfig):
         """Test that foreign key relationships work."""
@@ -83,9 +83,9 @@ class TestDatabaseInitialization:
         result = db.fetch_one("SELECT type_id FROM agent_types WHERE type_id = 'agent'")
         assert result is not None, "agent_types table should have 'agent' type"
 
-        # Test we can query property categories
-        result = db.fetch_one("SELECT category_id FROM property_categories WHERE category_id = 'boids_3d'")
-        assert result is not None, "property_categories should have 'boids_3d' category"
+        # Test we can query categories
+        result = db.fetch_one("SELECT category_id FROM categories WHERE category_id = 'boids_3d'")
+        assert result is not None, "categories should have 'boids_3d' category"
 
         db.close()
 
@@ -96,13 +96,12 @@ class TestDatabaseInitialization:
 
         # Insert and retrieve a test session
         db.execute("""
-            INSERT INTO sessions (session_id, session_name, data_source, category, config, metadata)
-            VALUES (:sid, :name, :source, :cat, :config, :meta)
+            INSERT INTO sessions (session_id, session_name, category_id, config, metadata)
+            VALUES (:sid, :name, :cat, :config, :meta)
         """, {
             'sid': 'test-session',
             'name': 'Test Session',
-            'source': 'boids_3d',
-            'cat': 'simulated',
+            'cat': 'boids_3d',
             'config': '{"test": true}',
             'meta': None
         })
@@ -125,8 +124,8 @@ class TestDuckDBSpecific:
 
         # First create required parent records
         db.execute("""
-            INSERT INTO sessions (session_id, session_name, data_source, category, config)
-            VALUES ('test-s', 'Test', 'boids_3d', 'simulated', '{}')
+            INSERT INTO sessions (session_id, session_name, category_id, config)
+            VALUES ('test-s', 'Test', 'boids_3d', '{}')
         """)
 
         db.execute("""
@@ -171,13 +170,12 @@ class TestPostgreSQLSpecific:
 
         # Insert session with JSON config
         db.execute("""
-            INSERT INTO sessions (session_id, session_name, data_source, category, config)
-            VALUES (:sid, :name, :source, :cat, :config::jsonb)
+            INSERT INTO sessions (session_id, session_name, category_id, config)
+            VALUES (:sid, :name, :cat, :config::jsonb)
         """, {
             'sid': 'test-json',
             'name': 'Test',
-            'source': 'boids_3d',
-            'cat': 'simulated',
+            'cat': 'boids_3d',
             'config': '{"frame_rate": 30}'
         })
 
@@ -218,7 +216,7 @@ class TestDatabaseBackendExecuteQuery:
         # This would fail with "list index out of range" if commit happens before fetchall
         assert result is not None, "execute_query should return results for SELECT queries"
         assert len(result) > 0, "Should have at least one row"
-        assert result[0][0] == 8, f"Expected 8 tables, got {result[0][0]}"
+        assert result[0][0] == 7, f"Expected 7 tables, got {result[0][0]}"
 
         backend.close()
 

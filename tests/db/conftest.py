@@ -82,9 +82,8 @@ def postgres_initialized(postgres_config: DBConfig) -> DBConfig:
         backend.execute_query("DROP TABLE IF EXISTS observations CASCADE")
         backend.execute_query("DROP TABLE IF EXISTS episodes CASCADE")
         backend.execute_query("DROP TABLE IF EXISTS sessions CASCADE")
-        backend.execute_query("DROP TABLE IF EXISTS property_category_mapping CASCADE")
         backend.execute_query("DROP TABLE IF EXISTS property_definitions CASCADE")
-        backend.execute_query("DROP TABLE IF EXISTS property_categories CASCADE")
+        backend.execute_query("DROP TABLE IF EXISTS categories CASCADE")
         backend.execute_query("DROP TABLE IF EXISTS agent_types CASCADE")
 
         # Initialize schema

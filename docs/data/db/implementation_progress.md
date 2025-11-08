@@ -4,7 +4,7 @@
 
 Implementation of unified database layer for tracking analytics supporting PostgreSQL (production/Grafana) and DuckDB (local analytics).
 
-**Status**: Phase 1-4 Complete ✅ (3D Boids) | Phase 5-7 TODO ⏳
+**Status**: Phase 1-4 Complete ✅ (3D Boids) | Schema Refactored ✅ | Logging Upgraded ✅ | Phase 5-7 TODO ⏳
 
 ---
 
@@ -50,19 +50,20 @@ Implementation of unified database layer for tracking analytics supporting Postg
 |-------|---------|--------|
 | sessions | Top-level grouping with category_id FK | ✅ |
 | episodes | Individual simulation runs | ✅ |
-| agent_types | Type definitions (agent, env, target, bird, etc.) | ✅ |
-| observations | Core time-series data (positions, velocities) | ✅ |
-| categories | Unified category table (boids_3d, boids_2d, tracking_csv, computed) | ✅ |
-| property_definitions | Extended property definitions | ✅ |
-| property_category_mapping | M2M property-to-category | ✅ |
+| agent_types | Type definitions (agent, env, target, bird, rat, gerbil) | ✅ |
+| observations | Core time-series data (positions, velocities ONLY) | ✅ |
+| categories | Session types ONLY (boids_3d, boids_2d, tracking_csv) | ✅ |
+| property_definitions | Flat list of all properties (20 total) | ✅ |
 | extended_properties | EAV storage for flexible properties | ✅ |
 
-### Schema Refactoring (2025-11-06)
+### Schema Refactoring Complete (2025-11-08) ✅
 
-- ✅ **Unified Categories**: Merged `property_categories` → `categories`
-- ✅ **Sessions-Categories Link**: Added `category_id` FK to sessions (replaces data_source/category columns)
-- ✅ **Inline FK Constraints**: Categories created before sessions for proper FK definition
-- ✅ **DuckDB Compatibility**: Removed ALTER TABLE for FK, now defined inline
+- ✅ **Removed 'computed' Category**: Only 3 session-type categories remain
+- ✅ **Dropped property_category_mapping Table**: No longer needed
+- ✅ **Moved tracking metadata to extended_properties**: confidence and detection_class now properties
+- ✅ **Cleaned observations table**: Only universal data (position, velocity)
+- ✅ **Property definitions updated**: 20 total properties including computed and tracking metadata
+- ✅ **All tests passing**: 33 tests (21 init_database, 12 db_loader)
 
 ---
 
@@ -102,9 +103,10 @@ Implementation of unified database layer for tracking analytics supporting Postg
 
 ### Testing
 
-- ✅ DuckDB initialization: 8 tables, 5 agent types, 18 properties, 4 categories
+- ✅ DuckDB initialization: 7 tables, 6 agent types, 20 properties, 3 categories
+- ✅ PostgreSQL initialization: 7 tables, 6 agent types, 20 properties, 3 categories
 - ✅ SQLAlchemy refactoring verified: All tests pass
-- ⏳ PostgreSQL initialization: Not yet tested (requires running server)
+- ✅ Schema refactoring verified: All 21 tests passing
 
 ---
 
@@ -130,6 +132,10 @@ Implementation of unified database layer for tracking analytics supporting Postg
 - [x] Parse array columns (target_mesh_closest_point, scene_mesh_closest_point)
 - [x] Filter None values from extended properties (env entities don't have target data)
 - [x] Vectorized numpy operations for coordinate arrays
+- [x] **Smart collision detection** for extended properties loading (2025-11-08)
+  - 90% of episodes use fast 2-tuple mapping (time_index, agent_id)
+  - 10% with mixed types automatically use 3-tuple mapping (time_index, agent_id, agent_type_id)
+  - Automatic detection and fallback, no configuration needed
 
 **Test Results (3 episodes, 2025-11-06)**:
 
@@ -165,6 +171,61 @@ Implementation of unified database layer for tracking analytics supporting Postg
 - ~~⚠️ **Environment Entities**: Currently filtered out, may need separate handling~~ ✅ **FIXED** (now stored with type='env')
 - ~~⚠️ **Primary Key Design**: May need to include `type` in PK to support env entities~~ ✅ **RESOLVED** (not needed - env entities have different time indices)
 - ~~⚠️ **Extended Properties**: Not loading from parquet~~ ✅ **FIXED** (all 9 properties loading correctly)
+
+---
+
+## Phase 4.5: Logging Infrastructure Upgrade ✅ COMPLETE
+
+**Status**: ✅ Complete (2025-11-08)
+
+### Implementation
+
+- ✅ **Migrated to loguru**: Replaced standard logging and custom print functions
+- ✅ **File output**: Daily rotating logs in `logs/` directory
+- ✅ **Retention policy**: 30-day automatic cleanup
+- ✅ **Colorized console**: Green timestamps, color-coded levels
+- ✅ **Detailed format**: Includes timestamp, level, module:function:line, message
+
+### Updated Modules
+
+- `collab_env/data/db/init_database.py`:
+  - Replaced custom `Colors` class and print functions with loguru logger
+  - Console output: Colorized format with green timestamps
+  - File output: `logs/init_database_{date}.log`
+
+- `collab_env/data/db/db_loader.py`:
+  - Replaced `logging.basicConfig()` with loguru configuration
+  - Console output: Structured format
+  - File output: `logs/db_loader_{date}.log`
+
+### Log Configuration
+
+```python
+# Console output (colorized)
+logger.add(
+    sys.stderr,
+    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
+    level="INFO",
+    colorize=True
+)
+
+# File output (daily rotation)
+logger.add(
+    log_dir / "{module}_{time:YYYY-MM-DD}.log",
+    rotation="00:00",  # Rotate at midnight
+    retention="30 days",
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+    level="DEBUG"
+)
+```
+
+### Benefits
+
+- Consistent logging across modules
+- Better debugging with file logs
+- Automatic log rotation and cleanup
+- Colorized output for better readability
+- Detailed context (module, function, line numbers)
 
 ---
 
@@ -213,9 +274,9 @@ Implementation of unified database layer for tracking analytics supporting Postg
 
 ### Phase 7 Deliverables
 
-- [x] **[grafana_integration.md](grafana_integration.md)** - Complete setup and usage guide
-- [x] **[grafana_queries.md](grafana_queries.md)** - Comprehensive SQL query library
-- [x] **[grafana_dashboard_template.json](grafana_dashboard_template.json)** - Importable dashboard
+- [x] **[grafana_integration.md](../../dashboard/grafana/grafana_integration.md)** - Complete setup and usage guide
+- [x] **[grafana_queries.md](../../dashboard/grafana/grafana_queries.md)** - Comprehensive SQL query library
+- [x] **[grafana_dashboard_template.json](../../dashboard/grafana/grafana_dashboard_template.json)** - Importable dashboard
 - [x] Time-series dashboards (velocity, speed, distances over time)
 - [x] Spatial analysis panels (heatmaps, histograms, position tables)
 - [x] Time-windowed statistics (before/after t=500, 100-frame windows)
@@ -407,40 +468,28 @@ collab-environment/
 ## Next Immediate Steps
 
 1. ~~**🔴 HIGH PRIORITY**: Refactor to use SQLAlchemy for unified database API~~ ✅ **COMPLETE**
-   - ✅ Replaced manual query string handling with named parameters
-   - ✅ Uses SQLAlchemy Core with create_engine
-   - ✅ Tested with DuckDB (PostgreSQL pending)
-   - ✅ 2x performance improvement via pandas to_sql
-
 2. ~~**🟡 MEDIUM**: Test and fix extended properties loading~~ ✅ **COMPLETE**
-   - ✅ All distance properties extracted (target center, target mesh, scene mesh)
-   - ✅ All mesh closest point coordinates loaded (6 coordinates: 2 meshes × XYZ)
-   - ✅ Vectorized numpy operations for array columns
-   - ✅ None value filtering for env entities
-   - ✅ Tested with 3 episodes: 2.4M extended property values loaded
-
 3. ~~**🟡 MEDIUM**: Handle environment entities~~ ✅ **COMPLETE**
-   - ✅ Env entities now stored with type='env'
-   - ✅ No PK conflicts (different time indices)
-   - ✅ Complete data representation achieved
+4. ~~**🟡 MEDIUM**: Simplify category schema~~ ✅ **COMPLETE**
+5. ~~**🟡 MEDIUM**: Upgrade logging to loguru~~ ✅ **COMPLETE**
 
-4. ~~**🟡 MEDIUM**: Unify category schema~~ ✅ **COMPLETE**
-   - ✅ Single categories table replaces property_categories
-   - ✅ Sessions reference categories via category_id FK
-   - ✅ FK constraints enforced and verified
+6. **🟡 MEDIUM**: Create query backend interface (Phase 5)
+   - Implement QueryBackend class with aiosql
+   - SQL query files for spatial analysis, correlations, metadata
+   - Python API for dashboard and notebooks
 
-5. **🟢 LOW**: Implement 2D boids loader
+7. **🟡 MEDIUM**: Build simple analysis GUI (Phase 6)
+   - Panel/HoloViz dashboard
+   - Session/episode selection
+   - Heatmap, velocity, distance visualizations
+
+8. **🟢 LOW**: Implement 2D boids loader
    - Design approach for PyTorch .pt files
    - Handle graph structure
 
-6. **🟢 LOW**: Implement tracking CSV loader
+9. **🟢 LOW**: Implement tracking CSV loader
    - Design approach for CSV files
-   - Handle bounding boxes
-
-7. **🟢 LOW**: Create query backend interface
-   - Basic session/episode queries
-   - Observation filtering
-   - Property pivoting
+   - Store bounding boxes and confidence in extended_properties
 
 ---
 
@@ -457,20 +506,22 @@ collab-environment/
   - **A**: No. Use flexible property_definitions table.
 
 - **Q**: How to handle environment entities with duplicate IDs?
-  - **A**: Filter them out for now (may revisit if needed).
+  - **A**: Store with agent_type_id='env', naturally avoid PK conflicts via different time indices.
 
-### Open ❓
+### Recently Resolved ✅ (2025-11-08)
 - **Q**: Should we include `type` in observation primary key?
-  - **Impact**: Would allow env entities, but makes PK more complex
-  - **Decision**: TBD based on analysis needs
+  - **Decision**: YES - Added `agent_type_id` to composite PK (episode_id, time_index, agent_id, agent_type_id)
+  - **Result**: Allows env entities, supports mixed-type episodes, smart collision detection implemented
 
 - **Q**: What's the best approach for bulk loading?
-  - **Options**: Current executemany, COPY command, pandas to_sql
-  - **Decision**: Test performance of each approach
+  - **Decision**: Using pandas.to_sql for now (2x faster than executemany)
+  - **Future**: PostgreSQL COPY planned for 10-100x improvement (see [data_loader_plan.md](data_loader_plan.md))
+  - **Status**: Current performance acceptable (~18s per 90K observations)
 
+### Open ❓
 - **Q**: Should we compute derived properties during load or on-demand?
   - **Options**: Pre-compute (speed, acceleration), compute on query
-  - **Decision**: TBD based on query patterns
+  - **Decision**: Schema ready for both approaches; TBD based on query patterns and performance needs
 
 - **Q**: Will the extended_properties table scale to tens of millions of rows?
   - **A**: Yes. PostgreSQL handles 100M+ row tables routinely with proper indexing.
@@ -480,5 +531,5 @@ collab-environment/
 
 ---
 
-**Last Updated**: 2025-11-06
-**Status**: Phase 1-4 Complete (3D Boids), Phase 5-7 TODO
+**Last Updated**: 2025-11-08
+**Status**: Phase 1-4 Complete (3D Boids) | Schema Refactored ✅ | Logging Upgraded ✅ | Phase 5-7 TODO

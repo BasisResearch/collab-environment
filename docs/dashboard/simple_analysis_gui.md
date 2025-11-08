@@ -1032,5 +1032,12 @@ query.close()
 
 ---
 
-**Last Updated**: 2025-11-06
-**Status**: Phase 5-6 Implementation in Progress
+**Last Updated**: 2025-11-08
+**Status**: Phase 5-6 Implementation in Progress | Schema Refactored ✅
+
+**Recent Changes (2025-11-08):**
+
+- ✅ Database schema refactored: Only 3 categories (boids_3d, boids_2d, tracking_csv)
+- ✅ Observations table cleaned: confidence/detection_class moved to extended_properties
+- ✅ property_category_mapping table dropped
+- ✅ All tests passing (33 tests total)

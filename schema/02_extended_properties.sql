@@ -16,24 +16,9 @@ CREATE TABLE property_definitions (
     unit VARCHAR                     -- meters, pixels, m/s^2, etc.
 );
 
-COMMENT ON TABLE property_definitions IS 'Defines all available extended properties';
+COMMENT ON TABLE property_definitions IS 'Flat list of all available extended properties (computed and raw)';
 COMMENT ON COLUMN property_definitions.data_type IS 'Data type: float, vector, string';
 COMMENT ON COLUMN property_definitions.unit IS 'Unit of measurement (e.g., scene_units, pixels, m/s^2)';
-
--- =============================================================================
--- PROPERTY CATEGORY MAPPING - M2M relationship
--- =============================================================================
-
-CREATE TABLE property_category_mapping (
-    property_id VARCHAR NOT NULL REFERENCES property_definitions(property_id) ON DELETE CASCADE,
-    category_id VARCHAR NOT NULL REFERENCES categories(category_id) ON DELETE CASCADE,
-
-    PRIMARY KEY (property_id, category_id)
-);
-
-CREATE INDEX idx_prop_cat_mapping_category ON property_category_mapping(category_id);
-
-COMMENT ON TABLE property_category_mapping IS 'Maps properties to categories (M2M relationship)';
 
 -- =============================================================================
 -- EXTENDED PROPERTIES - EAV table for flexible property storage

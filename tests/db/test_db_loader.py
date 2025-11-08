@@ -26,8 +26,7 @@ class TestDataLoader:
         metadata = SessionMetadata(
             session_id='test-session-1',
             session_name='Test Session',
-            data_source='boids_3d',
-            category='simulated',
+            category_id='boids_3d',
             config={'frame_rate': 30.0},
             metadata={'test': True}
         )
@@ -57,8 +56,7 @@ class TestDataLoader:
         session_metadata = SessionMetadata(
             session_id='test-session-2',
             session_name='Test Session',
-            data_source='boids_3d',
-            category='simulated',
+            category_id='boids_3d',
             config={}
         )
         loader.load_session(session_metadata)

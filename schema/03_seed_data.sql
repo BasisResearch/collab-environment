@@ -22,10 +22,9 @@ ON CONFLICT (type_id) DO NOTHING;
 -- =============================================================================
 
 INSERT INTO categories (category_id, category_name, description) VALUES
-    ('boids_3d', '3D Boids Simulations', 'Properties and sessions for 3D boid simulations (distances to targets/meshes)'),
-    ('boids_2d', '2D Boids Simulations', 'Properties and sessions for 2D boid simulations'),
-    ('tracking_csv', 'Real-World Tracking', 'Properties and sessions from video tracking (bounding boxes, confidence)'),
-    ('computed', 'Computed Properties', 'Derived properties (accelerations, speeds, etc.)')
+    ('boids_3d', '3D Boids Simulations', 'Sessions from 3D boid simulations'),
+    ('boids_2d', '2D Boids Simulations', 'Sessions from 2D boid simulations'),
+    ('tracking_csv', 'Real-World Tracking', 'Sessions from video tracking (CSV data)')
 ON CONFLICT (category_id) DO NOTHING;
 
 -- =============================================================================
@@ -67,48 +66,11 @@ INSERT INTO property_definitions (property_id, property_name, data_type, descrip
     ('acceleration_magnitude', 'Acceleration Magnitude', 'float', 'Magnitude of acceleration vector', 'scene_units/frame^2')
 ON CONFLICT (property_id) DO NOTHING;
 
--- =============================================================================
--- PROPERTY CATEGORY MAPPING - Assign properties to categories
--- =============================================================================
-
--- 3D Boids properties
-INSERT INTO property_category_mapping (property_id, category_id) VALUES
-    ('distance_to_target_center', 'boids_3d'),
-    ('distance_to_target_mesh', 'boids_3d'),
-    ('distance_to_scene_mesh', 'boids_3d'),
-    ('target_mesh_closest_x', 'boids_3d'),
-    ('target_mesh_closest_y', 'boids_3d'),
-    ('target_mesh_closest_z', 'boids_3d'),
-    ('scene_mesh_closest_x', 'boids_3d'),
-    ('scene_mesh_closest_y', 'boids_3d'),
-    ('scene_mesh_closest_z', 'boids_3d')
-ON CONFLICT (property_id, category_id) DO NOTHING;
-
--- Tracking CSV properties
-INSERT INTO property_category_mapping (property_id, category_id) VALUES
-    ('bbox_x1', 'tracking_csv'),
-    ('bbox_y1', 'tracking_csv'),
-    ('bbox_x2', 'tracking_csv'),
-    ('bbox_y2', 'tracking_csv')
-ON CONFLICT (property_id, category_id) DO NOTHING;
-
--- Computed properties (applicable to all categories)
-INSERT INTO property_category_mapping (property_id, category_id) VALUES
-    ('acceleration_x', 'computed'),
-    ('acceleration_y', 'computed'),
-    ('acceleration_z', 'computed'),
-    ('speed', 'computed'),
-    ('acceleration_magnitude', 'computed'),
-    -- Computed properties can also apply to specific data sources
-    ('speed', 'boids_3d'),
-    ('speed', 'boids_2d'),
-    ('speed', 'tracking_csv'),
-    ('acceleration_x', 'boids_3d'),
-    ('acceleration_y', 'boids_3d'),
-    ('acceleration_z', 'boids_3d'),
-    ('acceleration_x', 'boids_2d'),
-    ('acceleration_y', 'boids_2d')
-ON CONFLICT (property_id, category_id) DO NOTHING;
+-- Tracking metadata properties (moved from observations table)
+INSERT INTO property_definitions (property_id, property_name, data_type, description, unit) VALUES
+    ('confidence', 'Detection Confidence', 'float', 'Detection confidence score from tracking', 'probability'),
+    ('detection_class', 'Detection Class', 'string', 'Detected object class label', 'label')
+ON CONFLICT (property_id) DO NOTHING;
 
 -- =============================================================================
 -- END OF SEED DATA

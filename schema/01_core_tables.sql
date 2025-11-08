@@ -14,7 +14,7 @@ CREATE TABLE categories (
     description TEXT
 );
 
-COMMENT ON TABLE categories IS 'Categories for sessions and extended properties (boids_3d, boids_2d, tracking_csv, computed)';
+COMMENT ON TABLE categories IS 'Categories for data source types (sessions only): boids_3d, boids_2d, tracking_csv';
 COMMENT ON COLUMN categories.category_id IS 'Unique category identifier (e.g., boids_3d, tracking_csv)';
 
 -- =============================================================================
@@ -90,10 +90,6 @@ CREATE TABLE observations (
     v_y DOUBLE PRECISION,
     v_z DOUBLE PRECISION,
 
-    -- Tracking metadata (for real-world data)
-    confidence DOUBLE PRECISION,      -- Detection confidence [0-1]
-    detection_class VARCHAR,          -- Detected object class
-
     -- Primary key: ensures unique (episode, time, agent, type) tuple
     -- Includes agent_type_id to allow same agent_id for different entity types (agent vs env)
     PRIMARY KEY (episode_id, time_index, agent_id, agent_type_id)
@@ -104,7 +100,7 @@ CREATE INDEX idx_obs_episode ON observations(episode_id);
 CREATE INDEX idx_obs_episode_time ON observations(episode_id, time_index);
 CREATE INDEX idx_obs_agent_type ON observations(agent_type_id);
 
-COMMENT ON TABLE observations IS 'Core time-series data: positions and velocities. Extended properties in separate table.';
+COMMENT ON TABLE observations IS 'Core time-series data: positions and velocities (universal data only). Session-specific data in extended_properties.';
 COMMENT ON COLUMN observations.observation_id IS 'Surrogate key for foreign key references (auto-increment)';
 COMMENT ON COLUMN observations.time_index IS 'Frame number / timestep (0-indexed)';
 COMMENT ON COLUMN observations.agent_id IS 'Agent ID within episode';

@@ -11,37 +11,41 @@ import sys
 from pathlib import Path
 from typing import Optional
 
+from loguru import logger
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from collab_env.data.db.config import get_db_config, DBConfig
 from collab_env.data.file_utils import get_project_root
 
+# Configure loguru logging
+logger.remove()  # Remove default handler
 
-# ANSI colors
-class Colors:
-    RED = '\033[0;31m'
-    GREEN = '\033[0;32m'
-    YELLOW = '\033[1;33m'
-    NC = '\033[0m'  # No Color
+# Add colorized console output
+logger.add(
+    sys.stderr,
+    format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <level>{message}</level>",
+    level="INFO",
+    colorize=True
+)
+
+# Add file output to logs directory
+log_dir = Path(__file__).parent.parent.parent.parent / "logs"
+log_dir.mkdir(exist_ok=True)
+logger.add(
+    log_dir / "init_database_{time:YYYY-MM-DD}.log",
+    rotation="00:00",  # Rotate at midnight
+    retention="30 days",  # Keep logs for 30 days
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+    level="DEBUG"
+)
 
 
-def print_header(msg: str):
-    print(f"{Colors.GREEN}{'=' * 60}{Colors.NC}")
-    print(f"{Colors.GREEN}{msg}{Colors.NC}")
-    print(f"{Colors.GREEN}{'=' * 60}{Colors.NC}")
-
-
-def print_info(msg: str):
-    print(f"{Colors.YELLOW}[INFO]{Colors.NC} {msg}")
-
-
-def print_success(msg: str):
-    print(f"{Colors.GREEN}[SUCCESS]{Colors.NC} {msg}")
-
-
-def print_error(msg: str):
-    print(f"{Colors.RED}[ERROR]{Colors.NC} {msg}")
+def log_header(msg: str):
+    """Log a header message with separator."""
+    logger.info("=" * 60)
+    logger.info(msg)
+    logger.info("=" * 60)
 
 
 class DatabaseBackend:
@@ -63,11 +67,11 @@ class DatabaseBackend:
                 conn.commit()
 
             if self.config.backend == 'postgres':
-                print_success(f"Connected to PostgreSQL: {self.config.postgres.dbname}")
+                logger.success(f"Connected to PostgreSQL: {self.config.postgres.dbname}")
             else:
-                print_success(f"Connected to DuckDB: {self.config.duckdb.dbpath}")
+                logger.success(f"Connected to DuckDB: {self.config.duckdb.dbpath}")
         except Exception as e:
-            print_error(f"Failed to connect to database: {e}")
+            logger.error(f"Failed to connect to database: {e}")
             raise
 
     def execute_file(self, filepath: Path):
@@ -107,9 +111,9 @@ class DatabaseBackend:
                 conn.execute(text(sql_content))
                 conn.commit()
 
-            print_success(f"Executed {filepath.name}")
+            logger.success(f"Executed {filepath.name}")
         except Exception as e:
-            print_error(f"Failed to execute {filepath.name}: {e}")
+            logger.error(f"Failed to execute {filepath.name}: {e}")
             raise
 
     def execute_query(self, query: str):
@@ -141,7 +145,7 @@ def get_schema_files(schema_dir: Path) -> list[Path]:
 
     for f in files:
         if not f.exists():
-            print_error(f"Schema file not found: {f}")
+            logger.error(f"Schema file not found: {f}")
             sys.exit(1)
 
     return files
@@ -149,7 +153,7 @@ def get_schema_files(schema_dir: Path) -> list[Path]:
 
 def verify_setup(backend: DatabaseBackend):
     """Verify database setup"""
-    print_header("Verifying Setup")
+    log_header("Verifying Setup")
 
     # Check table count
     if backend.config.backend == 'postgres':
@@ -164,35 +168,35 @@ def verify_setup(backend: DatabaseBackend):
     result = backend.execute_query(query)
     table_count = result[0][0]
 
-    if table_count == 8:
-        print_success(f"All 8 tables created")
+    if table_count == 7:
+        logger.success(f"All 7 tables created")
     else:
-        print_error(f"Expected 8 tables, found {table_count}")
+        logger.error(f"Expected 7 tables, found {table_count}")
         return False
 
     # Check seed data
     result = backend.execute_query("SELECT count(*) FROM agent_types;")
     agent_count = result[0][0]
     if agent_count >= 5:
-        print_success(f"Agent types loaded ({agent_count} rows)")
+        logger.success(f"Agent types loaded ({agent_count} rows)")
     else:
-        print_error(f"Expected at least 5 agent types, found {agent_count}")
+        logger.error(f"Expected at least 5 agent types, found {agent_count}")
         return False
 
     result = backend.execute_query("SELECT count(*) FROM property_definitions;")
     prop_count = result[0][0]
     if prop_count >= 10:
-        print_success(f"Property definitions loaded ({prop_count} rows)")
+        logger.success(f"Property definitions loaded ({prop_count} rows)")
     else:
-        print_error(f"Expected at least 10 property definitions, found {prop_count}")
+        logger.error(f"Expected at least 10 property definitions, found {prop_count}")
         return False
 
     result = backend.execute_query("SELECT count(*) FROM categories;")
     cat_count = result[0][0]
-    if cat_count == 4:
-        print_success(f"Categories loaded ({cat_count} rows)")
+    if cat_count == 3:
+        logger.success(f"Categories loaded ({cat_count} rows)")
     else:
-        print_error(f"Expected 4 categories, found {cat_count}")
+        logger.error(f"Expected 3 categories, found {cat_count}")
         return False
 
     return True
@@ -200,17 +204,16 @@ def verify_setup(backend: DatabaseBackend):
 
 def print_summary(backend: DatabaseBackend):
     """Print summary"""
-    print_header("Summary")
+    log_header("Summary")
 
     if backend.config.backend == 'postgres':
-        print(f"{Colors.GREEN}Database:{Colors.NC} {backend.config.postgres.dbname}")
-        print(f"{Colors.GREEN}Host:{Colors.NC} {backend.config.postgres.host}:{backend.config.postgres.port}")
-        print(f"{Colors.GREEN}User:{Colors.NC} {backend.config.postgres.user}")
+        logger.info(f"Database: {backend.config.postgres.dbname}")
+        logger.info(f"Host: {backend.config.postgres.host}:{backend.config.postgres.port}")
+        logger.info(f"User: {backend.config.postgres.user}")
     else:
-        print(f"{Colors.GREEN}Database:{Colors.NC} {backend.config.duckdb.dbpath}")
+        logger.info(f"Database: {backend.config.duckdb.dbpath}")
 
-    print()
-    print_info("Tables created:")
+    logger.info("Tables created:")
 
     if backend.config.backend == 'postgres':
         result = backend.execute_query("""
@@ -226,10 +229,9 @@ def print_summary(backend: DatabaseBackend):
         """)
 
     for row in result:
-        print(f"  - {row[0]}")
+        logger.info(f"  - {row[0]}")
 
-    print()
-    print_success("Database initialization complete!")
+    logger.success("Database initialization complete!")
 
 
 def recreate_database(config: DBConfig):
@@ -247,7 +249,7 @@ def recreate_database(config: DBConfig):
         try:
             with temp_engine.connect() as conn:
                 # Terminate existing connections to target database
-                print_info(f"Terminating connections to {temp_dbname}...")
+                logger.info(f"Terminating connections to {temp_dbname}...")
                 conn.execute(text(f"""
                     SELECT pg_terminate_backend(pg_stat_activity.pid)
                     FROM pg_stat_activity
@@ -256,11 +258,11 @@ def recreate_database(config: DBConfig):
                 """))
 
                 # Drop database if it exists
-                print_info(f"Dropping database {temp_dbname}...")
+                logger.info(f"Dropping database {temp_dbname}...")
                 conn.execute(text(f"DROP DATABASE IF EXISTS {temp_dbname}"))
 
                 # Create database
-                print_success(f"Creating database {temp_dbname}...")
+                logger.success(f"Creating database {temp_dbname}...")
                 conn.execute(text(f"CREATE DATABASE {temp_dbname}"))
 
         finally:
@@ -271,13 +273,13 @@ def recreate_database(config: DBConfig):
     else:  # DuckDB
         # For DuckDB, just delete the file
         if os.path.exists(config.duckdb.dbpath):
-            print_info(f"Removing existing DuckDB file: {config.duckdb.dbpath}")
+            logger.info(f"Removing existing DuckDB file: {config.duckdb.dbpath}")
             os.remove(config.duckdb.dbpath)
             # Also remove .wal file if it exists
             wal_file = config.duckdb.dbpath + '.wal'
             if os.path.exists(wal_file):
                 os.remove(wal_file)
-        print_success(f"Creating new DuckDB file: {config.duckdb.dbpath}")
+        logger.success(f"Creating new DuckDB file: {config.duckdb.dbpath}")
 
 
 def main():
@@ -317,7 +319,7 @@ Examples:
     args = parser.parse_args()
 
     # Load configuration from environment, override with command-line args
-    print_info("Loading database configuration...")
+    logger.info("Loading database configuration...")
     config = get_db_config(backend=args.backend)
 
     # Override config with command-line args if provided
@@ -344,60 +346,57 @@ Examples:
     schema_dir = args.schema_dir or (project_root / 'schema')
 
     if not schema_dir.exists():
-        print_error(f"Schema directory not found: {schema_dir}")
+        logger.error(f"Schema directory not found: {schema_dir}")
         sys.exit(1)
 
-    print_header("Tracking Analytics Database Initialization")
-    print(f"Backend: {config.backend}")
-    print(f"Configuration: {config}")
-    print(f"Schema dir: {schema_dir}")
-    print()
+    log_header("Tracking Analytics Database Initialization")
+    logger.info(f"Backend: {config.backend}")
+    logger.info(f"Configuration: {config}")
+    logger.info(f"Schema dir: {schema_dir}")
 
     # Get schema files
     schema_files = get_schema_files(schema_dir)
-    print_info(f"Found {len(schema_files)} schema files")
+    logger.info(f"Found {len(schema_files)} schema files")
 
     # Drop and recreate database (unless --no-drop specified)
     if not args.no_drop:
-        print_header("Recreating Database")
-        print_info("⚠️  This will drop the existing database and all data!")
+        log_header("Recreating Database")
+        logger.warning("⚠️  This will drop the existing database and all data!")
         recreate_database(config)
-        print()
 
     # Create unified backend with SQLAlchemy
     backend = DatabaseBackend(config)
 
     try:
         # Connect
-        print_header("Connecting to Database")
+        log_header("Connecting to Database")
         backend.connect()
 
         # Execute schema files
-        print_header("Creating Schema")
+        log_header("Creating Schema")
         for schema_file in schema_files:
-            print_info(f"Executing {schema_file.name}...")
+            logger.info(f"Executing {schema_file.name}...")
             backend.execute_file(schema_file)
 
         # Verify
         if not verify_setup(backend):
-            print_error("Verification failed")
+            logger.error("Verification failed")
             sys.exit(1)
 
         # Summary
         print_summary(backend)
 
-        print()
-        print_info("Next steps:")
-        print("  1. Load data: python -m collab_env.data.db_loader")
+        logger.info("Next steps:")
+        logger.info("  1. Load data: python -m collab_env.data.db_loader")
         if config.backend == 'postgres':
-            print(f"  2. Connect Grafana to: {config.postgres.connection_string(include_password=False)}")
-            print(f"  3. Query: psql -h {config.postgres.host} -U {config.postgres.user} -d {config.postgres.dbname}")
+            logger.info(f"  2. Connect Grafana to: {config.postgres.connection_string(include_password=False)}")
+            logger.info(f"  3. Query: psql -h {config.postgres.host} -U {config.postgres.user} -d {config.postgres.dbname}")
         else:
-            print(f"  2. Query: duckdb {config.duckdb.dbpath}")
-            print(f"  3. Or in Python: import duckdb; conn = duckdb.connect('{config.duckdb.dbpath}')")
+            logger.info(f"  2. Query: duckdb {config.duckdb.dbpath}")
+            logger.info(f"  3. Or in Python: import duckdb; conn = duckdb.connect('{config.duckdb.dbpath}')")
 
     except Exception as e:
-        print_error(f"Initialization failed: {e}")
+        logger.error(f"Initialization failed: {e}")
         sys.exit(1)
     finally:
         backend.close()

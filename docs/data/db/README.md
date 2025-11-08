@@ -6,6 +6,10 @@ Unified tracking analytics database supporting PostgreSQL and DuckDB.
 
 - **[Schema Documentation](../../../schema/README.md)** - Database schema details and SQL files
 - **[Data Formats](data_formats.md)** - Source data documentation
+- **[Schema Refactoring](archive/schema_refactoring.md)** - ✅ COMPLETE (2025-11-08) - Historical design documentation
+- **[Data Loader Improvements](data_loader_plan.md)** - Planned data loading performance improvements
+- **[Grafana Integration](../../dashboard/grafana/grafana_integration.md)** - Grafana dashboards and queries
+- **[Grafana Query Library](../../dashboard/grafana/grafana_queries.md)** - 30+ tested SQL queries
 
 ## Overview
 
@@ -368,9 +372,9 @@ Visualize your boid simulation data with ready-to-use Grafana dashboards and que
 
 ### Documentation
 
-- **[📖 Complete Integration Guide](grafana_integration.md)** - Setup, dashboard creation, troubleshooting
-- **[📝 Query Library](grafana_queries.md)** - 30+ tested SQL queries for all visualizations
-- **[📊 Dashboard Template](grafana_dashboard_template.json)** - Importable Grafana dashboard JSON
+- **[📖 Complete Integration Guide](../../dashboard/grafana/grafana_integration.md)** - Setup, dashboard creation, troubleshooting
+- **[📝 Query Library](../../dashboard/grafana/grafana_queries.md)** - 30+ tested SQL queries for all visualizations
+- **[📊 Dashboard Template](../../dashboard/grafana/grafana_dashboard_template.json)** - Importable Grafana dashboard JSON
 
 ### Example Queries
 
@@ -419,7 +423,7 @@ GROUP BY o.time_index, e.frame_rate
 ORDER BY o.time_index
 ```
 
-See [grafana_queries.md](grafana_queries.md) for the complete query library.
+See [grafana_queries.md](../../dashboard/grafana/grafana_queries.md) for the complete query library.
 
 ## Performance
 
