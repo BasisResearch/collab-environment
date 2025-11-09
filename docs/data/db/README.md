@@ -4,12 +4,19 @@ Unified tracking analytics database supporting PostgreSQL and DuckDB.
 
 ## Quick Links
 
+**Data Layer:**
 - **[Schema Documentation](../../../schema/README.md)** - Database schema details and SQL files
 - **[Data Formats](data_formats.md)** - Source data documentation
-- **[Schema Refactoring](archive/schema_refactoring.md)** - ✅ COMPLETE (2025-11-08) - Historical design documentation
-- **[Data Loader Improvements](data_loader_plan.md)** - Planned data loading performance improvements
+- **[Data Loader Improvements](data_loader_plan.md)** - Planned data loading performance improvements (COPY, optimizations)
+
+**Query & Visualization Layer:**
+- **[Dashboard System](../dashboard/README.md)** - 🎯 **QueryBackend API + GUI Widgets** - Complete guide to querying and visualizing data
 - **[Grafana Integration](../../dashboard/grafana/grafana_integration.md)** - Grafana dashboards and queries
 - **[Grafana Query Library](../../dashboard/grafana/grafana_queries.md)** - 30+ tested SQL queries
+
+**Historical:**
+- **[Schema Refactoring](archive/schema_refactoring.md)** - ✅ COMPLETE (2025-11-08)
+- **[Implementation Progress](implementation_progress.md)** - ⚠️ DEPRECATED - See current docs above
 
 ## Overview
 
@@ -488,11 +495,19 @@ docs/data/db/
 
 ### TODO ⏳
 
+**Data Loading:**
 - [ ] 2D boids loader (PyTorch .pt files)
 - [ ] Tracking CSV loader
-- [ ] Query backend interface
-- [ ] Dashboard integration as an additional data source
-- [ ] Spatial queries and statistics, in a separate dashboard, see `./docs/dashboard/spatial_analysis.md`
+- [ ] PostgreSQL COPY optimization for 10-100x faster loading (see [data_loader_plan.md](data_loader_plan.md))
+
+**Query & Visualization:**
+- See **[Dashboard System](../dashboard/README.md)** for:
+  - ✅ QueryBackend API (production ready)
+  - ✅ Spatial analysis GUI (production ready)
+  - ⏳ Unified widget architecture (planned - Phase 7)
+  - ⏳ Property computation framework (planned - Phase 8)
+
+**Advanced Features:**
 - [ ] Advanced Grafana features (correlations, pairwise statistics, alerts)
 
 ## Troubleshooting
