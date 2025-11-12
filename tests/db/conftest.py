@@ -1,5 +1,5 @@
 """
-Pytest fixtures for database tests.
+Pytest fixtures for database tests - with 2D boids fixture.
 """
 
 import os
@@ -7,14 +7,17 @@ import tempfile
 from pathlib import Path
 from typing import Generator
 
+import numpy as np
 import pandas as pd
 import pytest
+import torch
 import yaml
 
 from collab_env.data.db.config import DBConfig, get_db_config
 from collab_env.data.db.init_database import DatabaseBackend
 from collab_env.data.db.db_loader import DatabaseConnection
 from collab_env.data.file_utils import get_project_root
+from collab_env.sim.boids_gnn_temp.animal_simulation import AnimalTrajectoryDataset
 
 
 @pytest.fixture
@@ -75,6 +78,26 @@ def postgres_initialized(postgres_config: DBConfig) -> DBConfig:
     try:
         backend = DatabaseBackend(postgres_config)
         backend.connect()
+
+        # SAFETY CHECK: Ensure we're using a test database
+        # Refuse to run tests on production databases
+        db_name = postgres_config.postgres.dbname.lower()
+        forbidden_names = ['tracking_analytics', 'production', 'prod', 'main']
+
+        if db_name in forbidden_names:
+            pytest.skip(
+                f"SAFETY: Refusing to run tests on database '{db_name}'. "
+                f"Please set POSTGRES_DB=tracking_analytics_test in your environment. "
+                f"Tests drop all tables and should only run on dedicated test databases!"
+            )
+
+        # Require explicit '_test' suffix for safety
+        if not db_name.endswith('_test'):
+            pytest.skip(
+                f"SAFETY: Database name '{db_name}' must end with '_test'. "
+                f"Example: tracking_analytics_test. "
+                f"This prevents accidentally running destructive tests on production."
+            )
 
         # Clean up any existing test data
         # DROP TABLE IF EXISTS with CASCADE should always succeed
@@ -172,3 +195,40 @@ def backend_config(request):
     else:
         # Get postgres_initialized fixture (may skip)
         return request.getfixturevalue('postgres_initialized')
+
+
+@pytest.fixture
+def sample_2d_boids_data(tmp_path: Path) -> Path:
+    """Create a small sample 2D boids dataset for testing."""
+    # Create config
+    config = {
+        'A': {
+            'visual_range': 50,
+            'centering_factor': 0.005,
+            'min_distance': 15,
+            'avoid_factor': 0.05,
+            'matching_factor': 0.5,
+            'margin': 5,
+            'turn_factor': 10,
+            'speed_limit': 7,
+            'counts': 5,
+            'independent': False
+        },
+        'scene_size': 480.0
+    }
+
+    config_path = tmp_path / 'test_2d_boids_config.pt'
+    torch.save(config, config_path)
+
+    # Create dataset with 3 samples
+    # Use the actual dataset class from real data
+    dataset = torch.load('simulated_data/boid_food_basic.pt', weights_only=False)
+
+    # Create a simple test dataset with just the first 3 samples
+    test_samples = [dataset[i] for i in range(3)]
+
+    # Save as simple list
+    data_path = tmp_path / 'test_2d_boids.pt'
+    torch.save(test_samples, data_path)
+
+    return data_path

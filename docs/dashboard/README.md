@@ -408,46 +408,69 @@ properties = query.get_extended_properties_timeseries(
 
 ## Implementation Roadmap
 
-### Phase 7.1: Basic Data Viewer (12-16 hours)
+### Phase 7.1: Basic Data Viewer (12-16 hours) ✅ **COMPLETE**
 
-**Step 1: SQL Queries (2-3 hours)**
-- [ ] Create `queries/basic_data_viewer.sql`
-- [ ] Implement 4 queries:
+**Status**: Basic Data Viewer is fully implemented and functional. Successfully tested with both 2D and 3D episodes.
+
+**Step 1: SQL Queries (2-3 hours)** ✅
+- [x] Create `queries/basic_data_viewer.sql`
+- [x] Implement 4 queries:
   - `get_episode_tracks`: Position/velocity data for animation
   - `get_extended_properties_timeseries`: Aggregated property time series
   - `get_property_distributions`: Raw property values for histograms
   - `get_available_properties`: List available properties
-- [ ] Test queries with real episode data
-- [ ] Verify performance (<2s for typical episode)
+- [x] Test queries with real episode data
+- [x] Verify performance (<2s for typical episode)
 
-**Step 2: QueryBackend Integration (2 hours)**
-- [ ] Add 4 methods to `QueryBackend`
-- [ ] Handle array parameters for `property_ids`
-- [ ] Test with various parameter combinations
+**Step 2: QueryBackend Integration (2 hours)** ✅
+- [x] Add 4 methods to `QueryBackend`
+- [x] Handle array parameters for `property_ids` (implemented with Python-level filtering)
+- [x] Test with various parameter combinations
 
-**Step 3: Widget Core & Layout (3-4 hours)**
-- [ ] Create `BasicDataViewerWidget` class skeleton
-- [ ] Implement 4-panel layout (animation, heatmap, timeseries, histograms)
-- [ ] Implement `load_data()` to fetch all data
-- [ ] Add playback controls
+**Step 3: Widget Core & Layout (3-4 hours)** ✅
+- [x] Create `BasicDataViewerWidget` class skeleton
+- [x] Implement 4-panel layout (animation, heatmap, timeseries, histograms)
+- [x] Implement `load_data()` to fetch all data
+- [x] Add playback controls (play/pause, speed control, time scrubbing, trail length)
 
-**Step 4: Panel Visualizations (4-5 hours)**
-- [ ] Animation panel: HoloViews DynamicMap with trails
-- [ ] Heatmap panel: Reuse existing heatmap code
-- [ ] Time series panel: Bokeh multi-line with sync indicator
-- [ ] Histogram panel: Dynamic row of hvPlot histograms
+**Step 4: Panel Visualizations (4-5 hours)** ✅
 
-**Step 5: Synchronization (2-3 hours)**
-- [ ] Time window synchronization (all panels)
-- [ ] Current time synchronization (animation ↔ time series)
-- [ ] Property selection synchronization (time series + histograms)
-- [ ] Handle edge cases (no properties, empty data)
+- [x] Animation panel: 2D/3D scatter plots with configurable trails and fixed axis limits
+- [x] Heatmap panel: QuadMesh (2D) / Scatter3D (3D) with proper spatial coordinate mapping
+- [x] Time series panel: Bokeh multi-line with mean ± std bands and current time indicator
+- [x] Histogram panel: Dynamic row of histograms with statistics overlays
 
-**Step 6: Testing & Documentation (2 hours)**
-- [ ] Create `tests/dashboard/test_basic_data_viewer.py`
-- [ ] Test with 2D and 3D episodes
-- [ ] Test property selection
-- [ ] Update documentation
+**Step 5: Synchronization (2-3 hours)** ✅
+
+- [x] Time window synchronization (all panels)
+- [x] Current time synchronization (animation ↔ time series with playback controls)
+- [x] Property selection synchronization (time series + histograms)
+- [x] Handle edge cases (no properties, empty data)
+
+**Step 6: Testing & Documentation (2 hours)** ⏸️ **PARTIAL**
+
+- [ ] Create `tests/dashboard/test_basic_data_viewer.py` (formal unit tests pending)
+- [x] Test with 2D and 3D episodes (manual testing complete)
+- [x] Test property selection (manual testing complete)
+- [x] Update documentation (this update)
+
+**Implementation Notes**:
+
+- Fixed axis limits computed once during data load to prevent disorienting dynamic rescaling during playback
+- Automatic 2D/3D detection based on z-coordinate variance
+- Persistent pane architecture for efficient updates (no widget recreation per frame)
+- Defensive periodic callback management to prevent callback pile-up
+- Proper bin center calculation for heatmap spatial coordinates
+- Property-agnostic design: works with any extended property without code changes
+
+**Known Issues**: None currently. Widget is production-ready.
+
+**Files Created/Modified**:
+
+- `collab_env/data/db/queries/basic_data_viewer.sql` (new)
+- `collab_env/data/db/query_backend.py` (4 new methods)
+- `collab_env/dashboard/widgets/basic_data_viewer_widget.py` (new, 671 lines)
+- `collab_env/dashboard/analysis_widgets.yaml` (registered widget)
 
 ### Phase 7.2: Relative Quantities Viewer (6-8 hours)
 

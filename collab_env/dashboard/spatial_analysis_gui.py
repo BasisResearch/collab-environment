@@ -39,6 +39,7 @@ class SpatialAnalysisGUI(param.Parameterized):
     """
 
     # Reactive parameters for scope selection
+    selected_category = param.String(default="", doc="Selected category ID")
     selected_session = param.String(default="", doc="Selected session ID")
     selected_episode = param.String(default="", doc="Selected episode ID")
     scope_type = param.Selector(
@@ -75,6 +76,7 @@ class SpatialAnalysisGUI(param.Parameterized):
         self._wire_callbacks()
 
         # Load initial data
+        self._load_categories()
         self._load_sessions()
 
         # Initialize widget contexts
@@ -89,6 +91,13 @@ class SpatialAnalysisGUI(param.Parameterized):
             options=["Episode", "Session"],
             value="Episode",
             button_type="success"
+        )
+
+        self.category_select = pn.widgets.Select(
+            name="Category",
+            options=[],
+            min_width=350,
+            sizing_mode="stretch_width"
         )
 
         self.session_select = pn.widgets.Select(
@@ -195,7 +204,8 @@ class SpatialAnalysisGUI(param.Parameterized):
     def _wire_callbacks(self):
         """Wire widget callbacks."""
 
-        # Session/Episode selection
+        # Category/Session/Episode selection
+        self.category_select.param.watch(self._on_category_change, "value")
         self.session_select.param.watch(self._on_session_change, "value")
         self.episode_select.param.watch(self._on_episode_change, "value")
 
@@ -238,13 +248,38 @@ class SpatialAnalysisGUI(param.Parameterized):
 
     # ==================== Data Loading ====================
 
-    def _load_sessions(self):
-        """Load available sessions."""
+    def _load_categories(self):
+        """Load available categories."""
         try:
-            sessions_df = self.query.get_sessions(category_id='boids_3d')
+            categories_df = self.query.get_categories()
+            if len(categories_df) == 0:
+                self.category_select.options = [""]
+                self.status_pane.object = "<p style='color:orange'>⚠️ No categories found in database.</p>"
+            else:
+                # Create display names (category_name)
+                category_options = {row['category_name']: row['category_id']
+                                   for _, row in categories_df.iterrows()}
+                self.category_select.options = [""] + list(category_options.keys())
+                self.category_select.param.trigger("options")
+                self._category_map = category_options
+                logger.info(f"Loaded {len(categories_df)} categories")
+        except Exception as e:
+            logger.error(f"Failed to load categories: {e}")
+            self._show_error(f"Failed to load categories: {e}")
+
+    def _load_sessions(self):
+        """Load available sessions for the selected category."""
+        # Get current category selection (None if not selected)
+        category_id = self.selected_category if self.selected_category else None
+
+        try:
+            sessions_df = self.query.get_sessions(category_id=category_id)
             if len(sessions_df) == 0:
                 self.session_select.options = [""]
-                self.status_pane.object = "<p style='color:orange'>⚠️ No sessions found. Load data first.</p>"
+                if category_id:
+                    self.status_pane.object = f"<p style='color:orange'>⚠️ No sessions found for category '{category_id}'.</p>"
+                else:
+                    self.status_pane.object = "<p style='color:orange'>⚠️ No sessions found. Load data first.</p>"
             else:
                 # Create display names (session_name)
                 session_options = {row['session_name']: row['session_id']
@@ -256,6 +291,29 @@ class SpatialAnalysisGUI(param.Parameterized):
         except Exception as e:
             logger.error(f"Failed to load sessions: {e}")
             self._show_error(f"Failed to load sessions: {e}")
+
+    def _on_category_change(self, event):
+        """Handle category selection."""
+        category_name = event.new
+        if not category_name or category_name == "":
+            self.session_select.options = [""]
+            self.episode_select.options = [""]
+            return
+
+        try:
+            # Get the category ID from the category map
+            category_id = self._category_map[category_name]
+            self.selected_category = category_id
+
+            # Load sessions for this category
+            self._load_sessions()
+
+            # Clear episode selection
+            self.episode_select.options = [""]
+
+        except Exception as e:
+            logger.error(f"Failed to load category: {e}")
+            self._show_error(f"Failed to load category: {e}")
 
     def _on_session_change(self, event):
         """Handle session selection."""
@@ -408,6 +466,7 @@ class SpatialAnalysisGUI(param.Parameterized):
         sidebar = pn.Column(
             "## Analysis Scope",
             self.scope_type_select,
+            self.category_select,
             self.session_select,
             self.episode_select,
             pn.layout.Divider(),

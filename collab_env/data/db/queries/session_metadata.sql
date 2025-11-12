@@ -1,5 +1,15 @@
 -- Session and episode metadata queries
 
+-- name: get_categories
+-- Get list of all categories
+SELECT
+    category_id,
+    category_name,
+    description
+FROM categories
+ORDER BY category_name;
+
+
 -- name: get_sessions
 -- Get list of all sessions, optionally filtered by category
 SELECT

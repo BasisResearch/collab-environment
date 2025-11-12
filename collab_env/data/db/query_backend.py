@@ -142,6 +142,17 @@ class QueryBackend:
 
     # ==================== Session/Episode Metadata ====================
 
+    def get_categories(self) -> pd.DataFrame:
+        """
+        Get list of all categories.
+
+        Returns
+        -------
+        pd.DataFrame
+            Categories with columns: category_id, category_name, description
+        """
+        return self._execute_query('get_categories')
+
     def get_sessions(self, category_id: Optional[str] = None) -> pd.DataFrame:
         """
         Get list of all sessions, optionally filtered by category.
@@ -492,6 +503,182 @@ class QueryBackend:
             window_size=window_size,
             start_time=start_time,
             end_time=end_time,
+            agent_type=agent_type
+        )
+
+    # ==================== Basic Data Viewer ====================
+
+    def get_episode_tracks(
+        self,
+        episode_id: str,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        agent_type: str = 'agent',
+        **kwargs
+    ) -> pd.DataFrame:
+        """
+        Get position and velocity data for animation.
+
+        Parameters
+        ----------
+        episode_id : str
+            Episode to analyze
+        start_time : int, optional
+            Start time index
+        end_time : int, optional
+            End time index
+        agent_type : str, default='agent'
+            Agent type to filter ('agent', 'target', 'all')
+        **kwargs
+            Additional parameters (ignored)
+
+        Returns
+        -------
+        pd.DataFrame
+            Tracks with columns: agent_id, time_index, x, y, z, v_x, v_y, v_z, speed
+        """
+        return self._execute_query(
+            'get_episode_tracks',
+            episode_id=episode_id,
+            start_time=start_time,
+            end_time=end_time,
+            agent_type=agent_type
+        )
+
+    def get_extended_properties_timeseries(
+        self,
+        episode_id: str,
+        window_size: int = 100,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        agent_type: str = 'agent',
+        property_ids: Optional[list] = None,
+        **kwargs
+    ) -> pd.DataFrame:
+        """
+        Get aggregated time series for extended properties.
+
+        This is a property-agnostic query that returns windowed statistics
+        for any extended properties. Filter by property_ids in Python after
+        retrieval if needed.
+
+        Parameters
+        ----------
+        episode_id : str
+            Episode to analyze
+        window_size : int, default=100
+            Number of frames per window
+        start_time : int, optional
+            Start time index
+        end_time : int, optional
+            End time index
+        agent_type : str, default='agent'
+            Agent type to filter ('agent', 'target', 'all')
+        property_ids : list, optional
+            List of property IDs to filter (applied in Python after query)
+        **kwargs
+            Additional parameters (ignored)
+
+        Returns
+        -------
+        pd.DataFrame
+            Time series with columns: time_window, property_id, n_observations,
+            avg_value, std_value, min_value, max_value, median_value
+            Filtered to property_ids if provided.
+        """
+        df = self._execute_query(
+            'get_extended_properties_timeseries',
+            episode_id=episode_id,
+            window_size=window_size,
+            start_time=start_time,
+            end_time=end_time,
+            agent_type=agent_type
+        )
+
+        # Filter by property_ids if provided
+        if property_ids is not None and len(df) > 0:
+            df = df[df['property_id'].isin(property_ids)]
+
+        return df
+
+    def get_property_distributions(
+        self,
+        episode_id: str,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        agent_type: str = 'agent',
+        property_ids: Optional[list] = None,
+        **kwargs
+    ) -> pd.DataFrame:
+        """
+        Get raw property values for histogram generation.
+
+        This is a property-agnostic query that returns individual property
+        values for distribution analysis. Filter by property_ids in Python
+        after retrieval if needed.
+
+        Parameters
+        ----------
+        episode_id : str
+            Episode to analyze
+        start_time : int, optional
+            Start time index
+        end_time : int, optional
+            End time index
+        agent_type : str, default='agent'
+            Agent type to filter ('agent', 'target', 'all')
+        property_ids : list, optional
+            List of property IDs to filter (applied in Python after query)
+        **kwargs
+            Additional parameters (ignored)
+
+        Returns
+        -------
+        pd.DataFrame
+            Property values with columns: property_id, value_float
+            Filtered to property_ids if provided.
+        """
+        df = self._execute_query(
+            'get_property_distributions',
+            episode_id=episode_id,
+            start_time=start_time,
+            end_time=end_time,
+            agent_type=agent_type
+        )
+
+        # Filter by property_ids if provided
+        if property_ids is not None and len(df) > 0:
+            df = df[df['property_id'].isin(property_ids)]
+
+        return df
+
+    def get_available_properties(
+        self,
+        episode_id: str,
+        agent_type: str = 'agent',
+        **kwargs
+    ) -> pd.DataFrame:
+        """
+        Get list of available extended properties for an episode.
+
+        Parameters
+        ----------
+        episode_id : str
+            Episode to analyze
+        agent_type : str, default='agent'
+            Agent type to filter ('agent', 'target', 'all')
+        **kwargs
+            Additional parameters (ignored)
+
+        Returns
+        -------
+        pd.DataFrame
+            Available properties with columns: property_id, property_name,
+            description, unit, data_type
+        """
+        return self._execute_query(
+            'get_available_properties',
+            episode_id=episode_id,
             agent_type=agent_type
         )
 

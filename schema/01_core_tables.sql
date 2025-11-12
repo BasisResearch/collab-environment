@@ -22,7 +22,7 @@ COMMENT ON COLUMN categories.category_id IS 'Unique category identifier (e.g., b
 CREATE TABLE sessions (
     session_id VARCHAR PRIMARY KEY,
     session_name VARCHAR NOT NULL,
-    category_id VARCHAR NOT NULL REFERENCES categories(category_id),
+    category_id VARCHAR NOT NULL REFERENCES categories(category_id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT now(),
     config JSONB,                   -- Full configuration from YAML/config.pt
     metadata JSONB                  -- Environment, mesh paths, notes

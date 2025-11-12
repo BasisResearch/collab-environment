@@ -7,6 +7,7 @@ Unified tracking analytics database supporting PostgreSQL and DuckDB.
 **Data Layer:**
 - **[Schema Documentation](../../../schema/README.md)** - Database schema details and SQL files
 - **[Data Formats](data_formats.md)** - Source data documentation
+- **[Cascading Deletes](cascading_deletes.md)** - How to safely delete data with automatic cleanup
 - **[Data Loader Improvements](data_loader_plan.md)** - Planned data loading performance improvements (COPY, optimizations)
 
 **Query & Visualization Layer:**
@@ -41,8 +42,8 @@ The database layer provides a unified interface for storing and querying trackin
 │  ─────────────── │  │    ──────────────       │
 │  Initialize DB    │  │  Load data from:       │
 │  - Create tables  │  │  - 3D boids (parquet)  │
-│  - Seed data      │  │  - 2D boids (.pt) TODO │
-│  - Verify setup   │  │  - CSV tracking TODO   │
+│  - Seed data      │  │  - 2D boids (.pt) ✅   │
+│  - Verify setup   │  │  - CSV tracking ✅     │
 └───────────────────┘  └────────────────────────┘
 ```
 
@@ -51,9 +52,11 @@ The database layer provides a unified interface for storing and querying trackin
 ✅ **Unified Interface**: SQLAlchemy-based abstraction for both PostgreSQL and DuckDB
 ✅ **Flexible Schema**: EAV pattern for extended properties
 ✅ **Fast Loading**: Bulk inserts via pandas (~18s per 90K observations)
+✅ **Multi-Session Loading**: Load multiple datasets/simulations in a single transaction
 ✅ **Environment Config**: Configure via environment variables or CLI args
 ✅ **Automatic Adaptation**: SQL dialect conversion for DuckDB
 ✅ **Environment Entities**: Full support for agents and environment entities with composite primary keys
+✅ **Cascading Deletes**: Automatic cleanup when deleting sessions, episodes, or categories
 
 ## Quick Start
 
@@ -122,8 +125,9 @@ psql tracking_analytics -c "\dt"
 
 ### Load 3D Boids Simulation
 
+**Single Simulation:**
 ```bash
-# Load a complete simulation directory
+# Load a complete simulation directory (auto-detected from config.yaml)
 python -m collab_env.data.db.db_loader \
     --source boids3d \
     --path simulated_data/hackathon/hackathon-boid-small-200-sim_run-started-20250926-220926
@@ -136,23 +140,114 @@ python -m collab_env.data.db.db_loader \
     --dbpath ./data/tracking.duckdb
 ```
 
-The loader will:
+**Multiple Simulations (Bulk Loading):**
+```bash
+# Load all simulations from a parent directory in single transaction
+python -m collab_env.data.db.db_loader \
+    --source boids3d \
+    --path simulated_data/hackathon/
+
+# The loader auto-detects subdirectories with config.yaml files
+# Progress: [1/5] Loading simulation_1...
+#           [2/5] Loading simulation_2...
+#           etc.
+```
+
+The 3D loader will:
 - Create session metadata from config.yaml
 - Load all episode-*.parquet files
 - Extract observations (positions, velocities) for all entity types (agents and environment)
 - Load extended properties (distances, mesh data)
 
-**Note**: Loading large datasets takes time (~18 seconds per episode with 90K observations).
+### Load 2D Boids Simulation
 
-### Load Other Data Sources (Coming Soon)
+**Single Dataset:**
 
 ```bash
-# 2D Boids (not yet implemented)
-python -m collab_env.data.db.db_loader --source boids2d --path data/2d_simulation.pt
+# Load a single PyTorch .pt file
+python -m collab_env.data.db.db_loader \
+    --source boids2d \
+    --path simulated_data/boid_food_basic.pt
 
-# Tracking CSV (not yet implemented)
-python -m collab_env.data.db.db_loader --source tracking --path data/tracking_session.csv
+# With specific backend
+python -m collab_env.data.db.db_loader \
+    --source boids2d \
+    --path simulated_data/boid_food_basic.pt \
+    --backend postgres
 ```
+
+**Multiple Datasets (Bulk Loading):**
+
+```bash
+# Load all .pt datasets from a directory in single transaction
+python -m collab_env.data.db.db_loader \
+    --source boids2d \
+    --path simulated_data/
+
+# The loader auto-discovers all .pt files (excluding *_config.pt)
+# Progress: [1/16] Loading boid_food_basic.pt...
+#           [2/16] Loading boid_food_basic_independent.pt...
+#           etc.
+```
+
+The 2D loader will:
+
+- Load PyTorch dataset from .pt file
+- Load configuration from matching *_config.pt file
+- Compute velocities from position differences: `v[t] = p[t+1] - p[t]`
+- Scale coordinates from normalized [0,1] to scene coordinates [0, scene_size]
+- Create 2D observations (z and v_z are NULL)
+
+**Performance**: 8,000+ observations/second for bulk loading
+
+### Load Tracking CSV Data
+
+**Single Session:**
+
+```bash
+# Load a single tracking session (auto-detected from aligned_frames/)
+python -m collab_env.data.db.db_loader \
+    --source tracking \
+    --path data/processed_tracks/2024_06_01-session_0003
+
+# With specific backend
+python -m collab_env.data.db.db_loader \
+    --source tracking \
+    --path data/processed_tracks/2024_06_01-session_0003 \
+    --backend postgres
+```
+
+**Multiple Sessions (Bulk Loading):**
+
+```bash
+# Load all tracking sessions from a parent directory in single transaction
+python -m collab_env.data.db.db_loader \
+    --source tracking \
+    --path data/processed_tracks/
+
+# The loader auto-discovers all session directories with aligned_frames/
+# Progress: [1/8] Loading 2023_11_05-session_0001...
+#           [2/8] Loading 2023_11_05-session_0002...
+#           etc.
+```
+
+The tracking loader will:
+
+- Load session metadata from optional `Metadata.yaml` file
+- Discover all camera episodes in `aligned_frames/` subdirectory
+- Read CSV files matching pattern `*_tracks.csv`
+- Compute velocities from positions: `v[t] = (p[t+1] - p[t]) / dt` where `dt = frame_diff / frame_rate`
+- Handle frame gaps by setting velocity to NaN when frames are missing
+- Create 2D observations (z and v_z are NULL)
+- Store velocities in pixels/second units
+
+**CSV Format Requirements**:
+- Required columns: `track_id`, `frame`, `x`, `y`
+- Pixel coordinates (video resolution dependent)
+- Frame numbers (0-indexed)
+- Frame rate: 30 fps (default for video tracking)
+
+**Performance**: ~5,000 observations/second for bulk loading
 
 ## Database Schema
 
@@ -439,12 +534,15 @@ See [grafana_queries.md](../../dashboard/grafana/grafana_queries.md) for the com
 | Operation | Time | Notes |
 |-----------|------|-------|
 | Database init | ~2 seconds | 8 tables, seed data |
-| Load 90K observations | ~18 seconds | Bulk insert via pandas |
-| Load 10 episodes | ~3 minutes | 900K observations total |
+| Load 90K observations (3D) | ~18 seconds | Single episode, bulk insert via pandas |
+| Load 10 episodes (3D) | ~3 minutes | 900K observations total |
+| Load 2,000 episodes (2D) | ~52 seconds | 420K observations, single transaction bulk loading |
+| Bulk loading rate (2D) | 8,000+ obs/sec | Multiple datasets in single transaction |
 
 ### Optimization
 
 - Uses pandas `to_sql()` for bulk inserts (2x faster than executemany)
+- Single transaction for multi-session loading (commit only once at the end)
 - SQLAlchemy connection pooling
 - Minimal indexes for fast writes
 - Future: COPY command could be 10-100x faster (not yet implemented)
@@ -488,16 +586,19 @@ docs/data/db/
 - [x] Environment variable configuration
 - [x] Database initialization with verification
 - [x] 3D boids data loader (parquet files)
+- [x] 2D boids data loader (PyTorch .pt files)
+- [x] Multi-session bulk loading (single transaction)
 - [x] Batch loading with pandas to_sql
 - [x] Environment entity support with composite primary keys
 - [x] Extended properties loading (all 9 properties: distances + mesh coordinates)
+- [x] Cascading deletes (PostgreSQL only, DuckDB limitation documented)
 - [x] Grafana dashboards (prototype with query library and templates)
 
 ### TODO ⏳
 
 **Data Loading:**
-- [ ] 2D boids loader (PyTorch .pt files)
-- [ ] Tracking CSV loader
+
+- [x] Tracking CSV loader
 - [ ] PostgreSQL COPY optimization for 10-100x faster loading (see [data_loader_plan.md](data_loader_plan.md))
 
 **Query & Visualization:**

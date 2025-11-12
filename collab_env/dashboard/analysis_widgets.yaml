@@ -17,6 +17,12 @@ defaults:
 #   - category: Grouping category (spatial, temporal, behavioral)
 
 widgets:
+  - class: collab_env.dashboard.widgets.basic_data_viewer_widget.BasicDataViewerWidget
+    enabled: true
+    order: 0
+    category: visualization
+    description: "Comprehensive episode viewer with animation, heatmaps, time series, and histograms"
+
   - class: collab_env.dashboard.widgets.heatmap_widget.HeatmapWidget
     enabled: true
     order: 1

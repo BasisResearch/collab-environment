@@ -11,6 +11,7 @@ Descriptive Data Dashboard
   * heatmap of visited locations
   * heatmap of velocities (quiver plots)
   * velocity (vector distribution),  speed, acceleration (distribution), acceleration (vector)
+  * Mean velocity direction over time (distribution / time series) - scalar 
   * distance to target mesh (2d - food)
   * distance to scene (2d - distance to boundary)
 * pairwise statistics - both "point clouds" (vector quantities) and distrubitions of magnitude

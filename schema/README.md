@@ -25,10 +25,10 @@ PostgreSQL-based database schema for unified time-series animal tracking data fr
 
 ```
 categories (session data source types only)
-  └─> sessions
-       └─> episodes
-            └─> observations (PK: episode_id, time_index, agent_id, agent_type_id)
-                 └─> extended_properties (PK: observation_id, property_id)
+  └─> sessions (ON DELETE CASCADE)
+       └─> episodes (ON DELETE CASCADE)
+            └─> observations (PK: episode_id, time_index, agent_id, agent_type_id) (ON DELETE CASCADE)
+                 └─> extended_properties (PK: observation_id, property_id) (ON DELETE CASCADE)
 
 agent_types
   └─> observations (FK: agent_type_id)
@@ -36,6 +36,8 @@ agent_types
 property_definitions (flat list)
   └─> extended_properties (FK: property_id)
 ```
+
+**Cascading Deletes**: Deleting a category, session, or episode automatically deletes all child records. See [cascading_deletes.md](../docs/data/db/cascading_deletes.md) for details and safety guidelines.
 
 ## Quick Start
 
@@ -386,13 +388,24 @@ To use DuckDB instead of PostgreSQL:
 
 **Solution**: Load in correct order: sessions → episodes → observations → extended_properties
 
-## Next Steps
+## Implementation Status
 
-1. **Data Ingestion**: Create `collab_env/data/db_loader.py` (see `db_layer_todo.md`)
-2. **Query Interface**: Create `collab_env/data/db_backend.py`
-3. **Grafana Dashboards**: Set up time-series visualizations
-4. **Computed Properties**: Add pipeline to compute accelerations, speeds
-5. **Pairwise Interactions**: Implement if needed (commented out in design)
+### Complete ✅
+
+1. **Data Ingestion**: `collab_env/data/db_loader.py`
+   - 3D Boids: Parquet files with extended properties
+   - 2D Boids: PyTorch .pt files with velocity computation
+   - Multi-session bulk loading with single transaction
+2. **Query Interface**: `collab_env/data/db/query_backend.py` (see [docs/data/db/README.md](../docs/data/db/README.md))
+3. **Grafana Dashboards**: Time-series visualizations with query library (see [docs/dashboard/grafana/](../docs/dashboard/grafana/))
+4. **Cascading Deletes**: Automatic cleanup on PostgreSQL (DuckDB limitation documented)
+
+### TODO ⏳
+
+1. **Tracking CSV Loader**: Real-world video tracking data ingestion
+2. **Computed Properties**: Pipeline to compute accelerations, speeds
+3. **Pairwise Interactions**: Implement if needed (commented out in design)
+4. **PostgreSQL COPY**: 10-100x faster bulk loading (see [data_loader_plan.md](../docs/data/db/data_loader_plan.md))
 
 ## References
 
