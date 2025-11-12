@@ -1,7 +1,7 @@
 # Dashboard System: Design & Implementation Guide
 
-**Last Updated:** 2025-11-08
-**Status:** Phase 6 Complete ✅ | Phase 7 Planned (Unified Widgets)
+**Last Updated:** 2025-11-12
+**Status:** Phase 6 Complete ✅ | Phase 7.1 Complete ✅ (Basic Data Viewer with Integrated Heatmap)
 
 > **Note**: This document covers the **query and visualization layer** of the system.
 > For database schema and data loading, see [docs/data/db/README.md](../data/db/README.md).
@@ -32,19 +32,27 @@ The Dashboard System provides interactive web-based visualization and analysis f
 ### Key Features
 
 **Current (Production Ready):**
+
+- **Basic Data Viewer** (Phase 7.1): Unified episode viewer with 4 synchronized panels:
+  - Animated 2D/3D track visualization with playback controls
+  - Spatial density heatmaps (integrated, replaces standalone widget)
+  - Multi-property time series with synchronized timeline
+  - Dynamic histogram panel for property distributions
+- Legacy widgets (Phase 6):
+  - Speed statistics over time
+  - Distance to target/boundary analysis
+  - Velocity correlations (episode-level)
 - Session/episode management and selection
-- 3D spatial density heatmaps
-- Speed statistics over time
-- Distance to target/boundary analysis
-- Velocity correlations (episode-level)
 - Episode and session-level aggregation (SQL-optimized)
 - Modular widget architecture
 
-**Planned (Phase 7):**
-- Unified comprehensive viewers (3 widgets replacing 6+)
-- Animated track visualization with synchronized property time series
-- Pairwise interaction analysis
-- Property correlation analysis with dual modes (windowed/lagged)
+**Planned (Phase 7.2-7.3):**
+
+- Relative Quantities Viewer: Pairwise interaction analysis
+- Correlation Viewer: Property correlation with dual modes (windowed/lagged)
+
+**Future (Phase 8):**
+
 - Property computation framework (speed, acceleration)
 
 ### Design Goals
@@ -154,10 +162,10 @@ collab_env/data/db/
    - Context-aware query helpers
 
 4. **Concrete Widgets** (`widgets/*_widget.py`)
-   - HeatmapWidget: 3D spatial density
-   - VelocityStatsWidget: Speed over time
-   - DistanceStatsWidget: Distance to target/boundary
-   - CorrelationWidget: Velocity correlations
+   - **BasicDataViewerWidget**: Comprehensive unified viewer (Phase 7.1) with integrated heatmap
+   - VelocityStatsWidget: Speed over time (legacy)
+   - DistanceStatsWidget: Distance to target/boundary (legacy)
+   - CorrelationWidget: Velocity correlations (legacy)
 
 5. **Widget Registry** (`analysis_widgets.yaml`)
    - YAML-based widget configuration
@@ -177,10 +185,10 @@ collab_env/dashboard/
     ├── analysis_context.py          # AnalysisContext ✅
     ├── base_analysis_widget.py      # Abstract base ✅
     ├── widget_registry.py           # Config loader ✅
-    ├── heatmap_widget.py            # Spatial density ✅
-    ├── velocity_widget.py           # Speed stats ✅
-    ├── distance_widget.py           # Distance stats ✅
-    └── correlation_widget.py        # Correlations ✅
+    ├── basic_data_viewer_widget.py  # Unified viewer with heatmap (Phase 7.1) ✅
+    ├── velocity_widget.py           # Speed stats (legacy) ✅
+    ├── distance_widget.py           # Distance stats (legacy) ✅
+    └── correlation_widget.py        # Correlations (legacy) ✅
 ```
 
 ---
@@ -199,12 +207,13 @@ collab_env/dashboard/
 
 **GUI Layer:**
 - [x] Modular widget architecture
-- [x] 4 analysis widgets (heatmap, velocity, distance, correlation)
+- [x] **Basic Data Viewer** (Phase 7.1) - unified episode viewer with integrated heatmap
+- [x] 3 legacy analysis widgets (velocity, distance, correlation)
 - [x] YAML-based widget registry
 - [x] Episode and session scope support
 - [x] Shared parameter context
 - [x] Loading indicators and error handling
-- [x] All 16 widget tests passing
+- [x] All widget tests passing
 
 **Running the Dashboard:**
 ```bash
@@ -235,9 +244,11 @@ panel serve collab_env/dashboard/spatial_analysis_app.py --port 5008
 
 ### Phase 7: Unified Widget Architecture (24-32 hours)
 
-**Problem**: Current specialized widgets (heatmap, velocity, distance) are inflexible and hardcoded for specific metrics. Adding new properties requires writing new widget code.
+**Problem**: Legacy specialized widgets (velocity, distance) are inflexible and hardcoded for specific metrics. Adding new properties requires writing new widget code.
 
 **Solution**: Replace 6+ specialized widgets with **3 comprehensive general-purpose viewers** that work with any extended property.
+
+**Status**: Phase 7.1 (Basic Data Viewer) is complete with integrated heatmap, animation, time series, and histograms.
 
 #### Query Layer Simplification
 

@@ -37,12 +37,10 @@ class TestImports:
 
     def test_widget_modules_import(self):
         """Test that all widget modules can be imported."""
-        from collab_env.dashboard.widgets.heatmap_widget import HeatmapWidget
         from collab_env.dashboard.widgets.velocity_widget import VelocityStatsWidget
         from collab_env.dashboard.widgets.distance_widget import DistanceStatsWidget
         from collab_env.dashboard.widgets.correlation_widget import CorrelationWidget
 
-        assert HeatmapWidget is not None
         assert VelocityStatsWidget is not None
         assert DistanceStatsWidget is not None
         assert CorrelationWidget is not None
@@ -125,7 +123,8 @@ class TestWidgetRegistry:
         registry = WidgetRegistry(str(config_path))
         widgets = registry.get_enabled_widgets()
 
-        assert len(widgets) == 4, f"Expected 4 widgets, got {len(widgets)}"
+        # Expected: BasicDataViewer, VelocityStats, DistanceStats, Correlation
+        assert len(widgets) == 4, f"Expected 4 enabled widgets, got {len(widgets)}"
 
     def test_registry_loads_default_parameters(self, init_holoviews):
         """Test that WidgetRegistry loads default parameters."""
@@ -161,16 +160,6 @@ class TestWidgetRegistry:
 class TestWidgetInstantiation:
     """Test individual widget instantiation."""
 
-    def test_heatmap_widget_creation(self, init_holoviews):
-        """Test creating a HeatmapWidget."""
-        from collab_env.dashboard.widgets.heatmap_widget import HeatmapWidget
-
-        heatmap = HeatmapWidget()
-
-        assert heatmap.widget_name == "Heatmap"
-        assert heatmap.load_btn is not None
-        assert heatmap.display_pane is not None
-
     def test_velocity_widget_creation(self, init_holoviews):
         """Test creating a VelocityStatsWidget."""
         from collab_env.dashboard.widgets.velocity_widget import VelocityStatsWidget
@@ -183,9 +172,9 @@ class TestWidgetInstantiation:
 
     def test_widget_has_ui_components(self, init_holoviews):
         """Test that widgets have required UI components."""
-        from collab_env.dashboard.widgets.heatmap_widget import HeatmapWidget
+        from collab_env.dashboard.widgets.velocity_widget import VelocityStatsWidget
 
-        widget = HeatmapWidget()
+        widget = VelocityStatsWidget()
 
         # Check for standard components
         assert hasattr(widget, 'load_btn')

@@ -79,10 +79,10 @@ class WidgetRegistry:
           spatial_bin_size: 10.0
 
         widgets:
-          - class: collab_env.dashboard.widgets.heatmap_widget.HeatmapWidget
+          - class: collab_env.dashboard.widgets.velocity_widget.VelocityStatsWidget
             enabled: true
             order: 1
-            category: spatial
+            category: temporal
         ```
         """
         config_file = Path(config_path)
