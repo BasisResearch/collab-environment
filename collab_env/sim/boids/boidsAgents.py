@@ -279,6 +279,7 @@ class BoidsWorldAgent:
         # logger.debug(f"called with obs: {obs}")
         velocity = np.array(obs["agent_vel"])  # using ADP style
         location = np.array(obs["agent_loc"])
+        total_num_agents = len(obs["agent_loc"])
         for i in range(self.initialize_index, self.initialize_index + self.num_agents):
             """
             -- 072325 -- 03:29PM
@@ -312,8 +313,16 @@ class BoidsWorldAgent:
                 """
                 -- 082425 12:26AM
                 This needs to be done with broadcasting and array operations.
+                
+                TOC 110125 10:59AM
+                This is a bug. This should be running for all agents not just the agents
+                of the current type.
+                
+                Fixed by using total number of agents instead. 
+                 
                 """
-                for other in range(self.num_agents):
+
+                for other in range(total_num_agents):
                     if i != other:
                         # separate
                         dist = np.linalg.norm(location[i] - location[other])

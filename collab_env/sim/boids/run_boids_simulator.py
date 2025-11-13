@@ -177,7 +177,18 @@ def run_simulator(config_filename):
         saved_image_path=new_run_folder,
     )
 
+    variant_index_list = []
+    variant_type_list = []
     if "agent_variants" not in config["agent"]:
+        """
+        TOC -- 102825 10:55AM
+        The variant index list keeps track of the indices that start each variant. 
+        In the case of no variants, this will just be 0. 
+        """
+        # variant_num_list.append(config["simulator"]["num_agents"])
+        variant_index_list.append(0)
+        variant_type_list.append("unspecified")
+
         agent = BoidsWorldAgent(
             env=env,
             num_agents=config["simulator"]["num_agents"],
@@ -210,7 +221,16 @@ def run_simulator(config_filename):
         agent_variants = config.get("agent", {}).get("agent_variants", [])
         agent_variant_list = []
         num_agents_so_far = 0
+
         for variant in agent_variants:
+            """
+            TOC -- 102825 10:55AM
+            The variant index list keeps track of the indices that start each variant. 
+            This will be the number of agents we have created prior to this agent type, 
+            which matches the initialize_index argument. 
+            """
+            variant_index_list.append(num_agents_so_far)
+            variant_type_list.append(variant["type"])
             agent = BoidsWorldAgent(
                 env=env,
                 num_agents=variant["num_agents_of_type"],
@@ -290,7 +310,13 @@ def run_simulator(config_filename):
 
         # -- 080725 10:45PM
         # Add the initial positions to the dataframe
-        df = add_obs_to_df(None, obs, time_step=0)
+        df = add_obs_to_df(
+            None,
+            obs,
+            time_step=0,
+            variant_index_list=variant_index_list,
+            variant_type_list=variant_type_list,
+        )
         # done = False
 
         #
@@ -341,7 +367,13 @@ def run_simulator(config_filename):
 
             # -- 080225 8:58AM
             # Record the observation
-            df = add_obs_to_df(df, next_obs, time_step=(time_step + 1))
+            df = add_obs_to_df(
+                df,
+                next_obs,
+                time_step=(time_step + 1),
+                variant_index_list=variant_index_list,
+                variant_type_list=variant_type_list,
+            )
 
             # Observe the next state
             obs = next_obs

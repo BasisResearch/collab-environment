@@ -102,7 +102,7 @@ class SimMeshDataset(Dataset):
 
             # print(positions)
             # print(positions.shape)
-
+            self.dataframe = df
             df["type"] = df["type"].astype("category")
             codes = df[df["time"] == 1]["type"].cat.codes
             # codes = pd.Categorical(cat).codes
@@ -120,6 +120,9 @@ class SimMeshDataset(Dataset):
 
     def __len__(self):
         return len(self.sequences)
+
+    def get_dataframe(self):
+        return self.dataframe
 
 
 if __name__ == "__main__":

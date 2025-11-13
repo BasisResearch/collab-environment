@@ -380,13 +380,13 @@ def train_single_config(params):
         train_spec = {"visual_range": visual_range, "sigma": noise, "epochs": epochs}
         if rollout > 0:
             if ablate == 0:
-                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout{rollout}"
+                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout_{rollout}"
             elif ablate == 1:
-                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_ablate_rollout{rollout}"
+                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_ablate_rollout_{rollout}"
             elif ablate == 2:
-                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_perm_rollout{rollout}"
+                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_perm_rollout_{rollout}"
             elif ablate == 3:
-                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_zero_rollout{rollout}"
+                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_zero_rollout_{rollout}"
         else:
             save_name = (
                 f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
@@ -488,8 +488,8 @@ def main(dataset_arg=None, remaining_args=None):
     parser.add_argument(
         "--dataset",
         type=str,
-        default="boid_single_species_basic",
-        help="Dataset to use (default: boid_single_species_basic)",
+        default="boid_food_basic",
+        help="Dataset to use (default: boid_food_basic)",
     )
     parser.add_argument(
         "--workers-per-gpu",
@@ -681,7 +681,13 @@ def main(dataset_arg=None, remaining_args=None):
         # model_names = ["vpluspplus_a", "lazy"]
         model_names = ["vpluspplus_a"]
         noise_levels = [0, 0.005]  # [0, 0.005]
-        heads = [1, 2, 3]
+
+        """
+        TOC -- 111125 11:50AM
+        Just use 1 head for everything 
+        """
+        # heads = [1, 2, 3]
+        heads = [1]
         visual_ranges = [0.1, 0.5]
         seeds = range(args.seeds)
 

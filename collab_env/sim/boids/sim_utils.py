@@ -1,3 +1,4 @@
+import bisect
 import struct
 
 import numpy as np
@@ -13,7 +14,9 @@ def function_filter(function_list):
     return is_function
 
 
-def add_obs_to_df(df: pd.DataFrame, obs, time_step=0):
+def add_obs_to_df(
+    df: pd.DataFrame, obs, time_step=0, variant_index_list=None, variant_type_list=None
+):
     num_agents = len(obs["agent_loc"])
     num_targets = len(obs["target_loc"])
     logger.debug(f"time step = {time_step}")
@@ -24,7 +27,12 @@ def add_obs_to_df(df: pd.DataFrame, obs, time_step=0):
     ):
         row_dict = dict()
         row_dict["id"] = i
+        # (f'id = {i}')
+        variant_index = bisect.bisect_left(variant_index_list, i) - 1
+        # print(f'variant index = {variant_index}')
         row_dict["type"] = "agent"  # type:ignore
+        # print(f'species = {variant_type_list[variant_index]}')
+        row_dict["species"] = variant_type_list[variant_index]
         row_dict["time"] = time_step
         row_dict["x"] = location[0]
         row_dict["y"] = location[1]

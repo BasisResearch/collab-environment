@@ -192,7 +192,7 @@ if __name__ == "__main__":
         "-t",
         "--train_gnn",
         action="store_true",
-        help="Train the GNN. Don't bother if this completely successfully previously.",
+        help="Train the GNN. Don't bother if this completed successfully previously.",
     )
     parser.add_argument(
         "-r",

@@ -20,6 +20,7 @@ class GNN(torch.nn.Module):
         heads=1,
         hidden_dim=128,
         output_dim=2,
+        edge_dim=1,
     ):
         super().__init__()
 
@@ -44,11 +45,31 @@ class GNN(torch.nn.Module):
         # self.gatn1 = GATConv(
         #     in_node_dim, hidden_dim, edge_dim=1, heads=heads, add_self_loops=False
         # )
+        """ 
+        TOC -- 111225 11:01AM
+        With relative positions, we need to pass those in as edge features, so the edge dim will be 
+        the dimension of the physical space. If we also want relative velocities, then we will need to 
+        double the edge dim. Start with relative positions and see how that goods.   
+        
+        For the self loops, the relative positions are [0,0], so we have the fill value set to that. 
+        This needs to be fixed when we move to 3D so that it depends on the dimension of the space. 
+        
+        For the second layer, we won't add the self loops since we rely on the attention weights to
+        determine the self loopiness. Presumably, the attention layer will have self loops if paying 
+        attention to yourself is useful. 
+        
+        """
         self.gatn = GATv2Conv(
-            in_node_dim, hidden_dim, edge_dim=1, heads=heads, add_self_loops=False
+            in_node_dim,
+            hidden_dim,
+            edge_dim=edge_dim,
+            heads=heads,
+            add_self_loops=True,
+            fill_value=torch.tensor([0.0] * edge_dim, dtype=torch.float32),
         )
         # self.gatn = GATv2Conv(in_node_dim, hidden_dim, edge_dim=1,
         #                      heads = heads, add_self_loops = False)
+
         self.gcn2 = GCNConv(hidden_dim * heads, hidden_dim, add_self_loops=False)
 
         # Final linear layer to predict 2D acceleration
@@ -66,14 +87,20 @@ class GNN(torch.nn.Module):
             edge_weight = (
                 edge_weight.float()
             )  # all input needs to be the same precision.
+
         h_tmp, W = self.gatn(
             x, edge_index, edge_attr=edge_weight, return_attention_weights=True
         )
         (edge_index, edge_weight) = W
         h = functional.relu(h_tmp)
 
-        # the 2nd layer is simple convolutional later.
+        # the 2nd layer is simple convolutional layer.
         # Note that we use the updated graph from the attention network
+        """
+        TOC 
+        
+        Note: This take the average of the attention weights over multiple heads  
+        """
         h = self.gcn2(h, edge_index, torch.mean(edge_weight, 1))
         h = functional.relu(h)
         return self.out(h), W
