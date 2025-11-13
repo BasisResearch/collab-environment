@@ -21,23 +21,29 @@ widgets:
     enabled: true
     order: 0
     category: visualization
-    description: "Comprehensive episode viewer with animation, heatmaps, time series, and histograms"
+    description: "Episode viewer with animated agent tracks and spatial density heatmap"
+
+  - class: collab_env.dashboard.widgets.extended_properties_viewer_widget.ExtendedPropertiesViewerWidget
+    enabled: true
+    order: 1
+    category: visualization
+    description: "Time series and histogram visualization of extended properties"
 
   - class: collab_env.dashboard.widgets.velocity_widget.VelocityStatsWidget
     enabled: true
-    order: 1
+    order: 2
     category: temporal
     description: "Comprehensive velocity statistics: individual speed, mean velocity magnitude, relative velocity magnitude"
 
   - class: collab_env.dashboard.widgets.distance_widget.DistanceStatsWidget
     enabled: true
-    order: 2
+    order: 3
     category: spatial
     description: "Relative locations: pairwise distances between agents"
 
   - class: collab_env.dashboard.widgets.correlation_widget.CorrelationWidget
-    enabled: true
-    order: 3
+    enabled: false
+    order: 4
     category: behavioral
     description: "Agent velocity correlations"
 

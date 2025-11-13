@@ -581,6 +581,57 @@ properties = query.get_extended_properties_timeseries(
 
 ## Technical Reference
 
+### Visualization Backend Standard
+
+**IMPORTANT: All dashboard visualizations use PLOTLY as the exclusive backend.**
+
+**Rationale:**
+- **Consistency**: Single backend prevents rendering issues and behavioral inconsistencies
+- **3D Support**: Plotly natively supports 3D visualizations (Scatter3D)
+- **Interactivity**: Built-in pan, zoom, hover, and rotation tools
+- **Colormap Support**: Proper colormap handling with dynamic updates
+
+**Implementation Rules:**
+1. **Never mix backends**: Do not use `backend='bokeh'` in widget code
+2. **HoloViews initialization**: Use `hv.extension('plotly', 'bokeh')` but only use plotly features
+3. **2D visualizations**: Use `hv.Scatter`, `hv.Path`, etc. WITHOUT specifying backend (defaults to plotly)
+4. **3D visualizations**: Use `hv.Scatter3D`, `hv.Path3D` (plotly-only elements)
+5. **Colormaps**: Use `.opts(cmap=...)` - works consistently with plotly
+6. **Agent colors**: Map agent IDs to actual hex color values in DataFrame column, then use `color='agent_color'`
+
+**Example (Correct):**
+```python
+# 2D scatter with per-agent colors (PLOTLY)
+df['agent_color'] = df['agent_id'].map(agent_color_map)
+scatter = hv.Scatter(df, kdims=['x', 'y'], vdims=['agent_id', 'agent_color']).opts(
+    color='agent_color',
+    size=8,
+    width=450,
+    height=450
+)
+
+# 3D scatter with density colormap (PLOTLY)
+scatter3d = hv.Scatter3D(df, kdims=['x', 'y', 'z'], vdims='density').opts(
+    color='density',
+    cmap='viridis',
+    size='density',
+    colorbar=True
+)
+```
+
+**Example (Incorrect - DO NOT DO THIS):**
+```python
+# ❌ DO NOT specify bokeh backend
+scatter = hv.Scatter(df).opts(backend='bokeh')  # WRONG!
+
+# ❌ DO NOT use bokeh-specific elements
+quad_mesh = hv.QuadMesh(data).opts(backend='bokeh')  # WRONG!
+```
+
+**For native Bokeh visualizations** (time series, histograms in Extended Properties Viewer):
+- Use `bokeh.plotting.figure` directly for non-HoloViews plots
+- These are NOT part of the HoloViews/PLOTLY visualization layer
+
 ### QueryBackend API
 
 #### Session Metadata

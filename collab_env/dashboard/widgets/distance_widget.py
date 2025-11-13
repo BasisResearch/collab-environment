@@ -30,7 +30,7 @@ class DistanceStatsWidget(BaseAnalysisWidget):
     - Time series with median and IQR (25th-75th percentile) bands
     """
 
-    widget_name = "Distances"
+    widget_name = "Spatial Analysis"
     widget_description = "Relative locations (pairwise distances)"
     widget_category = "spatial"
 
@@ -149,15 +149,25 @@ class DistanceStatsWidget(BaseAnalysisWidget):
             vdims=['Distance', 'neg_err', 'pos_err'],
             label='IQR (25th-75th)'
         ).opts(
-            color='plum',
-            alpha=0.3
+            color='plum'
         )
+
+        def legend_hook(plot, element):
+            """Position legend inside plot for plotly backend."""
+            fig = plot.state
+            fig["layout"]["legend"] = dict(
+                yanchor="top",
+                y=0.98,
+                xanchor="right",
+                x=0.98
+            )
 
         return (spread * curve).opts(
             width=400,
             height=300,
             title='Pairwise Distance Over Time',
-            show_legend=True
+            show_legend=True,
+            hooks=[legend_hook]
         )
 
     def _compute_relative_distances(self, df_tracks: pd.DataFrame) -> pd.DataFrame:

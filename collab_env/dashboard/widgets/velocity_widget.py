@@ -118,13 +118,14 @@ class VelocityStatsWidget(BaseAnalysisWidget):
 
         # Arrange plots in 3 rows x 2 columns layout
         # Each row has a header + histogram (left) + time series (right)
+        # Use axiswise=True to prevent axis linking between plots
         self.display_pane.objects = [
             pn.pane.Markdown("## 1a. Individual Agent Speed"),
-            pn.pane.HoloViews(speed_hist + speed_ts),
+            pn.pane.HoloViews((speed_hist + speed_ts).opts(axiswise=True)),
             pn.pane.Markdown("## 1b. Mean Velocity Magnitude"),
-            pn.pane.HoloViews(mean_vel_mag_hist + mean_vel_mag_ts),
+            pn.pane.HoloViews((mean_vel_mag_hist + mean_vel_mag_ts).opts(axiswise=True)),
             pn.pane.Markdown("## 1c. Relative Velocity Magnitude (pairwise)"),
-            pn.pane.HoloViews(rel_vel_mag_hist + rel_vel_mag_ts)
+            pn.pane.HoloViews((rel_vel_mag_hist + rel_vel_mag_ts).opts(axiswise=True))
         ]
         logger.info(f"Loaded velocity stats with {len(df_tracks)} observations")
 
@@ -157,7 +158,7 @@ class VelocityStatsWidget(BaseAnalysisWidget):
                 height=300,
                 xlabel=xlabel,
                 ylabel='Count',
-                title=title
+                title=title,
             )
         )
         return hist
@@ -201,15 +202,25 @@ class VelocityStatsWidget(BaseAnalysisWidget):
             vdims=['Speed', 'neg_err', 'pos_err'],
             label='IQR (25th-75th)'
         ).opts(
-            color='lightblue',
-            alpha=0.3
+            color='lightblue'
         )
+
+        def legend_hook(plot, element):
+            """Position legend inside plot for plotly backend."""
+            fig = plot.state
+            fig["layout"]["legend"] = dict(
+                yanchor="top",
+                y=0.98,
+                xanchor="right",
+                x=0.98
+            )
 
         return (spread * curve).opts(
             width=500,
             height=300,
             title=title,
-            show_legend=True
+            show_legend=True,
+            hooks=[legend_hook]
         )
 
     def _create_simple_time_series(
@@ -289,15 +300,25 @@ class VelocityStatsWidget(BaseAnalysisWidget):
             vdims=['Magnitude', 'neg_err', 'pos_err'],
             label='IQR (25th-75th)'
         ).opts(
-            color=light_color,
-            alpha=0.3
+            color=light_color
         )
+
+        def legend_hook(plot, element):
+            """Position legend inside plot for plotly backend."""
+            fig = plot.state
+            fig["layout"]["legend"] = dict(
+                yanchor="top",
+                y=0.98,
+                xanchor="right",
+                x=0.98
+            )
 
         return (spread * curve).opts(
             width=500,
             height=300,
             title=title,
-            show_legend=True
+            show_legend=True,
+            hooks=[legend_hook]
         )
 
     def _compute_mean_velocity_magnitude(self, df_tracks: pd.DataFrame) -> pd.DataFrame:

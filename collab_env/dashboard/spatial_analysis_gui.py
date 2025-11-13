@@ -509,7 +509,7 @@ class SpatialAnalysisGUI(param.Parameterized):
 
         # Create template
         template = pn.template.MaterialTemplate(
-            title="Spatial Analysis Dashboard - 3D Boids",
+            title="CIS Analysis Dashboard",
             sidebar=[sidebar],
             main=[status_bar, tabs],
             header_background="#2596be",
