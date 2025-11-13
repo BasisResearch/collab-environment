@@ -12,6 +12,7 @@ import concurrent.futures
 import json
 from datetime import datetime
 import argparse
+
 from loguru import logger
 import pickle
 
@@ -52,6 +53,8 @@ def worker_wrapper(params):
             rollout,
             total_rollout,
             ablate,
+            self_loops,
+            relative_positions,
         ) = params
 
         # Set CUDA_VISIBLE_DEVICES in this process before CUDA is initialized
@@ -112,6 +115,8 @@ def train_single_config(params):
         rollout,
         total_rollout,
         ablate,
+        self_loops,
+        use_relative_positions,
     ) = params
 
     # Determine device and worker label
@@ -225,6 +230,8 @@ def train_single_config(params):
                 "in_node_dim": 3,
                 "start_frame": 3,
                 "heads": 1,
+                "self_loops": self_loops,
+                "edge_dim": 2 if use_relative_positions else 1,
             }
             model = Lazy(**model_spec)
             lr = None
@@ -239,6 +246,11 @@ def train_single_config(params):
                 "in_node_dim": in_node_dim,
                 "start_frame": 3,
                 "heads": heads,
+                "self_loops": self_loops,
+                "edge_dim": 2
+                if use_relative_positions
+                else 1,  # TOC 111325-- needs to be fixed for 3D
+                # "use_relative_positions": use_relative_positions,
             }
             model = GNN(**model_spec)
             lr = 1e-4
@@ -251,15 +263,18 @@ def train_single_config(params):
             epochs = 1
             loader = test_loader
             no_validation = True
-            file_name = (
-                f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
-            )
+            file_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}{'_selfloops' if self_loops else ''}{'_rp' if use_relative_positions else ''}"
             folder = f"trained_models/runpod/{data_name}/trained_models/"
             model_path = expand_path(
                 f"{folder}/{file_name}.pt",
                 get_project_root(),
             )
-            model.load_state_dict(torch.load(model_path, map_location="cuda:0"))
+            """
+            TOC -- 111225 1023AM
+            This needs to be cpu if running cpu only 
+            """
+            # model.load_state_dict(torch.load(model_path, map_location="cuda:0"))
+            model.load_state_dict(torch.load(model_path, map_location=device))
             collect_debug = True  # Disable debug to avoid CPU transfers
             if ablate == 1:
                 print("ablating attention layer")
@@ -329,6 +344,7 @@ def train_single_config(params):
             else None,  # Use test_loader for validation unless disabled
             early_stopping_patience=early_stopping_patience,  # Early stopping patience from args
             min_delta=min_delta,  # Minimum improvement threshold from args
+            use_relative_positions=use_relative_positions,
         )
 
         # Save model
@@ -336,17 +352,15 @@ def train_single_config(params):
         train_spec = {"visual_range": visual_range, "sigma": noise, "epochs": epochs}
         if rollout > 0:
             if ablate == 0:
-                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout{rollout}"
+                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout{rollout}{'_selfloops' if self_loops else ''}{'_rp' if use_relative_positions else ''}"
             elif ablate == 1:
-                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_ablate_rollout{rollout}"
+                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_ablate_rollout{rollout}{'_selfloops' if self_loops else ''}{'_rp' if use_relative_positions else ''}"
             elif ablate == 2:
-                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_perm_rollout{rollout}"
+                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_perm_rollout{rollout}{'_selfloops' if self_loops else ''}{'_rp' if use_relative_positions else ''}"
             elif ablate == 3:
-                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_zero_rollout{rollout}"
+                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_zero_rollout{rollout}{'_selfloops' if self_loops else ''}{'_rp' if use_relative_positions else ''}"
         else:
-            save_name = (
-                f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
-            )
+            save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}{'_selfloops' if self_loops else ''}{'_rp' if use_relative_positions else ''}"
         if rollout:
             folder = f"trained_models/runpod/{data_name}/rollouts/"
             rollout_path = expand_path(
@@ -517,6 +531,14 @@ def main():
         "--total_rollout", type=int, default=100, help="Total number of rollout"
     )
     parser.add_argument("--ablate", type=int, default=0, help="ablate attention layer")
+    parser.add_argument(
+        "--self_loops", action="store_true", help="add self loops to both layers"
+    )
+    parser.add_argument(
+        "--relative_positions",
+        action="store_true",
+        help="use relative positions as edge features on first GNN layer",
+    )
 
     args = parser.parse_args()
 
@@ -618,7 +640,12 @@ def main():
         # model_names = ["vpluspplus_a", "lazy"]
         model_names = ["vpluspplus_a"]
         noise_levels = [0, 0.005]  # [0, 0.005]
-        heads = [1, 2, 3]
+        """
+        TOC 111225 7:20AM 
+        Switch to using only 1 head
+        """
+        # heads = [1, 2, 3]
+        heads = [1]
         visual_ranges = [0.1, 0.5]
         seeds = range(args.seeds)
 
@@ -651,6 +678,8 @@ def main():
                                 args.rollout,
                                 args.total_rollout,
                                 args.ablate,
+                                args.self_loops,
+                                args.relative_positions,
                             )
                         )
                         worker_id += 1
@@ -712,6 +741,8 @@ def main():
                 rollout,
                 total_rollout,
                 ablate,
+                self_loops,
+                relative_positions,
             ) = all_params[i]
             logger.info(
                 f"  Config {wid:02d} -> CPU: {model}_n{noise}_h{head}_vr{vr}_s{seed} (bs={batch_size}, ep={epochs}), rollout = {rollout}  "
