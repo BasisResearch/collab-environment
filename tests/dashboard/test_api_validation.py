@@ -38,9 +38,6 @@ def shared_params():
 # List of QueryBackend analysis methods supporting both episode_id and session_id
 SESSION_SUPPORTED_METHODS = [
     'get_spatial_heatmap',
-    'get_speed_statistics',
-    'get_distance_to_target',
-    'get_distance_to_boundary',
 ]
 
 # List of correlation methods supporting only episode_id (session-level disabled)
@@ -88,21 +85,6 @@ class TestExtraParameters:
         """Spatial heatmap should accept extra params like window_size, min_samples."""
         # Should not raise TypeError
         mock_backend.get_spatial_heatmap(**shared_params)
-
-    def test_speed_statistics_accepts_extra_params(self, mock_backend, shared_params):
-        """Speed statistics should accept extra params like bin_size, min_samples."""
-        # Should not raise TypeError
-        mock_backend.get_speed_statistics(**shared_params)
-
-    def test_distance_to_target_accepts_extra_params(self, mock_backend, shared_params):
-        """Distance to target should accept extra params like bin_size, min_samples."""
-        # Should not raise TypeError
-        mock_backend.get_distance_to_target(**shared_params)
-
-    def test_distance_to_boundary_accepts_extra_params(self, mock_backend, shared_params):
-        """Distance to boundary should accept extra params like bin_size, min_samples."""
-        # Should not raise TypeError
-        mock_backend.get_distance_to_boundary(**shared_params)
 
     def test_velocity_correlations_accepts_extra_params(self, mock_backend, shared_params):
         """Velocity correlations should accept extra params like bin_size, window_size."""
@@ -168,7 +150,6 @@ class TestAnalysisContextIntegration:
 
         # All methods should accept these params
         mock_backend.get_spatial_heatmap(**params)
-        mock_backend.get_speed_statistics(**params)
         mock_backend.get_velocity_correlations(**params)
 
     def test_session_scope_params(self, mock_backend):
@@ -193,7 +174,6 @@ class TestAnalysisContextIntegration:
 
         # Session-supported methods should accept these params
         mock_backend.get_spatial_heatmap(**params)
-        mock_backend.get_speed_statistics(**params)
         # Note: Correlation methods do NOT support session scope
 
     def test_shared_parameters_included(self, mock_backend):

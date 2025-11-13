@@ -22,7 +22,7 @@ import holoviews as hv
 from holoviews import opts
 from bokeh.models import HoverTool, Span
 from bokeh.plotting import figure
-from bokeh.palettes import Category10_10
+from bokeh.palettes import Category10_10, Category20_20
 
 from .base_analysis_widget import BaseAnalysisWidget
 from .query_scope import ScopeType
@@ -259,6 +259,11 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
         else:
             self.z_range = None
 
+        # Create color mapping for agent IDs (consistent colors across all frames)
+        unique_agents = sorted(self.tracks_df['agent_id'].unique())
+        self.agent_color_map = {agent_id: Category20_20[i % len(Category20_20)]
+                                for i, agent_id in enumerate(unique_agents)}
+
         logger.info(f"Loaded {len(self.tracks_df)} track observations for {self.tracks_df['agent_id'].nunique()} agents")
         logger.info(f"Data dimensionality: {'3D' if self.is_3d else '2D'}")
         logger.info(f"Spatial bounds - X: {self.x_range}, Y: {self.y_range}" + (f", Z: {self.z_range}" if self.is_3d else ""))
@@ -354,24 +359,33 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
         if self.is_3d:
             # 3D visualization
             if len(current_df) > 0:
+                # For 3D Plotly plots, map agent IDs to actual color hex values
+                current_df = current_df.copy()
+                current_df['agent_color'] = current_df['agent_id'].map(self.agent_color_map)
+
                 scatter = hv.Scatter3D(
                     current_df,
                     kdims=['x', 'y', 'z'],
-                    vdims=['agent_id', 'speed']
+                    vdims=['agent_id', 'agent_color', 'speed']
                 ).opts(
-                    color='agent_id',
-                    cmap='Category20',
+                    color='agent_color',
                     size=5,
                     width=450,
                     height=450,
                     title=f'Agent Positions (t={self.current_time})',
-                    colorbar=False
+                    colorbar=False,
+                    xlim=self.x_range,
+                    ylim=self.y_range,
+                    zlim=self.z_range
                 )
             else:
                 scatter = hv.Scatter3D([]).opts(
                     width=450,
                     height=450,
-                    title='Animation'
+                    title='Animation',
+                    xlim=self.x_range,
+                    ylim=self.y_range,
+                    zlim=self.z_range
                 )
 
             # Add trails if trail_length > 0
@@ -389,30 +403,28 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
                 if paths:
                     trails = hv.Overlay(paths)
                     scatter = trails * scatter
-
-            # Apply fixed axis limits to the final overlay
-            scatter = scatter.opts(
-                xlim=self.x_range,
-                ylim=self.y_range,
-                zlim=self.z_range
-            )
         else:
             # 2D visualization (use bokeh backend for 2D)
             # Note: Scatter requires single kdim (x) and vdims (y, other data) for bokeh backend
             if len(current_df) > 0:
+                # Map agent IDs to colors (same mapping as 3D for consistency)
+                current_df = current_df.copy()
+                current_df['agent_color'] = current_df['agent_id'].map(self.agent_color_map)
+
                 scatter = hv.Scatter(
                     current_df,
                     kdims=['x'],
-                    vdims=['y', 'agent_id', 'speed']
+                    vdims=['y', 'agent_id', 'agent_color', 'speed']
                 ).opts(
-                    color='agent_id',
-                    cmap='Category20',
+                    color='agent_color',
                     size=8,
                     width=450,
                     height=450,
                     title=f'Agent Positions (t={self.current_time})',
                     colorbar=False,
                     tools=['hover'],
+                    xlim=self.x_range,
+                    ylim=self.y_range,
                     backend='bokeh'
                 )
             else:
@@ -420,6 +432,8 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
                     width=450,
                     height=450,
                     title='Animation',
+                    xlim=self.x_range,
+                    ylim=self.y_range,
                     backend='bokeh'
                 )
 
@@ -438,13 +452,6 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
                 if paths:
                     trails = hv.Overlay(paths)
                     scatter = trails * scatter
-
-            # Apply fixed axis limits to the final overlay
-            scatter = scatter.opts(
-                xlim=self.x_range,
-                ylim=self.y_range,
-                backend='bokeh'
-            )
 
         # Update pane content (efficient - just updates object, doesn't recreate widget)
         self.animation_viz_pane.object = scatter

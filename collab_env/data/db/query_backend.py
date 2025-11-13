@@ -6,22 +6,16 @@ on the tracking analytics database. Uses aiosql to manage SQL queries
 in separate .sql files with driver-specific adapters.
 """
 
-import logging
+import time
 from pathlib import Path
 from typing import Optional
 
 import aiosql
 import pandas as pd
+from loguru import logger
 
 from collab_env.data.db.config import DBConfig, get_db_config
 from collab_env.data.db.db_loader import DatabaseConnection
-
-# Set up logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger(__name__)
 
 
 class QueryBackend:
@@ -92,6 +86,7 @@ class QueryBackend:
 
     def close(self):
         """Close database connection."""
+        logger.info("Closing database connection...")
         self.db.close()
 
     def _execute_query(self, query_name: str, **params) -> pd.DataFrame:
@@ -110,6 +105,10 @@ class QueryBackend:
         pd.DataFrame
             Query results
         """
+        # Log query execution start
+        start_time = time.time()
+        logger.info(f"Executing query '{query_name}' with params: {params}")
+
         try:
             # Get the cursor variant of the query from aiosql
             # aiosql provides both query_name() and query_name_cursor() variants
@@ -128,16 +127,25 @@ class QueryBackend:
                     # Get column names from cursor description
                     if rows:
                         col_names = [desc[0] for desc in cursor.description]
-                        return pd.DataFrame(rows, columns=col_names)
+                        result = pd.DataFrame(rows, columns=col_names)
                     else:
                         # Return empty DataFrame with column names
                         col_names = [desc[0] for desc in cursor.description] if cursor.description else []
-                        return pd.DataFrame(columns=col_names)
+                        result = pd.DataFrame(columns=col_names)
+
+                    # Log successful query completion with execution time
+                    elapsed_time = time.time() - start_time
+                    logger.info(
+                        f"Query '{query_name}' completed in {elapsed_time:.3f}s: "
+                        f"{len(result)} rows returned"
+                    )
+                    return result
             finally:
                 raw_conn.close()
 
         except Exception as e:
-            logger.error(f"Query '{query_name}' execution failed: {e}")
+            elapsed_time = time.time() - start_time
+            logger.error(f"Query '{query_name}' execution failed after {elapsed_time:.3f}s: {e}")
             raise
 
     # ==================== Session/Episode Metadata ====================
@@ -274,236 +282,6 @@ class QueryBackend:
             end_time=end_time,
             agent_type=agent_type,
             min_count=min_count
-        )
-
-    def get_velocity_heatmap(
-        self,
-        episode_id: str,
-        bin_size: float = 10.0,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
-        agent_type: str = 'agent',
-        min_count: int = 5
-    ) -> pd.DataFrame:
-        """
-        Compute velocity field on spatial grid (for quiver plots).
-
-        Parameters
-        ----------
-        episode_id : str
-            Episode to analyze
-        bin_size : float, default=10.0
-            Spatial bin size in scene units
-        start_time : int, optional
-            Start time index
-        end_time : int, optional
-            End time index
-        agent_type : str, default='agent'
-            Agent type to filter ('agent', 'target', 'all')
-        min_count : int, default=5
-            Minimum observations per bin to include
-
-        Returns
-        -------
-        pd.DataFrame
-            Velocity field with columns: x_bin, y_bin, count, avg_vx, avg_vy,
-            avg_vz, avg_speed
-        """
-        return self._execute_query(
-            'get_velocity_heatmap',
-            episode_id=episode_id,
-            bin_size=bin_size,
-            start_time=start_time,
-            end_time=end_time,
-            agent_type=agent_type,
-            min_count=min_count
-        )
-
-    def get_velocity_distribution(
-        self,
-        episode_id: str,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
-        agent_type: str = 'agent'
-    ) -> pd.DataFrame:
-        """
-        Get raw velocity vectors for distribution analysis.
-
-        Parameters
-        ----------
-        episode_id : str
-            Episode to analyze
-        start_time : int, optional
-            Start time index
-        end_time : int, optional
-            End time index
-        agent_type : str, default='agent'
-            Agent type to filter ('agent', 'target', 'all')
-
-        Returns
-        -------
-        pd.DataFrame
-            Velocities with columns: agent_id, time_index, v_x, v_y, v_z, speed
-        """
-        return self._execute_query(
-            'get_velocity_distribution',
-            episode_id=episode_id,
-            start_time=start_time,
-            end_time=end_time,
-            agent_type=agent_type
-        )
-
-    def get_speed_statistics(
-        self,
-        episode_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        window_size: int = 100,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
-        agent_type: str = 'agent',
-        **kwargs  # Accept extra parameters (e.g., bin_size, min_samples from shared context)
-    ) -> pd.DataFrame:
-        """
-        Compute speed statistics over time windows.
-
-        Parameters
-        ----------
-        episode_id : str, optional
-            Episode to analyze (mutually exclusive with session_id)
-        session_id : str, optional
-            Session to analyze - aggregates all episodes in session (mutually exclusive with episode_id)
-        window_size : int, default=100
-            Number of frames per window
-        start_time : int, optional
-            Start time index
-        end_time : int, optional
-            End time index
-        agent_type : str, default='agent'
-            Agent type to filter ('agent', 'target', 'all')
-        **kwargs
-            Additional parameters (ignored)
-
-        Returns
-        -------
-        pd.DataFrame
-            Speed statistics with columns: time_window, n_observations,
-            avg_speed, std_speed, min_speed, max_speed, median_speed
-        """
-        if episode_id is None and session_id is None:
-            raise ValueError("Either episode_id or session_id must be provided")
-        if episode_id is not None and session_id is not None:
-            raise ValueError("Cannot specify both episode_id and session_id")
-
-        return self._execute_query(
-            'get_speed_statistics',
-            episode_id=episode_id,
-            session_id=session_id,
-            window_size=window_size,
-            start_time=start_time,
-            end_time=end_time,
-            agent_type=agent_type
-        )
-
-    def get_distance_to_target(
-        self,
-        episode_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        window_size: int = 100,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
-        agent_type: str = 'agent',
-        **kwargs  # Accept extra parameters (e.g., bin_size, min_samples from shared context)
-    ) -> pd.DataFrame:
-        """
-        Compute distance to target statistics over time windows.
-
-        Parameters
-        ----------
-        episode_id : str, optional
-            Episode to analyze (mutually exclusive with session_id)
-        session_id : str, optional
-            Session to analyze - aggregates all episodes in session (mutually exclusive with episode_id)
-        window_size : int, default=100
-            Number of frames per window
-        start_time : int, optional
-            Start time index
-        end_time : int, optional
-            End time index
-        agent_type : str, default='agent'
-            Agent type to filter ('agent', 'target', 'all')
-        **kwargs
-            Additional parameters (ignored)
-
-        Returns
-        -------
-        pd.DataFrame
-            Distance statistics with columns: time_window, n_observations,
-            avg_distance, std_distance, min_distance, max_distance
-        """
-        if episode_id is None and session_id is None:
-            raise ValueError("Either episode_id or session_id must be provided")
-        if episode_id is not None and session_id is not None:
-            raise ValueError("Cannot specify both episode_id and session_id")
-
-        return self._execute_query(
-            'get_distance_to_target',
-            episode_id=episode_id,
-            session_id=session_id,
-            window_size=window_size,
-            start_time=start_time,
-            end_time=end_time,
-            agent_type=agent_type
-        )
-
-    def get_distance_to_boundary(
-        self,
-        episode_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        window_size: int = 100,
-        start_time: Optional[int] = None,
-        end_time: Optional[int] = None,
-        agent_type: str = 'agent',
-        **kwargs  # Accept extra parameters (e.g., bin_size, min_samples from shared context)
-    ) -> pd.DataFrame:
-        """
-        Compute distance to scene boundary statistics over time windows.
-
-        Parameters
-        ----------
-        episode_id : str, optional
-            Episode to analyze (mutually exclusive with session_id)
-        session_id : str, optional
-            Session to analyze - aggregates all episodes in session (mutually exclusive with episode_id)
-        window_size : int, default=100
-            Number of frames per window
-        start_time : int, optional
-            Start time index
-        end_time : int, optional
-            End time index
-        agent_type : str, default='agent'
-            Agent type to filter ('agent', 'target', 'all')
-        **kwargs
-            Additional parameters (ignored)
-
-        Returns
-        -------
-        pd.DataFrame
-            Distance statistics with columns: time_window, n_observations,
-            avg_distance, std_distance, min_distance, max_distance
-        """
-        if episode_id is None and session_id is None:
-            raise ValueError("Either episode_id or session_id must be provided")
-        if episode_id is not None and session_id is not None:
-            raise ValueError("Cannot specify both episode_id and session_id")
-
-        return self._execute_query(
-            'get_distance_to_boundary',
-            episode_id=episode_id,
-            session_id=session_id,
-            window_size=window_size,
-            start_time=start_time,
-            end_time=end_time,
-            agent_type=agent_type
         )
 
     # ==================== Basic Data Viewer ====================

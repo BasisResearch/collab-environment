@@ -1,12 +1,16 @@
 """
 Distance statistics widget.
 
-Displays distance to target and boundary over time.
+Displays relative locations (pairwise distances) between agents:
+- Histogram of ||x_i - x_j|| for all pairs i<j
+- Time series with median and IQR (25th-75th percentile)
 """
 
 import logging
 from typing import Optional
 
+import numpy as np
+import pandas as pd
 import param
 import panel as pn
 import holoviews as hv
@@ -19,104 +23,172 @@ logger = logging.getLogger(__name__)
 
 class DistanceStatsWidget(BaseAnalysisWidget):
     """
-    Distance statistics visualization.
+    Relative location distance statistics.
 
-    Displays two distance metrics over time:
-    - Distance to target (orange line)
-    - Distance to boundary (purple line)
-
-    Uses time-windowed aggregation with window size from context.
+    Displays pairwise distances ||x_i - x_j|| between agents:
+    - Histogram over entire episode
+    - Time series with median and IQR (25th-75th percentile) bands
     """
 
     widget_name = "Distances"
-    widget_description = "Distance to target and boundary over time"
+    widget_description = "Relative locations (pairwise distances)"
     widget_category = "spatial"
 
     # Widget-specific parameters
-    show_target = param.Boolean(
-        default=True,
-        doc="Show distance to target"
-    )
-
-    show_boundary = param.Boolean(
-        default=True,
-        doc="Show distance to boundary"
+    bin_count = param.Integer(
+        default=30,
+        bounds=(10, 100),
+        doc="Number of bins for histogram"
     )
 
     def create_custom_controls(self) -> Optional[pn.Column]:
-        """Create widget-specific controls for display options."""
+        """Create widget-specific controls."""
         return pn.Column(
-            "### Display Options",
-            pn.widgets.Checkbox.from_param(
-                self.param.show_target,
-                name="Show Distance to Target"
-            ),
-            pn.widgets.Checkbox.from_param(
-                self.param.show_boundary,
-                name="Show Distance to Boundary"
+            "### Visualization Options",
+            pn.widgets.IntSlider.from_param(
+                self.param.bin_count,
+                name="Histogram Bins",
+                width=200
             )
         )
 
     def create_display_pane(self) -> pn.pane.PaneBase:
         """Create empty plot pane."""
+        # Create a placeholder curve (empty data)
+        placeholder = hv.Curve([]).opts(
+            width=800,
+            height=300,
+            title='Click "Load Data" to display distance statistics'
+        )
         return pn.pane.HoloViews(
-            hv.Curve([]).opts(width=700, height=400),
+            placeholder,
             sizing_mode="stretch_both"
         )
 
     def load_data(self) -> None:
-        """Load and visualize distance statistics."""
-        curves = []
+        """Load and visualize relative location statistics."""
+        # Get raw episode tracks (positions for all agents at all times)
+        df_tracks = self.query_with_context('get_episode_tracks')
 
-        # Query distance to target if requested
-        if self.show_target:
-            df_target = self.query_with_context('get_distance_to_target')
+        if len(df_tracks) == 0:
+            raise ValueError("No data found for selected parameters")
 
-            if len(df_target) > 0:
-                curve_target = hv.Curve(
-                    df_target,
-                    kdims='time_window',
-                    vdims='avg_distance',
-                    label='Distance to Target'
-                )
-                curve_target.opts(
-                    opts.Curve(color='orange', line_width=2, backend='bokeh')
-                )
-                curves.append(curve_target)
+        # Compute pairwise distances
+        rel_dist_data = self._compute_relative_distances(df_tracks)
 
-        # Query distance to boundary if requested
-        if self.show_boundary:
-            df_boundary = self.query_with_context('get_distance_to_boundary')
+        if len(rel_dist_data) == 0:
+            raise ValueError("No pairwise distance data computed")
 
-            if len(df_boundary) > 0:
-                curve_boundary = hv.Curve(
-                    df_boundary,
-                    kdims='time_window',
-                    vdims='avg_distance',
-                    label='Distance to Boundary'
-                )
-                curve_boundary.opts(
-                    opts.Curve(color='purple', line_width=2, backend='bokeh')
-                )
-                curves.append(curve_boundary)
+        # Create histogram
+        hist = self._create_histogram(rel_dist_data['relative_distance'].values)
 
-        if not curves:
-            raise ValueError("No distance data found")
+        # Create time series with mean ± std
+        ts = self._create_time_series(rel_dist_data)
 
-        # Create overlay plot
-        overlay = hv.Overlay(curves)
-        overlay.opts(
-            opts.Overlay(
-                width=700,
-                height=400,
-                xlabel='Time',
-                ylabel='Distance',
-                title=f'Distances Over Time (window={self.context.temporal_window_size})',
-                tools=['hover'],
-                legend_position='top_right',
-                backend='bokeh'
+        # Arrange plots side by side
+        layout = (hist + ts).opts(title="Relative Locations (||x_i - x_j||)")
+
+        self.display_pane.object = layout
+        logger.info(f"Loaded distance stats with {len(rel_dist_data)} pairwise distances")
+
+    def _to_numeric_array(self, series: pd.Series) -> np.ndarray:
+        """Convert pandas series to clean numeric array, replacing None/NaN with 0.0."""
+        # Convert to numeric (handles None, converts to NaN)
+        numeric = pd.to_numeric(series, errors='coerce')
+        # Replace NaN with 0.0
+        return numeric.fillna(0.0).values
+
+    def _create_histogram(self, data: np.ndarray) -> hv.Histogram:
+        """Create histogram of relative distances."""
+        frequencies, edges = np.histogram(data, bins=self.bin_count)
+        hist = hv.Histogram((edges, frequencies))
+        hist.opts(
+            opts.Histogram(
+                color='darkviolet',
+                width=400,
+                height=300,
+                xlabel='Distance ||x_i - x_j||',
+                ylabel='Count',
+                title='Distribution of Pairwise Distances'
             )
         )
+        return hist
 
-        self.display_pane.object = overlay
-        logger.info(f"Loaded distance stats ({len(curves)} metrics)")
+    def _create_time_series(self, df: pd.DataFrame) -> hv.Overlay:
+        """Create time series with median and IQR (25th-75th percentile) for relative distances."""
+        logger.info("⭐ USING NEW VERSION: Creating distance time series with Spread element")
+        window_size = self.context.temporal_window_size
+
+        # Compute windowed statistics (median and quartiles)
+        df['time_window'] = (df['time_index'] // window_size) * window_size
+        stats = df.groupby('time_window')['relative_distance'].agg([
+            ('median', 'median'),
+            ('q25', lambda x: x.quantile(0.25)),
+            ('q75', lambda x: x.quantile(0.75))
+        ]).reset_index()
+
+        # Compute errors for Spread element
+        stats['neg_err'] = stats['median'] - stats['q25']
+        stats['pos_err'] = stats['q75'] - stats['median']
+
+        # Create median line
+        curve = hv.Curve(
+            (stats['time_window'], stats['median']),
+            kdims='Time',
+            vdims='Distance',
+            label='Median'
+        ).opts(
+            color='darkviolet',
+            line_width=2
+        )
+
+        # Create IQR spread
+        spread = hv.Spread(
+            (stats['time_window'], stats['median'], stats['neg_err'], stats['pos_err']),
+            kdims='Time',
+            vdims=['Distance', 'neg_err', 'pos_err'],
+            label='IQR (25th-75th)'
+        ).opts(
+            color='plum',
+            alpha=0.3
+        )
+
+        return (spread * curve).opts(
+            width=400,
+            height=300,
+            title='Pairwise Distance Over Time',
+            show_legend=True
+        )
+
+    def _compute_relative_distances(self, df_tracks: pd.DataFrame) -> pd.DataFrame:
+        """
+        Compute pairwise distance magnitudes ||x_i - x_j|| for all i<j.
+        """
+        results = []
+
+        for time_idx in df_tracks['time_index'].unique():
+            df_t = df_tracks[df_tracks['time_index'] == time_idx].copy()
+
+            agents = df_t['agent_id'].values
+            # Handle None/NaN values in all position components
+            x = self._to_numeric_array(df_t['x'])
+            y = self._to_numeric_array(df_t['y'])
+            z = self._to_numeric_array(df_t['z']) if 'z' in df_t.columns else np.zeros(len(df_t))
+
+            # Compute all pairwise distances (i < j)
+            for i in range(len(agents)):
+                for j in range(i + 1, len(agents)):
+                    delta_x = x[i] - x[j]
+                    delta_y = y[i] - y[j]
+                    delta_z = z[i] - z[j]
+
+                    rel_dist = np.sqrt(delta_x**2 + delta_y**2 + delta_z**2)
+
+                    results.append({
+                        'time_index': time_idx,
+                        'agent_i': agents[i],
+                        'agent_j': agents[j],
+                        'relative_distance': rel_dist
+                    })
+
+        return pd.DataFrame(results)

@@ -16,14 +16,13 @@ Original Requirements
 * Self-statistics
   * ✅ heatmap of visited locations (implemented in Basic Data Viewer)
   * heatmap of velocities (quiver plots)
-  * velocity (vector distribution), speed, acceleration (distribution), acceleration (vector)
-  * Mean velocity direction over time (distribution / time series) - scalar
-  * ✅ distance to target mesh (2d - food) (legacy Distance widget)
-  * ✅ distance to scene (2d - distance to boundary) (legacy Distance widget)
+  * ✅ velocity (speed distribution, mean velocity magnitude) (implemented in Velocity Stats widget)
+  * acceleration (distribution), acceleration (vector)
+  * ✅ Mean velocity direction over time (distribution / time series) (implemented in Velocity Stats widget)
 
 * pairwise statistics - both "point clouds" (vector quantities) and distributions of magnitude
-  * relative positions (distances)
-  * relative velocities
+  * ✅ relative positions (distances) (implemented in Distance widget)
+  * ✅ relative velocities (implemented in Velocity Stats widget)
 
 * correlations
   * ✅ velocities (legacy Correlation widget)
@@ -40,11 +39,17 @@ Implementation Status
 
 - [x] DB backend (QueryBackend with PostgreSQL/DuckDB support)
 - [x] Basic Data Viewer (Phase 7.1) with integrated heatmap, animation, and time series
-- [x] Legacy widgets for velocity stats, distance stats, and correlations
+- [x] Enhanced Velocity Stats widget with three analysis groups:
+  - Individual agent speed (histogram + time series with mean ± std)
+  - Mean velocity magnitude (normalized velocities, magnitude of mean vector)
+  - Relative velocity magnitude (pairwise ||v_i - v_j|| analysis)
+- [x] Enhanced Distance widget with pairwise relative locations:
+  - Relative distances ||x_i - x_j|| between all agent pairs
+  - Histogram + time series with mean ± std bands
+- [x] Velocity Correlations widget (episode-level)
 
 🚧 Planned (Phase 7.2-7.3):
 
-- [ ] Relative Quantities Viewer (pairwise statistics)
 - [ ] Enhanced Correlation Viewer (windowed/lagged modes)
 
 📝 Future:

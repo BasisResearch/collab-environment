@@ -27,13 +27,13 @@ widgets:
     enabled: true
     order: 1
     category: temporal
-    description: "Speed statistics over time"
+    description: "Comprehensive velocity statistics: individual speed, mean velocity magnitude, relative velocity magnitude"
 
   - class: collab_env.dashboard.widgets.distance_widget.DistanceStatsWidget
     enabled: true
     order: 2
     category: spatial
-    description: "Distance to target and boundary"
+    description: "Relative locations: pairwise distances between agents"
 
   - class: collab_env.dashboard.widgets.correlation_widget.CorrelationWidget
     enabled: true

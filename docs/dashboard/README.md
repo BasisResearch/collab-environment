@@ -38,10 +38,17 @@ The Dashboard System provides interactive web-based visualization and analysis f
   - Spatial density heatmaps (integrated, replaces standalone widget)
   - Multi-property time series with synchronized timeline
   - Dynamic histogram panel for property distributions
-- Legacy widgets (Phase 6):
-  - Speed statistics over time
-  - Distance to target/boundary analysis
-  - Velocity correlations (episode-level)
+- Enhanced legacy widgets (Phase 6+):
+  - **Velocity Stats**: Comprehensive velocity analysis with three groups
+    - Individual agent speed (histogram + time series with median and IQR bands)
+    - Mean velocity magnitude (normalized velocities, then magnitude of mean vector)
+    - Relative velocity magnitude (pairwise ||v_i - v_j|| with median and IQR bands)
+    - Distinct color schemes per group with interactive legends
+  - **Distances**: Relative locations analysis
+    - Pairwise distances ||x_i - x_j|| between agents
+    - Histogram + time series with median and IQR (25th-75th percentile) bands
+    - Distinct color scheme (darkviolet/plum) with interactive legends
+  - **Velocity Correlations**: Episode-level correlation analysis
 - Session/episode management and selection
 - Episode and session-level aggregation (SQL-optimized)
 - Modular widget architecture
@@ -163,9 +170,9 @@ collab_env/data/db/
 
 4. **Concrete Widgets** (`widgets/*_widget.py`)
    - **BasicDataViewerWidget**: Comprehensive unified viewer (Phase 7.1) with integrated heatmap
-   - VelocityStatsWidget: Speed over time (legacy)
-   - DistanceStatsWidget: Distance to target/boundary (legacy)
-   - CorrelationWidget: Velocity correlations (legacy)
+   - **VelocityStatsWidget**: Enhanced velocity analysis (3 groups: individual speed, mean velocity magnitude, relative velocity magnitude)
+   - **DistanceStatsWidget**: Relative locations (pairwise distances between agents)
+   - **CorrelationWidget**: Velocity correlations (episode-level)
 
 5. **Widget Registry** (`analysis_widgets.yaml`)
    - YAML-based widget configuration
@@ -208,7 +215,24 @@ collab_env/dashboard/
 **GUI Layer:**
 - [x] Modular widget architecture
 - [x] **Basic Data Viewer** (Phase 7.1) - unified episode viewer with integrated heatmap
-- [x] 3 legacy analysis widgets (velocity, distance, correlation)
+- [x] **Enhanced Velocity Stats Widget** - comprehensive velocity analysis with three groups:
+  - [x] Individual agent speed (histogram + time series with median and IQR)
+  - [x] Mean velocity magnitude (normalized velocities, then magnitude of mean vector)
+  - [x] Relative velocity magnitude (pairwise ||v_i - v_j|| with histogram + time series with median and IQR)
+  - [x] Robust NaN/None handling for 2D/3D data compatibility
+  - [x] Temporal windowing applied consistently across all time series
+  - [x] Quantile-based uncertainty bands (25th-75th percentile) for robust statistics
+  - [x] HoloViews Spread element for IQR visualization with plotly backend
+  - [x] Distinct color schemes: darkblue/lightblue (speed), darkgreen/lightgreen (mean), darkorange/lightsalmon (relative)
+  - [x] Interactive legends showing "Median" and "IQR (25th-75th)" labels
+- [x] **Enhanced Distance Stats Widget** - pairwise distance analysis:
+  - [x] Pairwise distances ||x_i - x_j|| between all agents
+  - [x] Distribution histogram + time series with median and IQR (25th-75th percentile) bands
+  - [x] Robust NaN/None handling for 2D/3D data compatibility
+  - [x] HoloViews Spread element for IQR visualization with plotly backend
+  - [x] Distinct color scheme: darkviolet (median line), plum (IQR bands)
+  - [x] Interactive legends showing "Median" and "IQR (25th-75th)" labels
+- [x] Correlation widget (velocity correlations, episode-level)
 - [x] YAML-based widget registry
 - [x] Episode and session scope support
 - [x] Shared parameter context
@@ -234,9 +258,10 @@ panel serve collab_env/dashboard/spatial_analysis_app.py --port 5008
    - Hardcoded for specific metrics (speed, distance)
    - New properties require new widget code
 
-3. **No Animation**: Static visualizations only
-   - No temporal animation of tracks
-   - No synchronized time series views
+3. **Performance**: Pairwise computations (O(n²)) for large agent counts
+   - Velocity and distance widgets compute all pairs i<j at each timestep
+   - Noticeable slowdown beyond 30 agents
+   - Future optimization: vectorized numpy operations
 
 ---
 
@@ -252,36 +277,24 @@ panel serve collab_env/dashboard/spatial_analysis_app.py --port 5008
 
 #### Query Layer Simplification
 
-The unified widget architecture will **simplify and generalize** the QueryBackend:
+The unified widget architecture uses a **property-agnostic approach**:
 
-**Current Approach** (Specialized):
+**General-Purpose Queries:**
 
-- Separate queries for each metric: `get_speed_statistics()`, `get_distance_to_target()`, `get_distance_to_boundary()`
-- Hardcoded property IDs in SQL
-- Each widget has custom query logic
-- Adding new properties requires new SQL queries + new Python methods
-
-**New Approach** (General-Purpose):
-
-- **5 general queries replace dozens of specialized ones:**
+- **5 general queries support any extended property:**
   1. `get_episode_tracks` - Positions/velocities for animation (any agent type)
   2. `get_extended_properties_timeseries` - **Any** property time series (aggregated)
   3. `get_property_distributions` - **Any** property histogram data
   4. `get_available_properties` - List available properties for UI
-  5. `get_agent_property_timeseries` - Per-agent time series for correlations
+  5. `get_spatial_heatmap` - Spatial density heatmap
 - **Properties are data, not code**: Query accepts `property_ids` parameter
 - **Automatic support**: New properties work immediately without code changes
 - **Simpler maintenance**: Fewer query methods, cleaner API
 
-**Example - Old vs New:**
+**Example:**
 
 ```python
-# OLD: Specialized queries
-speed_stats = query.get_speed_statistics(episode_id, window_size=100)
-distance_stats = query.get_distance_to_target(episode_id, window_size=100)
-boundary_stats = query.get_distance_to_boundary(episode_id, window_size=100)
-
-# NEW: Single general query
+# Property-agnostic query approach
 properties = query.get_extended_properties_timeseries(
     episode_id=episode_id,
     property_ids=['speed', 'distance_to_target_center', 'distance_to_scene_mesh']
@@ -291,7 +304,6 @@ properties = query.get_extended_properties_timeseries(
 
 **Benefits:**
 
-- ✅ Fewer query methods (5 instead of 10+)
 - ✅ Property-agnostic architecture
 - ✅ Easier testing (test once, works for all properties)
 - ✅ Cleaner codebase (less duplication)
@@ -485,26 +497,34 @@ properties = query.get_extended_properties_timeseries(
 
 ### Phase 7.2: Relative Quantities Viewer (6-8 hours)
 
-**Step 1: SQL Queries (2-3 hours)**
-- [ ] Create `queries/pairwise_analysis.sql`
-- [ ] Implement pairwise distance query (O(n²) warning)
-- [ ] Implement pairwise velocity query
-- [ ] Test performance with different agent counts
+**Status**: Partially implemented via enhanced legacy widgets (scalar magnitudes only)
 
-**Step 2: QueryBackend Integration (1 hour)**
-- [ ] Add `get_pairwise_distances()` method
-- [ ] Add `get_pairwise_relative_velocities()` method
+**Completed via Enhanced Widgets:**
+- [x] Pairwise distance computation (||x_i - x_j||) - in DistanceStatsWidget
+- [x] Pairwise relative velocity magnitude (||v_i - v_j||) - in VelocityStatsWidget
+- [x] Scalar magnitude histograms + time series with median and IQR (25th-75th percentile)
+- [x] Client-side Python computation (all pairs i<j at each timestep)
+- [x] Robust NaN/None handling for 2D/3D compatibility
+- [x] Testing: verified correct pair counts, no duplicates, accurate calculations
+- [x] Quantile-based statistics for non-Gaussian distributions
+- [x] HoloViews Spread element for IQR band visualization (plotly backend)
+- [x] Distinct color schemes for each analysis group with interactive legends
+- [x] Proper axis labels (Time, Speed, Distance, Magnitude)
 
-**Step 3: Widget Implementation (2-3 hours)**
-- [ ] Create `RelativeQuantitiesViewerWidget` class
-- [ ] Implement 3-panel layout
-- [ ] Bin pairwise vectors for heatmaps
-- [ ] Compute scalar magnitudes for histograms
-
-**Step 4: Testing (1-2 hours)**
-- [ ] Verify correct number of pairs: n(n-1)/2
-- [ ] No self-pairs or duplicates
-- [ ] Accurate distance/velocity calculations
+**Remaining Work (Full Phase 7.2):**
+- [ ] **SQL Queries**: Move pairwise computations to SQL for better performance
+  - [ ] Create `queries/pairwise_analysis.sql`
+  - [ ] Implement pairwise distance query (O(n²) warning)
+  - [ ] Implement pairwise velocity query
+  - [ ] Test performance with different agent counts
+- [ ] **QueryBackend Integration**:
+  - [ ] Add `get_pairwise_distances()` method
+  - [ ] Add `get_pairwise_relative_velocities()` method
+- [ ] **Directional Analysis** (not yet implemented):
+  - [ ] Bin pairwise VECTORS (not just magnitudes) for directional heatmaps
+  - [ ] Show relative position vectors: (x_i - x_j, y_i - y_j)
+  - [ ] Show relative velocity vectors: (v_i - v_j)_x, (v_i - v_j)_y
+  - [ ] Create unified RelativeQuantitiesViewerWidget with 3-panel layout
 
 ### Phase 7.3: Correlation Viewer (8-10 hours)
 
@@ -596,29 +616,22 @@ heatmap = query.get_spatial_heatmap(
 )
 # Returns: x_bin, y_bin, density, avg_vx, avg_vy
 
-# Speed statistics over time windows
-speed_stats = query.get_speed_statistics(
+# Episode tracks for animation
+tracks = query.get_episode_tracks(
     episode_id='...',
-    window_size=100,
+    start_time=0,
+    end_time=500,
     agent_type='agent'
 )
-# Returns: time_window, n_observations, avg_speed, std_speed,
-#          median_speed, min_speed, max_speed
+# Returns: agent_id, time_index, x, y, z, v_x, v_y, v_z, speed
 
-# Distance to target
-dist_target = query.get_distance_to_target(
+# Extended properties time series
+properties_ts = query.get_extended_properties_timeseries(
     episode_id='...',
     window_size=100,
-    agent_type='agent'
+    property_ids=['distance_to_target_center', 'distance_to_scene_mesh']
 )
-# Returns: time_window, avg_distance, std_distance, min_distance, max_distance
-
-# Distance to boundary
-dist_boundary = query.get_distance_to_boundary(
-    episode_id='...',
-    window_size=100,
-    agent_type='agent'
-)
+# Returns: time_window, property_id, avg_value, std_value, min_value, max_value
 ```
 
 #### Correlations (Episode-Only)
@@ -715,7 +728,7 @@ class MyCustomWidget(BaseAnalysisWidget):
 
 ## Usage Examples
 
-### Example 1: Compare Before/After Target Appears
+### Example 1: Analyze Extended Properties Over Time
 
 ```python
 from collab_env.data.db.query_backend import QueryBackend
@@ -727,34 +740,37 @@ query = QueryBackend()
 sessions = query.get_sessions(category_id='boids_3d')
 episode_id = query.get_episodes(sessions.iloc[0]['session_id']).iloc[0]['episode_id']
 
-# Get speed before target (t < 500)
-speed_before = query.get_speed_statistics(episode_id, window_size=50)
-speed_before = speed_before[speed_before['time_window'] < 500]
+# Get extended properties time series
+properties = query.get_extended_properties_timeseries(
+    episode_id=episode_id,
+    window_size=50,
+    property_ids=['distance_to_target_center']
+)
 
-# Get speed after target (t >= 500)
-speed_after = query.get_speed_statistics(episode_id, window_size=50)
-speed_after = speed_after[speed_after['time_window'] >= 500]
+# Split data before/after target appears (t=500)
+before_target = properties[properties['time_window'] < 500]
+after_target = properties[properties['time_window'] >= 500]
 
 # Plot comparison
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
 
-ax1.plot(speed_before['time_window'], speed_before['avg_speed'])
-ax1.fill_between(speed_before['time_window'],
-                 speed_before['avg_speed'] - speed_before['std_speed'],
-                 speed_before['avg_speed'] + speed_before['std_speed'],
+ax1.plot(before_target['time_window'], before_target['avg_value'])
+ax1.fill_between(before_target['time_window'],
+                 before_target['avg_value'] - before_target['std_value'],
+                 before_target['avg_value'] + before_target['std_value'],
                  alpha=0.3)
-ax1.set_title('Speed Before Target (t<500)')
+ax1.set_title('Distance to Target Before Appearance (t<500)')
 ax1.set_xlabel('Time')
-ax1.set_ylabel('Speed')
+ax1.set_ylabel('Distance')
 
-ax2.plot(speed_after['time_window'], speed_after['avg_speed'])
-ax2.fill_between(speed_after['time_window'],
-                 speed_after['avg_speed'] - speed_after['std_speed'],
-                 speed_after['avg_speed'] + speed_after['std_speed'],
+ax2.plot(after_target['time_window'], after_target['avg_value'])
+ax2.fill_between(after_target['time_window'],
+                 after_target['avg_value'] - after_target['std_value'],
+                 after_target['avg_value'] + after_target['std_value'],
                  alpha=0.3)
-ax2.set_title('Speed After Target (t>=500)')
+ax2.set_title('Distance to Target After Appearance (t>=500)')
 ax2.set_xlabel('Time')
-ax2.set_ylabel('Speed')
+ax2.set_ylabel('Distance')
 
 plt.tight_layout()
 plt.show()
