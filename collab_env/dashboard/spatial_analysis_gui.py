@@ -44,7 +44,7 @@ class SpatialAnalysisGUI(param.Parameterized):
     selected_episode = param.String(default="", doc="Selected episode ID")
     scope_type = param.Selector(
         default="Episode",
-        objects=["Episode", "Session"],
+        objects=["Episode"],  # Session scope disabled - widgets require episode-level data
         doc="Analysis scope type"
     )
 
@@ -86,11 +86,13 @@ class SpatialAnalysisGUI(param.Parameterized):
         """Create all UI widgets."""
 
         # === Data Scope Selection ===
+        # Session scope disabled - current widgets require episode-level data
         self.scope_type_select = pn.widgets.RadioButtonGroup(
             name="Analysis Scope",
-            options=["Episode", "Session"],
+            options=["Episode"],
             value="Episode",
-            button_type="success"
+            button_type="success",
+            visible=False  # Hidden since only one option
         )
 
         self.category_select = pn.widgets.Select(
@@ -332,8 +334,8 @@ class SpatialAnalysisGUI(param.Parameterized):
                 self.episode_select.options = [""]
                 self._show_error("No episodes found for this session")
             else:
-                # Create display names (episode_number)
-                episode_options = {f"Episode {row['episode_number']}": row['episode_id']
+                # Create display names (episode_id for clarity, especially for GNN rollouts)
+                episode_options = {row['episode_id']: row['episode_id']
                                    for _, row in episodes_df.iterrows()}
                 self.episode_select.options = [""] + list(episode_options.keys())
                 self.episode_select.param.trigger("options")
@@ -463,9 +465,9 @@ class SpatialAnalysisGUI(param.Parameterized):
         """Create the dashboard layout with dynamic widget tabs."""
 
         # Sidebar with scope selection + shared parameters
+        # Note: scope_type_select is hidden (only Episode scope available)
         sidebar = pn.Column(
-            "## Analysis Scope",
-            self.scope_type_select,
+            "## Episode Selection",
             self.category_select,
             self.session_select,
             self.episode_select,

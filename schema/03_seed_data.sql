@@ -12,6 +12,7 @@ INSERT INTO agent_types (type_id, type_name, description) VALUES
     ('agent', 'agent', 'Generic simulated agent (boid)'),
     ('env', 'environment', 'Environment entity (walls, obstacles, boundaries)'),
     ('target', 'target', 'Target object in simulation'),
+    ('food', 'food', 'Stationary food target in 2D boids simulation'),
     ('bird', 'bird', 'Bird detected in video tracking'),
     ('rat', 'rat', 'Rat detected in video tracking'),
     ('gerbil', 'gerbil', 'Gerbil detected in video tracking')
@@ -24,6 +25,7 @@ ON CONFLICT (type_id) DO NOTHING;
 INSERT INTO categories (category_id, category_name, description) VALUES
     ('boids_3d', '3D Boids Simulations', 'Sessions from 3D boid simulations'),
     ('boids_2d', '2D Boids Simulations', 'Sessions from 2D boid simulations'),
+    ('boids_2d_rollout', '2D Boids GNN Rollout', 'GNN model predictions on 2D boids test data'),
     ('tracking_csv', 'Real-World Tracking', 'Sessions from video tracking (CSV data)')
 ON CONFLICT (category_id) DO NOTHING;
 
@@ -70,6 +72,13 @@ ON CONFLICT (property_id) DO NOTHING;
 INSERT INTO property_definitions (property_id, property_name, data_type, description, unit) VALUES
     ('confidence', 'Detection Confidence', 'float', 'Detection confidence score from tracking', 'probability'),
     ('detection_class', 'Detection Class', 'string', 'Detected object class label', 'label')
+ON CONFLICT (property_id) DO NOTHING;
+
+-- GNN Attention weight properties
+INSERT INTO property_definitions (property_id, property_name, data_type, description, unit) VALUES
+    ('attn_weight_self', 'Self Attention Weight', 'float', 'Agent self-attention weight', 'dimensionless'),
+    ('attn_weight_boid', 'Boid Attention Weight', 'float', 'Sum of attention to other boid agents', 'dimensionless'),
+    ('attn_weight_food', 'Food Attention Weight', 'float', 'Attention to food agent', 'dimensionless')
 ON CONFLICT (property_id) DO NOTHING;
 
 -- =============================================================================

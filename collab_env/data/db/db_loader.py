@@ -5,15 +5,19 @@ Loads data from various sources into PostgreSQL or DuckDB:
 - 3D Boids: Parquet files from collab_env.sim.boids
 - 2D Boids: PyTorch .pt files from collab_env.sim.boids_gnn_temp
 - Tracking CSV: Real-world tracking data from collab_env.tracking
+- GNN Rollout: Model evaluation rollout pickle files with predictions
 """
 
 import argparse
+import json
 import os
+import pickle
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
-
+from typing import Any, Dict, List, Optional, Tuple, Union
+import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 import torch
@@ -38,6 +42,34 @@ logger.add(
     format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
     level="DEBUG"
 )
+
+
+def convert_to_json_serializable(obj: Any) -> Any:
+    """
+    Recursively convert numpy/PyTorch types to native Python types for JSON serialization.
+
+    Args:
+        obj: Object to convert (dict, list, numpy type, torch type, etc.)
+
+    Returns:
+        Converted object with native Python types
+    """
+    if isinstance(obj, dict):
+        return {k: convert_to_json_serializable(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [convert_to_json_serializable(item) for item in obj]
+    elif isinstance(obj, (np.integer, np.int64, np.int32, np.int16, np.int8)):
+        return int(obj)
+    elif isinstance(obj, (np.floating, np.float64, np.float32, np.float16)):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, torch.Tensor):
+        return obj.cpu().numpy().tolist()
+    elif isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
+    else:
+        return obj
 
 
 @dataclass
@@ -153,8 +185,9 @@ class DatabaseConnection:
 class BaseDataLoader:
     """Base class for data loaders."""
 
-    def __init__(self, db_conn: DatabaseConnection):
+    def __init__(self, db_conn: DatabaseConnection, max_episodes: int = np.inf):
         self.db = db_conn
+        self.max_episodes = max_episodes
 
     def load_session(self, metadata: SessionMetadata, conn=None):
         """Load session metadata into database.
@@ -163,10 +196,9 @@ class BaseDataLoader:
             metadata: Session metadata
             conn: Optional connection (for transactional usage)
         """
-        # Convert config and metadata to JSON strings
-        import json
-        config_json = json.dumps(metadata.config)
-        metadata_json = json.dumps(metadata.metadata) if metadata.metadata else None
+        # Convert config and metadata to JSON strings (convert numpy/torch types first)
+        config_json = json.dumps(convert_to_json_serializable(metadata.config))
+        metadata_json = json.dumps(convert_to_json_serializable(metadata.metadata)) if metadata.metadata else None
 
         query = """
         INSERT INTO sessions (session_id, session_name, category_id, config, metadata)
@@ -414,12 +446,18 @@ class Boids3DLoader(BaseDataLoader):
 
         # Load each episode
         episode_files = sorted(simulation_dir.glob("episode-*.parquet"))
-        logger.info(f"Loading {len(episode_files)} episodes...")
+        logger.info(f"Loading up to {min(len(episode_files), self.max_episodes)} episodes...")
 
+        episodes_loaded = 0
         for episode_num, episode_file in enumerate(episode_files):
+            if episode_num >= self.max_episodes:
+                logger.info(f"Reached maximum number of episodes ({self.max_episodes}) for session {session_id}, stopping...")
+                break
+            logger.info(f"[{episode_num + 1}/{len(episode_files)}] Loading episode {episode_num} from: {episode_file}")
             self.load_episode_file(session_id, episode_num, episode_file, config, conn=conn)
+            episodes_loaded += 1
 
-        logger.info(f"Completed loading simulation: {session_id} ({len(episode_files)} episodes)")
+        logger.info(f"Completed loading simulation: {session_id} ({episodes_loaded} out of {len(episode_files)} episodes)")
 
     def load_simulation(self, simulation_dir: Path):
         """
@@ -453,16 +491,22 @@ class Boids3DLoader(BaseDataLoader):
 
         # Load all data in a single transaction for performance
         episode_files = sorted(simulation_dir.glob("episode-*.parquet"))
-        logger.info(f"Loading {len(episode_files)} episodes in single transaction...")
+        logger.info(f"Loading up to {min(len(episode_files), self.max_episodes)} episodes in single transaction...")
 
         with self.db.transaction() as conn:
             self.load_session(session_metadata, conn=conn)
 
             # Load each episode
+            episodes_loaded = 0
             for episode_num, episode_file in enumerate(episode_files):
+                if episode_num >= self.max_episodes:
+                    logger.info(f"Reached maximum number of episodes ({self.max_episodes}) for session {session_id}, stopping...")
+                    break
+                logger.info(f"[{episode_num + 1}/{len(episode_files)}] Loading episode {episode_num} from: {episode_file}")
                 self.load_episode_file(session_id, episode_num, episode_file, config, conn=conn)
+                episodes_loaded += 1
 
-        logger.info(f"Completed loading simulation: {session_id} ({len(episode_files)} episodes)")
+        logger.info(f"Completed loading simulation: {session_id} ({episodes_loaded} out of {len(episode_files)} episodes)")
 
     def load_episode_file(
         self,
@@ -663,6 +707,7 @@ class Boids2DLoader(BaseDataLoader):
         if not isinstance(scene_size, (int, float)):
             scene_size = 480.0
 
+        num_samples = np.minimum(len(dataset), self.max_episodes)
         # Create session metadata
         session_id = f"session-2d-{basename}"
         session_metadata = SessionMetadata(
@@ -673,7 +718,7 @@ class Boids2DLoader(BaseDataLoader):
             metadata={
                 'data_file': str(data_path),
                 'config_file': str(config_path) if config_path.exists() else None,
-                'num_samples': len(dataset),
+                'num_samples': num_samples,
                 'scene_size': scene_size,
                 'loader': 'Boids2DLoader'
             }
@@ -682,11 +727,17 @@ class Boids2DLoader(BaseDataLoader):
         self.load_session(session_metadata, conn=conn)
 
         # Load each sample as an episode
-        logger.info(f"Loading {len(dataset)} episodes...")
+        logger.info(f"Loading up to {min(len(dataset), self.max_episodes)} episodes...")
+        episodes_loaded = 0
         for sample_idx in range(len(dataset)):
+            if sample_idx >= self.max_episodes:
+                logger.info(f"Reached maximum number of episodes ({self.max_episodes}) for session {session_id}, stopping...")
+                break
+            logger.info(f"[{sample_idx + 1}/{len(dataset)}] Loading sample {sample_idx}")
             self.load_sample(session_id, sample_idx, dataset[sample_idx], config, scene_size, conn=conn)
+            episodes_loaded += 1
 
-        logger.info(f"Completed loading dataset: {session_id} ({len(dataset)} episodes)")
+        logger.info(f"Completed loading dataset: {session_id} ({episodes_loaded} out of {len(dataset)} episodes)")
 
     def load_dataset(self, data_path: Path):
         """
@@ -726,6 +777,8 @@ class Boids2DLoader(BaseDataLoader):
             # If scene_size is not in top level, try to infer from species config
             scene_size = 480.0  # Default value
 
+        num_samples = np.minimum(len(dataset), self.max_episodes)
+
         # Create session metadata
         session_id = f"session-2d-{basename}"
         session_metadata = SessionMetadata(
@@ -736,23 +789,29 @@ class Boids2DLoader(BaseDataLoader):
             metadata={
                 'data_file': str(data_path),
                 'config_file': str(config_path) if config_path.exists() else None,
-                'num_samples': len(dataset),
+                'num_samples': num_samples,
                 'scene_size': scene_size,
                 'loader': 'Boids2DLoader'
             }
         )
 
         # Load all data in a single transaction for performance
-        logger.info(f"Loading {len(dataset)} episodes in single transaction...")
+        logger.info(f"Loading up to {num_samples} out of {len(dataset)} episodes in single transaction...")
 
         with self.db.transaction() as conn:
             self.load_session(session_metadata, conn=conn)
 
             # Load each sample as an episode
+            episodes_loaded = 0
             for sample_idx in range(len(dataset)):
+                if sample_idx >= self.max_episodes:
+                    logger.info(f"Reached maximum number of episodes ({self.max_episodes}) for session {session_id}, stopping...")
+                    break
+                logger.info(f"[{sample_idx + 1}/{len(dataset)}] Loading sample {sample_idx}")
                 self.load_sample(session_id, sample_idx, dataset[sample_idx], config, scene_size, conn=conn)
+                episodes_loaded += 1
 
-        logger.info(f"Completed loading dataset: {session_id} ({len(dataset)} episodes)")
+        logger.info(f"Completed loading dataset: {session_id} ({episodes_loaded} out of {len(dataset)} episodes)")
 
     def load_sample(
         self,
@@ -922,9 +981,14 @@ class TrackingCSVLoader(BaseDataLoader):
         camera_dirs = sorted([d for d in aligned_frames.iterdir()
                               if d.is_dir() and not d.name.startswith('.')])
 
-        logger.info(f"Loading {len(camera_dirs)} camera episodes...")
+        logger.info(f"Loading up to {min(len(camera_dirs), self.max_episodes)} camera episodes...")
 
+        episodes_loaded = 0
         for episode_num, camera_dir in enumerate(camera_dirs):
+            if episode_num >= self.max_episodes:
+                logger.info(f"Reached maximum number of episodes ({self.max_episodes}) for session {session_id}, stopping...")
+                break
+
             # Find CSV file (e.g., thermal_2_tracks.csv)
             csv_files = list(camera_dir.glob("*_tracks.csv"))
             if not csv_files:
@@ -935,8 +999,9 @@ class TrackingCSVLoader(BaseDataLoader):
             episode_name = camera_dir.name  # e.g., "thermal_2"
 
             self.load_episode_csv(session_id, episode_num, episode_name, csv_path, conn=conn)
+            episodes_loaded += 1
 
-        logger.info(f"Completed loading session: {session_id} ({len(camera_dirs)} episodes)")
+        logger.info(f"Completed loading session: {session_id} ({episodes_loaded} out of {len(camera_dirs)} episodes)")
 
     def load_tracking_session(self, session_dir: Path):
         """
@@ -1051,6 +1116,518 @@ class TrackingCSVLoader(BaseDataLoader):
         logger.info(f"Loaded episode {episode_name}: {num_frames} frames, {num_agents} tracks, {len(df)} observations")
 
 
+class GNNRolloutLoader(BaseDataLoader):
+    """Loader for GNN model evaluation rollout data from pickle files."""
+
+    def _detect_food_agent(self, dataset_name: str, num_agents: int) -> int:
+        """
+        Detect food agent by filename heuristic.
+
+        Args:
+            dataset_name: Dataset name from rollout filename
+            num_agents: Number of agents in trajectory
+
+        Returns:
+            Agent index of food agent, or -1 if none found
+        """
+        # If 'food' is in the dataset name, food agent is the last agent
+        if 'food' in dataset_name.lower():
+            return num_agents - 1
+
+        return -1  # No food agent
+
+    def _create_agent_type_map(
+        self,
+        food_agent_idx: int,
+        num_frames: int,
+        num_agents: int
+    ) -> Dict[Tuple[int, int], str]:
+        """
+        Create mapping from (time_index, agent_id) to agent_type.
+
+        Args:
+            food_agent_idx: Index of food agent (-1 if none)
+            num_frames: Number of frames
+            num_agents: Number of agents
+
+        Returns:
+            Dict mapping (time_index, agent_id) -> agent_type_id
+        """
+        agent_type_map = {}
+
+        for time_idx in range(num_frames):
+            for agent_id in range(num_agents):
+                if food_agent_idx >= 0 and agent_id == food_agent_idx:
+                    agent_type_map[(time_idx, agent_id)] = 'food'
+                else:
+                    agent_type_map[(time_idx, agent_id)] = 'agent'
+
+        return agent_type_map
+
+    def _prepare_acceleration_properties(
+        self,
+        accelerations: np.ndarray,
+        num_frames: int,
+        num_agents: int,
+        scene_size: float
+    ) -> Dict[str, pd.Series]:
+        """
+        Prepare acceleration extended properties.
+
+        Args:
+            accelerations: [frames, agents, 2]
+            num_frames: Number of frames
+            num_agents: Number of agents
+            scene_size: Scene size for scaling
+
+        Returns:
+            Dict of property_id -> Series with multi-index (time_index, agent_id)
+        """
+        # Scale accelerations
+        accelerations_scaled = accelerations * scene_size
+        accelerations_flat = accelerations_scaled.reshape(-1, 2)
+
+        # Create multi-index
+        time_indices = np.repeat(np.arange(num_frames), num_agents)
+        agent_ids = np.tile(np.arange(num_agents), num_frames)
+        idx = pd.MultiIndex.from_arrays([time_indices, agent_ids])
+
+        return {
+            'acceleration_x': pd.Series(accelerations_flat[:, 0], index=idx),
+            'acceleration_y': pd.Series(accelerations_flat[:, 1], index=idx),
+        }
+
+    def _prepare_attention_properties(
+        self,
+        W_frames: List,  # List of (edge_index, edge_weight) tuples
+        traj_idx: int,   # Trajectory index within batch
+        num_frames: int,
+        num_agents: int,
+        food_agent_idx: int
+    ) -> Dict[str, pd.Series]:
+        """
+        Prepare attention weight extended properties.
+
+        Args:
+            W_frames: List of (edge_index, edge_weight) tuples, one per frame
+            traj_idx: Trajectory index within batch
+            num_frames: Number of frames
+            num_agents: Number of agents
+            food_agent_idx: Index of food agent (-1 if none)
+
+        Returns:
+            Dict of property_id -> Series with multi-index (time_index, agent_id)
+            Properties: attn_weight_self, attn_weight_boid, attn_weight_food
+        """
+        from collab_env.gnn.gnn import debatch_edge_index_weight
+
+        # Initialize storage for attention decomposition
+        attn_self_all = []   # [num_frames, num_agents]
+        attn_boid_all = []   # [num_frames, num_agents]
+        attn_food_all = []   # [num_frames, num_agents]
+
+        for frame_idx in range(num_frames):
+            edge_index, edge_weight = W_frames[frame_idx]
+
+            # Handle empty edge_index (no edges in this frame)
+            if edge_index.numel() == 0:
+                # No edges, set all attention weights to zero
+                attn_self_all.append(np.zeros(num_agents))
+                attn_boid_all.append(np.zeros(num_agents))
+                attn_food_all.append(np.zeros(num_agents))
+                continue
+
+            # Average across heads if multi-head
+            if len(edge_weight.shape) > 1 and edge_weight.shape[1] > 1:
+                edge_weight_avg = edge_weight.mean(dim=1, keepdim=True)  # [num_edges, 1]
+            else:
+                edge_weight_avg = edge_weight
+
+            # Debatch to get NxN adjacency matrix for this trajectory
+            # Note: debatch expects batch_size trajectories, we only want one
+            batch_size = int(edge_index.max() // num_agents) + 1
+            W_by_file, file_IDs = debatch_edge_index_weight(
+                edge_index, edge_weight_avg, num_agents, np.arange(batch_size)
+            )
+
+            # Get adjacency matrix for our trajectory
+            A = W_by_file[traj_idx]  # [num_agents, num_agents]
+
+            # Decompose attention for each agent
+            attn_self_frame = np.zeros(num_agents)
+            attn_boid_frame = np.zeros(num_agents)
+            attn_food_frame = np.zeros(num_agents)
+
+            for agent_id in range(num_agents):
+                # Self-attention
+                attn_self_frame[agent_id] = A[agent_id, agent_id]
+
+                # Attention to other boids
+                if food_agent_idx >= 0:
+                    # Sum attention to all boids (excluding self and food)
+                    boid_mask = np.ones(num_agents, dtype=bool)
+                    boid_mask[agent_id] = False  # Exclude self
+                    boid_mask[food_agent_idx] = False  # Exclude food
+                    attn_boid_frame[agent_id] = np.sum(A[agent_id, boid_mask])
+
+                    # Attention to food
+                    attn_food_frame[agent_id] = A[agent_id, food_agent_idx]
+                else:
+                    # No food, all non-self are boids
+                    attn_boid_frame[agent_id] = np.sum(A[agent_id, :]) - attn_self_frame[agent_id]
+                    attn_food_frame[agent_id] = 0.0
+
+            attn_self_all.append(attn_self_frame)
+            attn_boid_all.append(attn_boid_frame)
+            attn_food_all.append(attn_food_frame)
+
+        # Convert to [num_frames, num_agents] arrays
+        attn_self_all = np.array(attn_self_all)  # [frames, agents]
+        attn_boid_all = np.array(attn_boid_all)
+        attn_food_all = np.array(attn_food_all)
+
+        # Flatten and create multi-index
+        time_indices = np.repeat(np.arange(num_frames), num_agents)
+        agent_ids = np.tile(np.arange(num_agents), num_frames)
+        idx = pd.MultiIndex.from_arrays([time_indices, agent_ids])
+
+        return {
+            'attn_weight_self': pd.Series(attn_self_all.flatten(), index=idx),
+            'attn_weight_boid': pd.Series(attn_boid_all.flatten(), index=idx),
+            'attn_weight_food': pd.Series(attn_food_all.flatten(), index=idx),
+        }
+
+    def _load_trajectory_episode(
+        self,
+        session_id: str,
+        episode_id: str,
+        episode_number: int,
+        positions: np.ndarray,  # [frames, agents, 2]
+        accelerations: np.ndarray,  # [frames, agents, 2]
+        W_frames: Optional[List] = None,  # List of (edge_index, edge_weight) tuples
+        traj_idx: int = 0,  # Trajectory index within batch
+        num_frames: int = None,
+        num_agents: int = None,
+        episode_type: str = 'actual',  # 'actual' or 'predicted'
+        food_agent_idx: int = -1,
+        metadata: Dict = None,
+        scene_size: float = 480.0,
+        conn=None
+    ):
+        """Load a single trajectory as an episode with accelerations and attention weights."""
+
+        # Infer dimensions if not provided
+        if num_frames is None:
+            num_frames = positions.shape[0]
+        if num_agents is None:
+            num_agents = positions.shape[1]
+
+        # 1. Create agent type map
+        agent_type_map = self._create_agent_type_map(
+            food_agent_idx, num_frames, num_agents
+        )
+
+        # 2. Insert episode
+        metadata_dict = metadata or {}
+        query = """
+        INSERT INTO episodes (episode_id, session_id, episode_number, num_frames,
+                             num_agents, frame_rate, file_path)
+        VALUES (:episode_id, :session_id, :episode_number, :num_frames,
+                :num_agents, :frame_rate, :file_path)
+        """
+        self.db.execute(query, {
+            'episode_id': episode_id,
+            'session_id': session_id,
+            'episode_number': episode_number,
+            'num_frames': num_frames,
+            'num_agents': num_agents,
+            'frame_rate': 1.0,
+            'file_path': metadata_dict.get('rollout_file', '')
+        }, conn=conn)
+
+        # 3. Prepare observations with agent types
+        positions_scaled = positions * scene_size
+        positions_flat = positions_scaled.reshape(-1, 2)
+
+        # Compute velocities
+        velocities = np.diff(positions_scaled, axis=0)
+        last_velocity = velocities[-1:, :, :]
+        velocities = np.vstack([velocities, last_velocity])
+        velocities_flat = velocities.reshape(-1, 2)
+
+        # Create index arrays
+        time_indices = np.repeat(np.arange(num_frames), num_agents)
+        agent_ids = np.tile(np.arange(num_agents), num_frames)
+
+        # Map agent types
+        agent_type_ids = [
+            agent_type_map.get((t, a), 'agent')
+            for t, a in zip(time_indices, agent_ids)
+        ]
+
+        # Create observations DataFrame
+        observations = pd.DataFrame({
+            'time_index': time_indices,
+            'agent_id': agent_ids,
+            'agent_type_id': agent_type_ids,
+            'x': positions_flat[:, 0],
+            'y': positions_flat[:, 1],
+            'z': None,
+            'v_x': velocities_flat[:, 0],
+            'v_y': velocities_flat[:, 1],
+            'v_z': None
+        })
+
+        self.load_observations_batch(observations, episode_id, conn=conn)
+
+        # 4. Load accelerations as extended properties
+        extended_props = self._prepare_acceleration_properties(
+            accelerations, num_frames, num_agents, scene_size
+        )
+
+        # 5. Load attention weights as extended properties (if available)
+        if W_frames is not None:
+            attention_props = self._prepare_attention_properties(
+                W_frames, traj_idx, num_frames, num_agents, food_agent_idx
+            )
+            extended_props.update(attention_props)
+
+        if extended_props:
+            self.load_extended_properties_batch(
+                episode_id, extended_props, conn=conn
+            )
+
+    def _parse_rollout_filename(self, rollout_path: Path) -> Dict[str, Any]:
+        """
+        Parse rollout filename to extract metadata.
+
+        Example: boid_food_strong_vpluspplus_a_n0_h1_vr0.5_s0_rollout_5.pkl
+        """
+        filename = rollout_path.stem
+
+        # Extract dataset name (everything before the model parameters)
+        # Pattern: {dataset}_{model}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout_{frame}
+        match = re.match(
+            r'(.+?)_n(\d+(?:\.\d+)?)_h(\d+)_vr(\d+(?:\.\d+)?)_s(\d+)_rollout_(\d+)',
+            filename
+        )
+
+        if not match:
+            logger.warning(f"Could not parse rollout filename: {filename}, using defaults")
+            return {
+                'dataset': filename,
+                'model_spec': 'unknown',
+                'noise': 0,
+                'heads': 1,
+                'visual_range': 0.1,
+                'seed': 0,
+                'rollout_frame': 5
+            }
+
+        dataset_and_model = match.group(1)
+        noise = float(match.group(2))
+        heads = int(match.group(3))
+        visual_range = float(match.group(4))
+        seed = int(match.group(5))
+        rollout_frame = int(match.group(6))
+
+        # Try to separate dataset from model name (heuristic: look for common model names)
+        # Common patterns: dataset_modelname or just dataset
+        parts = dataset_and_model.rsplit('_', 1)
+        if len(parts) == 2 and parts[1] in ['vpluspplus', 'vplus', 'basic', 'a', 'b', 'c']:
+            dataset = parts[0]
+            model_name = parts[1]
+        else:
+            dataset = dataset_and_model
+            model_name = 'base'
+
+        model_spec = f"{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
+
+        return {
+            'dataset': dataset,
+            'model_name': model_name,
+            'model_spec': model_spec,
+            'noise': noise,
+            'heads': heads,
+            'visual_range': visual_range,
+            'seed': seed,
+            'rollout_frame': rollout_frame
+        }
+
+    def _load_pickle(self, rollout_path: Path) -> Dict:
+        """Load pickle file with CPU device mapping."""
+        from collab_env.gnn.plotting_utility import DeviceUnpickler
+
+        with open(rollout_path, 'rb') as f:
+            # Use DeviceUnpickler to safely load CUDA tensors on CPU-only machines
+            rollout_data = DeviceUnpickler(f, device="cpu").load()
+
+        return rollout_data
+
+    def load_rollout_file(self, rollout_path: Path, scene_size: float = 480.0, conn=None):
+        """
+        Load a single rollout pickle file.
+
+        Args:
+            rollout_path: Path to rollout .pkl file
+            scene_size: Scene size for coordinate scaling
+            conn: Optional database connection (for bulk loading in single transaction)
+        """
+
+        logger.info(f"Loading GNN rollout from: {rollout_path}")
+
+        # 1. Parse filename
+        metadata = self._parse_rollout_filename(rollout_path)
+
+        # 2. Load pickle
+        rollout_data = self._load_pickle(rollout_path)
+
+        # 3. Create session
+        session_id = f"rollout-{metadata['dataset']}-{metadata['model_spec']}"
+        session_metadata = SessionMetadata(
+            session_id=session_id,
+            session_name=f"GNN Rollout: {metadata['dataset']}",
+            category_id='boids_2d_rollout',
+            config={**metadata, 'scene_size': scene_size},
+            metadata={'rollout_file': str(rollout_path)}
+        )
+
+        # 4. Load in single transaction (or use provided connection)
+        def _load_data(conn):
+            """Internal function to load data with given connection."""
+            self.load_session(session_metadata, conn=conn)
+
+            episode_counter = 0
+            trajectories_loaded = 0
+
+            # Iterate epochs → batches → trajectories
+            for epoch_id, epoch_data in rollout_data.items():
+                for batch_id, batch_data in epoch_data.items():
+                    # Extract numpy arrays
+                    actual = np.array(batch_data['actual'])          # [frames, batch, agents, 2]
+                    predicted = np.array(batch_data['predicted'])    # [frames, batch, agents, 2]
+                    actual_acc = np.array(batch_data['actual_acc'])  # [frames, batch, agents, 2]
+                    predicted_acc = np.array(batch_data['predicted_acc'])  # [frames, batch, agents, 2]
+
+                    # Extract attention weights if available
+                    W_frames = batch_data.get('W', None)  # List of (edge_index, edge_weight) tuples
+
+                    num_frames = actual.shape[0]
+                    batch_size = actual.shape[1]
+                    num_agents = actual.shape[2]
+
+                    # 6. Process each trajectory in batch
+                    for traj_idx in range(batch_size):
+                        if trajectories_loaded >= self.max_episodes:
+                            break
+
+                        # Extract data for this trajectory
+                        actual_traj = actual[:, traj_idx, :, :]          # [frames, agents, 2]
+                        predicted_traj = predicted[:, traj_idx, :, :]    # [frames, agents, 2]
+                        actual_acc_traj = actual_acc[:, traj_idx, :, :]  # [frames, agents, 2]
+                        predicted_acc_traj = predicted_acc[:, traj_idx, :, :]  # [frames, agents, 2]
+
+                        # Detect food agent (same for actual and predicted)
+                        food_agent_idx = self._detect_food_agent(metadata['dataset'], num_agents)
+
+                        # Load ACTUAL episode (no attention weights for ground truth)
+                        episode_id_actual = f"{session_id}-{trajectories_loaded:04d}-actual"
+                        self._load_trajectory_episode(
+                            session_id=session_id,
+                            episode_id=episode_id_actual,
+                            episode_number=episode_counter,
+                            positions=actual_traj,
+                            accelerations=actual_acc_traj,
+                            W_frames=None,  # No attention weights for ground truth
+                            traj_idx=traj_idx,
+                            num_frames=num_frames,
+                            num_agents=num_agents,
+                            episode_type='actual',
+                            food_agent_idx=food_agent_idx,
+                            metadata={
+                                'source_epoch': int(epoch_id),
+                                'source_batch': int(batch_id),
+                                'trajectory_index': int(traj_idx),
+                                'rollout_file': str(rollout_path)
+                            },
+                            scene_size=scene_size,
+                            conn=conn
+                        )
+                        episode_counter += 1
+
+                        # Load PREDICTED episode (with attention weights from model)
+                        episode_id_predicted = f"{session_id}-{trajectories_loaded:04d}-predicted"
+                        self._load_trajectory_episode(
+                            session_id=session_id,
+                            episode_id=episode_id_predicted,
+                            episode_number=episode_counter,
+                            positions=predicted_traj,
+                            accelerations=predicted_acc_traj,
+                            W_frames=W_frames,  # Include attention weights for predictions
+                            traj_idx=traj_idx,
+                            num_frames=num_frames,
+                            num_agents=num_agents,
+                            episode_type='predicted',
+                            food_agent_idx=food_agent_idx,
+                            metadata={
+                                'source_epoch': int(epoch_id),
+                                'source_batch': int(batch_id),
+                                'trajectory_index': int(traj_idx),
+                                'model_name': metadata.get('model_name'),
+                                'model_params': {
+                                    'noise': metadata.get('noise'),
+                                    'heads': metadata.get('heads'),
+                                    'visual_range': metadata.get('visual_range'),
+                                    'seed': metadata.get('seed')
+                                },
+                                'rollout_file': str(rollout_path)
+                            },
+                            scene_size=scene_size,
+                            conn=conn
+                        )
+                        episode_counter += 1
+                        trajectories_loaded += 1
+
+                    if trajectories_loaded >= self.max_episodes:
+                        break
+
+                if trajectories_loaded >= self.max_episodes:
+                    break
+
+            logger.info(f"Completed loading rollout: {session_id} ({trajectories_loaded} trajectories, {episode_counter} episodes)")
+
+        # Use provided connection or create new transaction
+        if conn is not None:
+            _load_data(conn)
+        else:
+            with self.db.transaction() as new_conn:
+                _load_data(new_conn)
+
+    def load_rollouts_bulk(self, rollouts_dir: Path, scene_size: float = 480.0):
+        """
+        Load multiple rollout files from a directory in a single transaction.
+
+        Args:
+            rollouts_dir: Directory containing rollout .pkl files
+            scene_size: Scene size for coordinate scaling
+        """
+        # Find all .pkl files
+        rollout_files = sorted(rollouts_dir.glob("*.pkl"))
+
+        if not rollout_files:
+            raise ValueError(f"No .pkl files found in {rollouts_dir}")
+
+        logger.info(f"Found {len(rollout_files)} rollout files in {rollouts_dir}")
+
+        # Load all files in a single transaction
+        with self.db.transaction() as conn:
+            for idx, rollout_file in enumerate(rollout_files, 1):
+                logger.info(f"[{idx}/{len(rollout_files)}] Loading {rollout_file.name}...")
+                self.load_rollout_file(rollout_file, scene_size=scene_size, conn=conn)
+
+        logger.info(f"Completed loading {len(rollout_files)} rollout files")
+
+
 def main():
     """Command-line interface for data loader."""
     parser = argparse.ArgumentParser(
@@ -1061,6 +1638,12 @@ Examples:
   # Load 3D boids simulation (uses environment variables for DB)
   python -m collab_env.data.db.db_loader --source boids3d --path simulated_data/hackathon
 
+  # Load 2D boids dataset
+  python -m collab_env.data.db.db_loader --source boids2d --path simulated_data/boid_dataset.pt
+
+  # Load GNN rollout predictions
+  python -m collab_env.data.db.db_loader --source boids2d_rollout --path trained_models/boid_food_strong/rollouts/rollout.pkl --scene-size 480.0
+
   # Load with specific backend
   python -m collab_env.data.db.db_loader --source boids3d --path simulated_data/hackathon --backend duckdb
         """
@@ -1069,8 +1652,15 @@ Examples:
     parser.add_argument(
         '--source',
         required=True,
-        choices=['boids3d', 'boids2d', 'tracking'],
+        choices=['boids3d', 'boids2d', 'tracking', 'boids2d_rollout'],
         help='Data source type'
+    )
+    
+    parser.add_argument(
+        '--max_episodes_per_session',
+        type=int,
+        default=np.inf,
+        help='Maximum number of episodes to load per session'
     )
 
     parser.add_argument(
@@ -1091,6 +1681,13 @@ Examples:
         help='DuckDB database path (overrides DUCKDB_PATH env var)'
     )
 
+    parser.add_argument(
+        '--scene-size',
+        type=float,
+        default=480.0,
+        help='Scene size for coordinate scaling (default: 480.0, for boids2d_rollout source only)'
+    )
+
     args = parser.parse_args()
 
     # Handle dbpath via environment variable if specified
@@ -1107,7 +1704,7 @@ Examples:
     try:
         # Load data based on source type
         if args.source == 'boids3d':
-            loader = Boids3DLoader(db_conn)
+            loader = Boids3DLoader(db_conn, max_episodes=args.max_episodes_per_session)
 
             # Check if path is a directory with multiple simulations or a single simulation
             if args.path.is_dir():
@@ -1124,7 +1721,7 @@ Examples:
                 raise ValueError(f"Path must be a directory: {args.path}")
 
         elif args.source == 'boids2d':
-            loader = Boids2DLoader(db_conn)
+            loader = Boids2DLoader(db_conn, max_episodes=args.max_episodes_per_session)
 
             # Check if path is a file or directory
             if args.path.is_file() and args.path.suffix == '.pt':
@@ -1139,7 +1736,7 @@ Examples:
                 raise ValueError(f"Path must be a .pt file or directory: {args.path}")
 
         elif args.source == 'tracking':
-            loader = TrackingCSVLoader(db_conn)
+            loader = TrackingCSVLoader(db_conn, max_episodes=args.max_episodes_per_session)
 
             # Check if path is a single session or parent directory
             if args.path.is_dir():
@@ -1154,6 +1751,20 @@ Examples:
                     loader.load_sessions_bulk(args.path)
             else:
                 raise ValueError(f"Path must be a directory: {args.path}")
+
+        elif args.source == 'boids2d_rollout':
+            loader = GNNRolloutLoader(db_conn, max_episodes=args.max_episodes_per_session)
+
+            if args.path.is_file() and args.path.suffix == '.pkl':
+                # Single rollout file
+                logger.info("Loading single rollout file...")
+                loader.load_rollout_file(args.path, scene_size=args.scene_size)
+            elif args.path.is_dir():
+                # Directory with multiple rollout files
+                logger.info("Loading multiple rollout files from directory...")
+                loader.load_rollouts_bulk(args.path, scene_size=args.scene_size)
+            else:
+                raise ValueError(f"Path must be a .pkl file or directory: {args.path}")
 
         logger.info("Data loading completed successfully")
 

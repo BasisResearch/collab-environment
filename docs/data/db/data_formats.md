@@ -318,6 +318,214 @@ for positions, species in dataset:
 
 ---
 
+## 2B. GNN Rollout Predictions
+
+### Overview
+GNN model rollout predictions on 2D boids test data, generated during model evaluation. Rollouts compare ground truth trajectories (from 2D boids datasets) with GNN-predicted trajectories to assess model performance. Data stored as pickle files containing both actual and predicted trajectories along with accelerations and attention weights.
+
+### Location
+- **Data Directory**: `trained_models/runpod/{dataset_name}/rollouts/`
+- **Naming Pattern**: `{dataset}_{model}_{params}_rollout_{start_frame}.pkl`
+- **Example**: `boid_food_strong_vpluspplus_a_n0_h1_vr0.5_s0_rollout_5.pkl`
+- **Usage**: Model evaluation, rollout visualization, performance analysis
+
+### Data Structure
+
+#### File Organization
+```
+trained_models/runpod/boid_food_strong/rollouts/
+├── boid_food_strong_vpluspplus_a_n0_h1_vr0.5_s0_rollout_5.pkl        # Main rollout data
+├── boid_food_strong_vpluspplus_a_n0_h1_vr0.5_s0_rollout_5_model_spec.pkl  # Model specification
+└── boid_food_strong_vpluspplus_a_n0_h1_vr0.5_s0_rollout_5_train_spec.pkl  # Training specification
+```
+
+#### Filename Components
+
+**Pattern**: `{dataset}_{model}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout_{start_frame}.pkl`
+
+**Extracted Metadata**:
+- `dataset`: Source dataset name (e.g., `boid_food_strong`)
+- `model`: Model architecture (e.g., `vpluspplus_a`)
+- `noise`: Noise level during training (e.g., `0`, `0.005`)
+- `heads`: Number of attention heads (e.g., `1`, `2`, `3`)
+- `visual_range`: Vision radius parameter (e.g., `0.5`)
+- `seed`: Random seed for reproducibility (e.g., `0`, `1`, `2`)
+- `start_frame`: Frame at which rollout begins (e.g., `5`)
+
+#### Pickle File Structure (.pkl files)
+
+**File Format**: Python pickle (CPU-mapped PyTorch tensors)
+
+**Top-Level Structure**:
+```python
+rollout_result = {
+    epoch_id: {  # Usually 0 (single evaluation epoch)
+        batch_id: {  # 0, 1, 2, ..., num_batches-1
+            'actual': [...],        # Ground truth trajectories
+            'predicted': [...],     # GNN predicted trajectories
+            'actual_acc': [...],    # Ground truth accelerations
+            'predicted_acc': [...], # GNN predicted accelerations
+            'loss': [...],          # Per-frame loss values
+            'W': [...]              # Attention weights (multi-head)
+        }
+    }
+}
+```
+
+**Batch Structure**:
+```python
+batch = rollout_result[0][0]  # First epoch, first batch
+
+# Actual and predicted trajectories
+actual = batch['actual']      # List of frames
+predicted = batch['predicted']  # List of frames
+
+# Each is a list of numpy arrays: [frame_0, frame_1, ..., frame_N]
+# where each frame has shape: [batch_size, num_agents, 2]
+
+len(actual)           # e.g., 1196 frames
+actual[0].shape       # e.g., (50, 21, 2) = [batch_size, agents, features]
+
+# Accelerations (same structure as positions)
+actual_acc = batch['actual_acc']      # [frames] × [batch, agents, 2]
+predicted_acc = batch['predicted_acc']  # [frames] × [batch, agents, 2]
+actual_acc[0].shape   # e.g., (50, 21, 2)
+
+# Loss (per-frame MSE)
+loss = batch['loss']  # List of scalar loss values per frame
+
+# Attention weights (complex edge-level structure - not stored initially)
+W = batch['W']  # List of tuples: [(head_weights, edge_indices), ...]
+# W[frame_idx] is tuple of 2 tensors
+# W[frame_idx][0].shape  # e.g., (2, 9690) = [num_heads, num_edges]
+# W[frame_idx][1].shape  # e.g., (9690, 1) = [num_edges, 1]
+```
+
+**Data Characteristics**:
+- **Batched**: Each rollout contains multiple trajectories (batch_size typically 50)
+- **Frames**: Long rollouts (typically 1000-1200 frames)
+- **Agents**: Fixed number per trajectory (e.g., 20 boids + 1 food = 21 total)
+- **Coordinates**: Normalized [0, 1] space (same as input 2D boids data)
+- **Agent Types**:
+  - **Boid agents**: Moving particles (indices 0 to N-2)
+  - **Food agent**: Stationary target (index N-1, zero velocity)
+- **Accelerations**: Pre-computed from velocity differences
+- **Attention Weights**: Multi-head edge-level attention (graph structure)
+
+#### Agent Type Detection
+
+**Food Agent Identification**:
+```python
+# Food agent detected by zero velocity across all frames
+# Always the last agent (index 20 for 21-agent system)
+
+for agent_idx in range(num_agents):
+    velocities = [actual[t+1][batch, agent_idx] - actual[t][batch, agent_idx]
+                  for t in range(10)]
+    vel_norms = [np.linalg.norm(v) for v in velocities]
+    is_food = np.mean(vel_norms) < 1e-6
+    agent_type = 'food' if is_food else 'agent'
+```
+
+**Species Labels**:
+- In datasets with food (e.g., `boid_food_*`), one agent has species='food'
+- Food agents don't move: `dx = 0, dy = 0` (see `collab_env/sim/boids_gnn_temp/boid.py:43-44`)
+- Regular boid agents follow standard boid rules (cohesion, separation, alignment)
+
+### Usage in Codebase
+
+**Loading Rollout Data**:
+```python
+from collab_env.gnn.plotting_utility import load_rollout
+
+rollout_result = load_rollout(
+    model_name='vpluspplus_a',
+    data_name='boid_food_basic',
+    noise=0,
+    head=1,
+    visual_range=0.5,
+    seed=2,
+    rollout_starting_frame=5
+)
+
+# Access specific batch
+epoch_data = rollout_result[0]  # Epoch 0
+batch_data = epoch_data[0]      # Batch 0
+
+# Extract trajectories
+actual = np.array(batch_data['actual'])      # [frames, batch, agents, 2]
+predicted = np.array(batch_data['predicted'])  # [frames, batch, agents, 2]
+```
+
+**Extracting Single Trajectory**:
+```python
+from collab_env.gnn.gnn import debug_result2prediction
+
+# Extract trajectory for specific file_id from batch
+actual_pos, actual_vel, actual_acc, \
+gnn_pos, gnn_vel, gnn_acc, frame_sets = debug_result2prediction(
+    rollout_result,
+    file_id=260,  # Trajectory index (batch_id * batch_size + traj_idx)
+    epoch_num=0
+)
+
+# Returns: actual_pos.shape = [num_agents, num_frames, 2]
+#          gnn_pos.shape = [num_agents, num_frames, 2]
+```
+
+**Visualization**: `figures/gnn/A-rollout.ipynb`
+- Overlay actual vs predicted trajectories
+- Compute prediction errors over time
+- Identify best/worst performing trajectories
+
+### Data Grouping
+
+**Hierarchy**:
+- **Rollout File**: Complete pickle file (one model evaluation)
+- **Epoch**: Evaluation epoch (usually single epoch: 0)
+- **Batch**: Group of trajectories evaluated together
+- **Trajectory**: Single simulation run (actual + predicted pair)
+- **Frame**: Timestep within trajectory
+- **Agent**: Individual particle (boid or food)
+
+**Unique Identifiers**:
+- Rollout File: Filename with model parameters
+- Epoch: Integer (typically 0)
+- Batch: Integer (0 to num_batches-1)
+- Trajectory: `batch_id * batch_size + trajectory_idx` (global file_id)
+- Agent: Index (0 to N-1, where N-1 is food if present)
+- Frame: Index (0 to T-1)
+
+**Unbatching for Database**:
+When loading into database, each trajectory becomes TWO episodes:
+- `episode-{epoch}-{batch}-{traj:04d}-actual`: Ground truth
+- `episode-{epoch}-{batch}-{traj:04d}-predicted`: GNN predictions
+
+Example: Batch 0 with 50 trajectories creates 100 database episodes.
+
+### Database Storage Strategy
+
+**Session**: One rollout file = one session
+- `session_id`: `rollout-{dataset}-{model_spec}`
+- `category_id`: `boids_2d_rollout`
+- Metadata: Model parameters, dataset name, rollout settings
+
+**Episodes**: Each trajectory creates TWO episodes (actual + predicted)
+- Observations table: Stores positions and velocities
+- Agent types: `'agent'` for boids, `'food'` for stationary food
+- Extended properties:
+  - `actual_acc_x`, `actual_acc_y`: Ground truth accelerations (actual episodes)
+  - `predicted_acc_x`, `predicted_acc_y`: GNN predicted accelerations (predicted episodes)
+  - Attention weights: Future enhancement (complex structure)
+
+**Storage Notes**:
+- Accelerations stored as extended properties (not universal data)
+- Loss values: Not stored initially (can compute from position errors)
+- Attention weights: Skipped in initial implementation (complex edge-level graph structure)
+- Coordinate scaling: Multiply by `scene_size` (default 480) to get pixel coordinates
+
+---
+
 ## 3. Real-World Tracked Data
 
 ### Overview

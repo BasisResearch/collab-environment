@@ -70,64 +70,106 @@ class VelocityStatsWidget(BaseAnalysisWidget):
         if len(df_tracks) == 0:
             raise ValueError("No data found for selected parameters")
 
-        # Compute individual agent speeds (already in df_tracks as 'speed')
-        # Group 1a: Individual agent speed
-        # Clean speed data first
-        speed_data = self._to_numeric_array(df_tracks['speed'])
-        speed_hist = self._create_histogram(
-            speed_data,
-            "1a. Individual Agent Speed - Distribution",
-            "Speed",
-            "darkblue"
-        )
-        speed_ts = self._create_speed_time_series(df_tracks, "1a. Individual Agent Speed - Time Series")
+        # Container for display elements
+        display_objects = []
+        successful_groups = 0
 
-        # Group 1b: Mean velocity magnitude
-        mean_vel_mag_data = self._compute_mean_velocity_magnitude(df_tracks)
-        if len(mean_vel_mag_data) == 0:
-            raise ValueError("Mean velocity magnitude computation resulted in no data. All agents may have zero velocity.")
-        if mean_vel_mag_data['mean_velocity_magnitude'].isna().all():
-            raise ValueError("Mean velocity magnitude computation resulted in all NaN values. Check velocity data quality.")
-        mean_vel_mag_hist = self._create_histogram(
-            mean_vel_mag_data['mean_velocity_magnitude'].values,
-            "1b. Mean Velocity Magnitude - Distribution",
-            "Magnitude",
-            "darkgreen"
-        )
-        mean_vel_mag_ts = self._create_simple_time_series(
-            mean_vel_mag_data,
-            'mean_velocity_magnitude',
-            "1b. Mean Velocity Magnitude - Time Series",
-            "green"
-        )
+        # Group 1a: Individual agent speed (should always work)
+        try:
+            speed_data = self._to_numeric_array(df_tracks['speed'])
+            speed_hist = self._create_histogram(
+                speed_data,
+                "1a. Individual Agent Speed - Distribution",
+                "Speed",
+                "darkblue"
+            )
+            speed_ts = self._create_speed_time_series(df_tracks, "1a. Individual Agent Speed - Time Series")
+            display_objects.extend([
+                pn.pane.Markdown("## 1a. Individual Agent Speed"),
+                pn.pane.HoloViews((speed_hist + speed_ts).opts(axiswise=True))
+            ])
+            successful_groups += 1
+            logger.info("✓ Individual agent speed statistics computed successfully")
+        except Exception as e:
+            logger.warning(f"Failed to compute individual agent speed: {e}")
+            display_objects.extend([
+                pn.pane.Markdown("## 1a. Individual Agent Speed"),
+                pn.pane.Markdown(f"_Could not compute individual agent speed statistics: {e}_")
+            ])
 
-        # Group 1c: Relative velocity magnitude
-        rel_vel_mag_data = self._compute_relative_velocity_magnitude(df_tracks)
-        rel_vel_mag_hist = self._create_histogram(
-            rel_vel_mag_data['relative_velocity_magnitude'].values,
-            "1c. Relative Velocity Magnitude - Distribution",
-            "||v_i - v_j||",
-            "darkorange"
-        )
-        rel_vel_mag_ts = self._create_relative_time_series(
-            rel_vel_mag_data,
-            'relative_velocity_magnitude',
-            "1c. Relative Velocity Magnitude - Time Series",
-            "orange"
-        )
+        # Group 1b: Mean velocity magnitude (may fail if all agents stationary)
+        try:
+            mean_vel_mag_data = self._compute_mean_velocity_magnitude(df_tracks)
+            if len(mean_vel_mag_data) == 0 or mean_vel_mag_data['mean_velocity_magnitude'].isna().all():
+                raise ValueError("All agents have zero or near-zero velocity")
 
-        # Arrange plots in 3 rows x 2 columns layout
-        # Each row has a header + histogram (left) + time series (right)
-        # Use axiswise=True to prevent axis linking between plots
-        self.display_pane.objects = [
-            pn.pane.Markdown("## 1a. Individual Agent Speed"),
-            pn.pane.HoloViews((speed_hist + speed_ts).opts(axiswise=True)),
-            pn.pane.Markdown("## 1b. Mean Velocity Magnitude"),
-            pn.pane.HoloViews((mean_vel_mag_hist + mean_vel_mag_ts).opts(axiswise=True)),
-            pn.pane.Markdown("## 1c. Relative Velocity Magnitude (pairwise)"),
-            pn.pane.HoloViews((rel_vel_mag_hist + rel_vel_mag_ts).opts(axiswise=True))
-        ]
-        logger.info(f"Loaded velocity stats with {len(df_tracks)} observations")
+            mean_vel_mag_hist = self._create_histogram(
+                mean_vel_mag_data['mean_velocity_magnitude'].values,
+                "1b. Mean Velocity Magnitude - Distribution",
+                "Magnitude",
+                "darkgreen"
+            )
+            mean_vel_mag_ts = self._create_simple_time_series(
+                mean_vel_mag_data,
+                'mean_velocity_magnitude',
+                "1b. Mean Velocity Magnitude - Time Series",
+                "green"
+            )
+            display_objects.extend([
+                pn.pane.Markdown("## 1b. Mean Velocity Magnitude"),
+                pn.pane.HoloViews((mean_vel_mag_hist + mean_vel_mag_ts).opts(axiswise=True))
+            ])
+            successful_groups += 1
+            logger.info("✓ Mean velocity magnitude statistics computed successfully")
+        except Exception as e:
+            logger.warning(f"Failed to compute mean velocity magnitude: {e}")
+            display_objects.extend([
+                pn.pane.Markdown("## 1b. Mean Velocity Magnitude"),
+                pn.pane.Markdown(f"_Could not compute mean velocity magnitude: {e}_")
+            ])
+
+        # Group 1c: Relative velocity magnitude (may fail or be uninteresting if agents stationary)
+        try:
+            rel_vel_mag_data = self._compute_relative_velocity_magnitude(df_tracks)
+            if len(rel_vel_mag_data) == 0:
+                raise ValueError("No pairwise velocity data available")
+
+            # Check if all relative velocities are near-zero (stationary agents)
+            if rel_vel_mag_data['relative_velocity_magnitude'].max() < 1e-6:
+                raise ValueError("All agents appear stationary (no relative movement)")
+
+            rel_vel_mag_hist = self._create_histogram(
+                rel_vel_mag_data['relative_velocity_magnitude'].values,
+                "1c. Relative Velocity Magnitude - Distribution",
+                "||v_i - v_j||",
+                "darkorange"
+            )
+            rel_vel_mag_ts = self._create_relative_time_series(
+                rel_vel_mag_data,
+                'relative_velocity_magnitude',
+                "1c. Relative Velocity Magnitude - Time Series",
+                "orange"
+            )
+            display_objects.extend([
+                pn.pane.Markdown("## 1c. Relative Velocity Magnitude (pairwise)"),
+                pn.pane.HoloViews((rel_vel_mag_hist + rel_vel_mag_ts).opts(axiswise=True))
+            ])
+            successful_groups += 1
+            logger.info("✓ Relative velocity magnitude statistics computed successfully")
+        except Exception as e:
+            logger.warning(f"Failed to compute relative velocity magnitude: {e}")
+            display_objects.extend([
+                pn.pane.Markdown("## 1c. Relative Velocity Magnitude (pairwise)"),
+                pn.pane.Markdown(f"_Could not compute relative velocity statistics: {e}_")
+            ])
+
+        # Only fail if NO statistics could be computed
+        if successful_groups == 0:
+            raise ValueError("Could not compute any velocity statistics. Check data quality.")
+
+        # Update display with whatever we successfully computed
+        self.display_pane.objects = display_objects
+        logger.info(f"Loaded velocity stats with {len(df_tracks)} observations ({successful_groups}/3 groups successful)")
 
     def _to_numeric_array(self, series: pd.Series) -> np.ndarray:
         """Convert pandas series to clean numeric array, replacing None/NaN with 0.0."""
@@ -149,7 +191,15 @@ class VelocityStatsWidget(BaseAnalysisWidget):
         if len(clean_data) == 0:
             raise ValueError(f"No valid data for histogram: {title}")
 
-        frequencies, edges = np.histogram(clean_data, bins=self.bin_count)
+        # Check for zero variance (all values are the same)
+        if np.std(clean_data) < 1e-10:
+            # Create a single-bin histogram centered on the constant value
+            value = clean_data[0]
+            edges = np.array([value - 0.5, value + 0.5])
+            frequencies = np.array([len(clean_data)])
+        else:
+            frequencies, edges = np.histogram(clean_data, bins=self.bin_count)
+
         hist = hv.Histogram((edges, frequencies))
         hist.opts(
             opts.Histogram(

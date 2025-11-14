@@ -24,6 +24,7 @@ Unified tracking analytics database supporting PostgreSQL and DuckDB.
 The database layer provides a unified interface for storing and querying tracking data from multiple sources:
 - **3D Boids**: Parquet files from `collab_env.sim.boids`
 - **2D Boids**: PyTorch `.pt` files from GNN training
+- **2D Boids GNN Rollout**: Pickle files with GNN model predictions (actual vs predicted trajectories)
 - **Tracking CSV**: Real-world video tracking data
 
 ### Architecture
@@ -138,6 +139,12 @@ python -m collab_env.data.db.db_loader \
     --path simulated_data/hackathon/hackathon-boid-small-200-sim_run-started-20250926-220926 \
     --backend duckdb \
     --dbpath ./data/tracking.duckdb
+
+# Load only first 5 episodes per simulation (useful for testing)
+python -m collab_env.data.db.db_loader \
+    --source boids3d \
+    --path simulated_data/hackathon/hackathon-boid-small-200-sim_run-started-20250926-220926 \
+    --max_episodes_per_session 5
 ```
 
 **Multiple Simulations (Bulk Loading):**
@@ -146,6 +153,12 @@ python -m collab_env.data.db.db_loader \
 python -m collab_env.data.db.db_loader \
     --source boids3d \
     --path simulated_data/hackathon/
+
+# Load only first 3 episodes from each simulation (useful for large datasets)
+python -m collab_env.data.db.db_loader \
+    --source boids3d \
+    --path simulated_data/hackathon/ \
+    --max_episodes_per_session 3
 
 # The loader auto-detects subdirectories with config.yaml files
 # Progress: [1/5] Loading simulation_1...
@@ -174,6 +187,12 @@ python -m collab_env.data.db.db_loader \
     --source boids2d \
     --path simulated_data/boid_food_basic.pt \
     --backend postgres
+
+# Load only first 100 episodes (useful for large datasets)
+python -m collab_env.data.db.db_loader \
+    --source boids2d \
+    --path simulated_data/boid_food_basic.pt \
+    --max_episodes_per_session 100
 ```
 
 **Multiple Datasets (Bulk Loading):**
@@ -183,6 +202,12 @@ python -m collab_env.data.db.db_loader \
 python -m collab_env.data.db.db_loader \
     --source boids2d \
     --path simulated_data/
+
+# Load only first 50 episodes from each dataset
+python -m collab_env.data.db.db_loader \
+    --source boids2d \
+    --path simulated_data/ \
+    --max_episodes_per_session 50
 
 # The loader auto-discovers all .pt files (excluding *_config.pt)
 # Progress: [1/16] Loading boid_food_basic.pt...
@@ -215,6 +240,12 @@ python -m collab_env.data.db.db_loader \
     --source tracking \
     --path data/processed_tracks/2024_06_01-session_0003 \
     --backend postgres
+
+# Load only first 2 camera episodes (useful for testing multi-camera setups)
+python -m collab_env.data.db.db_loader \
+    --source tracking \
+    --path data/processed_tracks/2024_06_01-session_0003 \
+    --max_episodes_per_session 2
 ```
 
 **Multiple Sessions (Bulk Loading):**
@@ -224,6 +255,12 @@ python -m collab_env.data.db.db_loader \
 python -m collab_env.data.db.db_loader \
     --source tracking \
     --path data/processed_tracks/
+
+# Load only first camera from each session (faster for initial exploration)
+python -m collab_env.data.db.db_loader \
+    --source tracking \
+    --path data/processed_tracks/ \
+    --max_episodes_per_session 1
 
 # The loader auto-discovers all session directories with aligned_frames/
 # Progress: [1/8] Loading 2023_11_05-session_0001...
@@ -249,21 +286,142 @@ The tracking loader will:
 
 **Performance**: ~5,000 observations/second for bulk loading
 
+### Load GNN Rollout Data
+
+**Single Rollout File:**
+
+```bash
+# Load a single rollout pickle file
+python -m collab_env.data.db.db_loader \
+    --source boids2d_rollout \
+    --path trained_models/food/basic/n0_h1_vr0.5_s2/rollout_results/file260_foodbasic_n0_h1_vr0.5_s2_30.pkl
+
+# With specific scene size (default: 480.0)
+python -m collab_env.data.db.db_loader \
+    --source boids2d_rollout \
+    --path trained_models/food/basic/n0_h1_vr0.5_s2/rollout_results/file260_foodbasic_n0_h1_vr0.5_s2_30.pkl \
+    --backend duckdb \
+    --dbpath ./data/tracking.duckdb
+
+# Load only first 100 trajectories (useful for large rollout files)
+python -m collab_env.data.db.db_loader \
+    --source boids2d_rollout \
+    --path trained_models/food/basic/n0_h1_vr0.5_s2/rollout_results/file260_foodbasic_n0_h1_vr0.5_s2_30.pkl \
+    --max_episodes_per_session 100
+```
+
+**Multiple Rollout Files (Bulk Loading):**
+
+```bash
+# Load all rollout files from a directory in single transaction
+python -m collab_env.data.db.db_loader \
+    --source boids2d_rollout \
+    --path trained_models/food/basic/n0_h1_vr0.5_s2/rollout_results/
+
+# Load only first 50 trajectories from each rollout file
+python -m collab_env.data.db.db_loader \
+    --source boids2d_rollout \
+    --path trained_models/food/basic/n0_h1_vr0.5_s2/rollout_results/ \
+    --max_episodes_per_session 50
+
+# The loader auto-discovers all .pkl files in the directory
+# Progress: [1/10] Loading file260_foodbasic_n0_h1_vr0.5_s2_30.pkl...
+#           [2/10] Loading file260_foodbasic_n0_h1_vr0.5_s2_35.pkl...
+#           etc.
+```
+
+The GNN rollout loader will:
+
+- Load rollout pickle files containing GNN model predictions
+- Create **paired episodes** for each trajectory:
+  - **Actual episode**: Ground truth trajectory from test data (positions, velocities, accelerations only)
+  - **Predicted episode**: GNN model prediction for same initial conditions (positions, velocities, accelerations, attention weights)
+- Extract positions and velocities from rollout tensors
+- Compute acceleration from velocity differences: `a[t] = v[t+1] - v[t]`
+- Process multi-head attention weights (average across heads) - **predicted episodes only**
+- Decompose attention into components (predicted episodes only):
+  - `attn_weight_self`: Self-attention weight
+  - `attn_weight_boid`: Sum of attention to other boid agents
+  - `attn_weight_food`: Attention to food agent (if present)
+- Store extended properties:
+  - **Actual episodes**: acceleration_x, acceleration_y
+  - **Predicted episodes**: acceleration_x, acceleration_y, attn_weight_self, attn_weight_boid, attn_weight_food
+- Handle CUDA tensors safely (automatic CPU mapping for CPU-only machines)
+- Scale coordinates from normalized [0,1] to scene coordinates [0, scene_size]
+
+**Episode ID Format**: `{session_id}-{trajectory_number:04d}-{actual|predicted}`
+
+Example episode IDs:
+- `file260_foodbasic_n0_h1_vr0.5_s2_30-0000-actual`
+- `file260_foodbasic_n0_h1_vr0.5_s2_30-0000-predicted`
+- `file260_foodbasic_n0_h1_vr0.5_s2_30-0001-actual`
+- `file260_foodbasic_n0_h1_vr0.5_s2_30-0001-predicted`
+
+**Pickle File Format Requirements**:
+- Dictionary with keys: `x_actual`, `x_predicted`, `attn_weights` (optional)
+- Position tensors: shape `(num_trajectories, num_timesteps, num_agents, 2)`
+- Attention weights: shape `(num_trajectories, num_timesteps, num_agents, num_agents)` or `(num_trajectories, num_timesteps, num_heads, num_agents, num_agents)`
+- Food agent detection: Last agent is food if 'food' in filename
+
+**Performance**: ~1,850 observations/second (~25K observations per episode in ~68 seconds for 4 episodes)
+
+**Use Cases**:
+- **Model Evaluation**: Compare GNN predictions to ground truth in database
+- **Error Analysis**: Query spatial/temporal patterns in prediction errors
+- **Attention Analysis**: Visualize attention weight evolution over time
+- **Ablation Studies**: Compare multiple model configurations via SQL queries
+
+### Limiting Episodes Per Session
+
+For testing, development, or working with large datasets, you can limit the number of episodes loaded per session using the `--max_episodes_per_session` option:
+
+```bash
+# Load only first 5 episodes from each session
+python -m collab_env.data.db.db_loader \
+    --source boids3d \
+    --path simulated_data/hackathon/ \
+    --max_episodes_per_session 5
+```
+
+**Use Cases:**
+- **Quick Testing**: Verify database setup and loader functionality without waiting for full dataset
+- **Development**: Iterate faster when developing queries or visualizations
+- **Large Datasets**: Explore data structure before committing to full load
+- **Sampling**: Create representative subset for analysis or demonstrations
+
+**Behavior:**
+- Applies independently to each session (not globally across all sessions)
+- Episodes are loaded in order (0, 1, 2, ..., N-1)
+- Progress logs show actual episodes loaded vs total available
+- Works with all data sources: `boids3d`, `boids2d`, and `tracking`
+
+**Example Output:**
+```
+Loading up to 5 out of 50 episodes in single transaction...
+[1/50] Loading episode 0 from: episode-0.parquet
+[2/50] Loading episode 1 from: episode-1.parquet
+...
+[5/50] Loading episode 4 from: episode-4.parquet
+Reached maximum number of episodes (5) for session session-xyz, stopping...
+Completed loading simulation: session-xyz (5 out of 50 episodes)
+```
+
 ## Database Schema
 
-The unified schema supports three data sources:
+The unified schema supports four data sources:
 - **3D Boids**: Parquet files from simulations
 - **2D Boids**: PyTorch .pt files
+- **2D Boids GNN Rollout**: Pickle files with GNN model predictions
 - **Tracking CSV**: Video tracking data
 
 ### Tables Created
 
 1. **sessions** - Top-level grouping (simulation runs, fieldwork sessions)
 2. **episodes** - Individual runs within a session
-3. **agent_types** - Type definitions (agent, env, target, bird, rat, gerbil)
+3. **agent_types** - Type definitions (agent, env, target, food, bird, rat, gerbil)
 4. **observations** - Core time-series data (positions, velocities)
-5. **categories** - Session and property categories (boids_3d, boids_2d, tracking_csv, computed)
-6. **property_definitions** - Extended property definitions (distances, accelerations, etc.)
+5. **categories** - Session and property categories (boids_3d, boids_2d, boids_2d_rollout, tracking_csv)
+6. **property_definitions** - Extended property definitions (distances, accelerations, attention weights, etc.)
 7. **property_category_mapping** - M2M relationship between properties and categories
 8. **extended_properties** - EAV storage for flexible properties
 
@@ -301,6 +459,7 @@ The database supports multiple agent types through the `agent_types` table:
 | `agent` | agent | Generic simulated agent (boid) |
 | `env` | environment | Environment entity (walls, obstacles, boundaries) |
 | `target` | target | Target object in simulation |
+| `food` | food | Stationary food target in 2D boids simulation |
 | `bird` | bird | Bird detected in video tracking |
 | `rat` | rat | Rat detected in video tracking |
 | `gerbil` | gerbil | Gerbil detected in video tracking |
@@ -538,6 +697,8 @@ See [grafana_queries.md](../../dashboard/grafana/grafana_queries.md) for the com
 | Load 10 episodes (3D) | ~3 minutes | 900K observations total |
 | Load 2,000 episodes (2D) | ~52 seconds | 420K observations, single transaction bulk loading |
 | Bulk loading rate (2D) | 8,000+ obs/sec | Multiple datasets in single transaction |
+| Load 4 rollout episodes (GNN) | ~68 seconds | 100K observations + extended properties |
+| Bulk loading rate (GNN rollout) | ~1,850 obs/sec | Includes attention weights and accelerations |
 
 ### Optimization
 
@@ -587,10 +748,11 @@ docs/data/db/
 - [x] Database initialization with verification
 - [x] 3D boids data loader (parquet files)
 - [x] 2D boids data loader (PyTorch .pt files)
+- [x] GNN rollout loader (pickle files with actual vs predicted trajectories)
 - [x] Multi-session bulk loading (single transaction)
 - [x] Batch loading with pandas to_sql
 - [x] Environment entity support with composite primary keys
-- [x] Extended properties loading (all 9 properties: distances + mesh coordinates)
+- [x] Extended properties loading (distances, mesh coordinates, accelerations, attention weights)
 - [x] Cascading deletes (PostgreSQL only, DuckDB limitation documented)
 - [x] Grafana dashboards (prototype with query library and templates)
 
@@ -598,7 +760,6 @@ docs/data/db/
 
 **Data Loading:**
 
-- [x] Tracking CSV loader
 - [ ] PostgreSQL COPY optimization for 10-100x faster loading (see [data_loader_plan.md](data_loader_plan.md))
 
 **Query & Visualization:**

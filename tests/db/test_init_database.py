@@ -48,7 +48,7 @@ class TestDatabaseInitialization:
 
         db.close()
 
-        assert count == 6, f"Expected 6 agent types (agent, env, target, bird, rat, gerbil), found {count}"
+        assert count == 7, f"Expected 7 agent types (agent, env, target, food, bird, rat, gerbil), found {count}"
 
     def test_property_definitions_seeded(self, backend_config: DBConfig):
         """Test that property definitions seed data is loaded."""
@@ -60,7 +60,7 @@ class TestDatabaseInitialization:
 
         db.close()
 
-        assert count == 20, f"Expected 20 property definitions, found {count}"
+        assert count == 23, f"Expected 23 property definitions, found {count}"
 
     def test_categories_seeded(self, backend_config: DBConfig):
         """Test that session categories seed data is loaded."""
@@ -72,7 +72,7 @@ class TestDatabaseInitialization:
 
         db.close()
 
-        assert count == 3, f"Expected 3 categories (boids_3d, boids_2d, tracking_csv), found {count}"
+        assert count == 4, f"Expected 4 categories (boids_3d, boids_2d, boids_2d_rollout, tracking_csv), found {count}"
 
     def test_foreign_key_relationships(self, backend_config: DBConfig):
         """Test that foreign key relationships work."""
@@ -225,16 +225,17 @@ class TestDatabaseBackendExecuteQuery:
         backend = DatabaseBackend(backend_config)
         backend.connect()
 
-        # Query all agent types (should return 6 rows)
+        # Query all agent types (should return 7 rows)
         query = "SELECT type_id, type_name FROM agent_types ORDER BY type_id"
         result = backend.execute_query(query)
 
         assert result is not None, "Should return results"
-        assert len(result) == 6, f"Expected 6 agent types, got {len(result)}"
-        # Check specific types are present (alphabetically: agent, bird, env, gerbil, rat, target)
+        assert len(result) == 7, f"Expected 7 agent types, got {len(result)}"
+        # Check specific types are present (alphabetically: agent, bird, env, food, gerbil, rat, target)
         type_ids = [row[0] for row in result]
         assert 'agent' in type_ids, "Should have 'agent' type"
         assert 'env' in type_ids, "Should have 'env' type"
+        assert 'food' in type_ids, "Should have 'food' type"
         assert type_ids[0] == 'agent', "First type (alphabetically) should be 'agent'"
 
         backend.close()

@@ -193,10 +193,10 @@ def verify_setup(backend: DatabaseBackend):
 
     result = backend.execute_query("SELECT count(*) FROM categories;")
     cat_count = result[0][0]
-    if cat_count == 3:
+    if cat_count == 4:
         logger.success(f"Categories loaded ({cat_count} rows)")
     else:
-        logger.error(f"Expected 3 categories, found {cat_count}")
+        logger.error(f"Expected 4 categories, found {cat_count}")
         return False
 
     return True

@@ -324,7 +324,7 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
                             path = hv.Path3D(
                                 agent_trail,
                                 kdims=['x', 'y', 'z']
-                            ).opts(line_color=agent_color, line_width=2)
+                            ).opts(color=agent_color, line_width=2)
                             paths.append(path)
 
                 if paths:
@@ -344,8 +344,8 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
                 ).opts(
                     color='agent_color',
                     size=8,
-                    width=450,
-                    height=450,
+                    # width=450,
+                    # height=450,
                     title=f'Agent Positions (t={self.current_time})',
                     colorbar=False,
                     xlim=self.x_range,
@@ -353,8 +353,8 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
                 )
             else:
                 scatter = hv.Scatter([]).opts(
-                    width=450,
-                    height=450,
+                    # width=450,
+                    # height=450,
                     title='Animation',
                     xlim=self.x_range,
                     ylim=self.y_range
@@ -384,7 +384,7 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
                             path = hv.Path(
                                 agent_trail,
                                 kdims=['x', 'y']
-                            ).opts(line_color=agent_color, line_width=2)
+                            ).opts(color=agent_color, line_width=2)
                             paths.append(path)
 
                 if paths:
@@ -434,8 +434,8 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
                 cmap=self.color_scale,
                 size=5,
                 alpha=0.6,
-                width=450,
-                height=450,
+                # width=450,
+                # height=450,
                 colorbar=True,
                 title=f'Spatial Density (bin={bin_size})',
                 xlim=self.x_range,
@@ -456,13 +456,14 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
                 density_grid[y_idx, x_idx] = row['density']
 
             # Create Image with proper bounds
+            # Flip y axis for heatmap (so y goes from max to min, as in image coordinates)
             viz = hv.Image(
-                density_grid,
-                bounds=(min(x_unique), min(y_unique), max(x_unique), max(y_unique))
+                np.flipud(density_grid),
+                bounds=(min(x_unique), max(y_unique), max(x_unique), min(y_unique))  # flip y axis
             ).opts(
                 cmap=self.color_scale,
-                width=450,
-                height=450,
+                # width=450,
+                # height=450,
                 colorbar=True,
                 title=f'Spatial Density (bin={bin_size})',
                 xlim=self.x_range,
