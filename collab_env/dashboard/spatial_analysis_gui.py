@@ -176,10 +176,10 @@ class SpatialAnalysisGUI(param.Parameterized):
 
         self.temporal_window_input = pn.widgets.IntInput(
             name="Time Window Size",
-            value=defaults.get('temporal_window_size', 100),
-            start=10,
+            value=defaults.get('temporal_window_size', 10),
+            start=2,
             end=1000,
-            step=10,
+            step=2,
             width=350
         )
 

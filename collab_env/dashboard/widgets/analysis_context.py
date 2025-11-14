@@ -42,7 +42,7 @@ class AnalysisContext:
 
     # Shared analysis parameters (commonly used across widgets)
     spatial_bin_size: float = 10.0      # For spatial discretization
-    temporal_window_size: int = 100     # For time-windowed analyses
+    temporal_window_size: int = 10     # For time-windowed analyses
 
     # Additional shared parameters
     min_samples: int = 100              # Minimum samples for statistics (matches QueryBackend default)

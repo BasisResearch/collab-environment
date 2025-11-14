@@ -6,7 +6,7 @@
 # Default shared parameters (used across all widgets unless overridden)
 defaults:
   spatial_bin_size: 10.0        # Spatial discretization for heatmaps
-  temporal_window_size: 100     # Time window for windowed analyses
+  temporal_window_size: 10     # Time window for windowed analyses
   min_samples: 100              # Minimum samples for statistical validity (matches QueryBackend default)
 
 # Widget registry
