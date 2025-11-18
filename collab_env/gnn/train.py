@@ -185,6 +185,12 @@ def train_single_config(params):
         worker_logger.debug(
             f"Using CPU device, gpu_count={gpu_count}, CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}"
         )
+
+    worker_logger.debug(f"Setting seed {seed}")
+    # Set seed for reproducibility
+    torch_generator = torch.manual_seed(seed)
+    np.random.seed(seed)
+
     try:
         # Load dataset
         file_name = f"runpod/{data_name}.pt"
@@ -207,6 +213,7 @@ def train_single_config(params):
         worker_logger.debug("Creating test and train loaders")
         test_loader, train_loader = dataset2testloader(
             dataset,
+            generator=torch_generator,
             batch_size=batch_size,
             return_train=True,
             device=device,
@@ -300,11 +307,6 @@ def train_single_config(params):
         else:
             loader = train_loader
             collect_debug = False
-
-        worker_logger.debug(f"Setting seed {seed}")
-        # Set seed for reproducibility
-        torch.manual_seed(seed)
-        np.random.seed(seed)
 
         # Set the device context BEFORE any CUDA operations
         if device.type == "cuda":
