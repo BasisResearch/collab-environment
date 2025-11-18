@@ -218,8 +218,19 @@ def train_single_config(params):
         worker_logger.debug(f"Rolling out or not: {rollout}")
 
         # Create model
-        in_node_dim = 20 if "food" in data_name else 19
-
+        """
+               TOC -- 101325 10:00AM
+               Fixed this to deal with more than 2D physical space. Also not sure 
+               it originally dealt with multiple species correctly. 
+               """
+        # in_node_dim = 20 if "food" in data_name else 19
+        num_species = len(species_configs.keys())
+        num_time_steps = 3  # this should be configurable
+        numbers_in_feature = (
+            3  # also needs to be configurable or computed from something else
+        )
+        position_dim = dataset.sequences[0][0].shape[2]
+        in_node_dim = position_dim * num_time_steps * numbers_in_feature + num_species
         worker_logger.debug(f"Creating model {model_name}")
 
         if "lazy" in model_name:
@@ -231,7 +242,8 @@ def train_single_config(params):
                 "start_frame": 3,
                 "heads": 1,
                 "self_loops": self_loops,
-                "edge_dim": 2 if use_relative_positions else 1,
+                "edge_dim": position_dim if use_relative_positions else 1,
+                "output_dim": position_dim,
             }
             model = Lazy(**model_spec)
             lr = None
@@ -247,9 +259,8 @@ def train_single_config(params):
                 "start_frame": 3,
                 "heads": heads,
                 "self_loops": self_loops,
-                "edge_dim": 2
-                if use_relative_positions
-                else 1,  # TOC 111325-- needs to be fixed for 3D
+                "edge_dim": position_dim if use_relative_positions else 1,
+                "output_dim": position_dim,
                 # "use_relative_positions": use_relative_positions,
             }
             model = GNN(**model_spec)
@@ -368,6 +379,14 @@ def train_single_config(params):
                 get_project_root(),
             )
 
+            """
+            TOC -- 111425 9:14AM 
+            Create the parent directories if they don't exist. 
+            """
+            logger.debug(f"rollout path {rollout_path}")
+            rollout_path.parent.parent.mkdir(exist_ok=True)
+            rollout_path.parent.mkdir(exist_ok=True)
+
             # rollout_path = expand_path(
             #    f"trained_models/{save_name}.pkl",
             #    get_project_root()
@@ -406,6 +425,8 @@ def train_single_config(params):
             "noise": noise,
             "heads": heads,
             "visual_range": visual_range,
+            "self_loops": self_loops,
+            "use_relative_positions": use_relative_positions,
             "seed": seed,
             "final_loss": float(final_loss),
             "status": "success",
@@ -423,6 +444,8 @@ def train_single_config(params):
             "noise": noise,
             "heads": heads,
             "visual_range": visual_range,
+            "self_loops": self_loops,
+            "use_relative_positions": use_relative_positions,
             "seed": seed,
             "final_loss": float("inf"),
             "status": "failed",
@@ -820,9 +843,11 @@ def main():
         best = min(valid_results, key=lambda x: x["final_loss"])
         logger.success("Best configuration:")
         logger.success(f"  Model: {best['model_name']}")
+        logger.success(f"  Self Loops: {best['self_loops']}")
         logger.success(f"  Noise: {best['noise']}")
         logger.success(f"  Heads: {best['heads']}")
         logger.success(f"  Visual Range: {best['visual_range']}")
+        logger.success(f"  Seed: {best['seed']}")
         logger.success(f"  Loss: {best['final_loss']:.6f}")
 
 
