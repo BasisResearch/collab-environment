@@ -2,7 +2,8 @@
 Extended Properties Viewer widget - time series and histogram visualization.
 
 Provides a 2-panel view for exploring extended properties:
-- Time series panel: Multi-property time series showing trends over time
+- Time series panel: Multi-property time series with median + configurable quantile bands
+  (default: 10th-90th percentile) and optional individual agent trajectories
 - Histogram panel: Dynamic row of histograms for selected properties
 
 Property selection affects both time series and histograms.
@@ -29,10 +30,11 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
     Extended properties viewer with time series and histograms.
 
     Features:
-    - Multi-property time series showing trends over time
+    - Multi-property time series with median + configurable quantile bands (default: 10th-90th percentile)
+    - Optional individual agent trajectories with configurable opacity and markers
     - Dynamic histograms for selected properties
 
-    Both panels update based on property selection.
+    Both panels update based on property selection and quantile settings.
     """
 
     widget_name = "Extended Properties Viewer"
@@ -42,10 +44,21 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
     # Property selection (for time series and histograms)
     selected_properties = param.ListSelector(default=[], objects=[], doc="Selected properties to display")
 
+    # Quantile band parameters
+    lower_quantile = param.Number(default=0.10, bounds=(0.01, 0.49), doc="Lower quantile for uncertainty band (default: 10th percentile)")
+    upper_quantile = param.Number(default=0.90, bounds=(0.51, 0.99), doc="Upper quantile for uncertainty band (default: 90th percentile)")
+
+    # Raw datapoints display options
+    show_raw_lines = param.Boolean(default=False, doc="Show individual agent trajectories as lines")
+    raw_line_opacity = param.Number(default=0.3, bounds=(0.05, 1.0), doc="Opacity of individual agent lines")
+    raw_marker_size = param.Integer(default=4, bounds=(1, 12), doc="Size of markers on individual agent lines")
+    max_agents_to_plot = param.Integer(default=20, bounds=(1, 100), doc="Maximum number of agent lines to display")
+
     def __init__(self, **params):
         # Initialize data storage
         self.properties_ts_df = None
         self.properties_dist_df = None
+        self.properties_raw_df = None  # NEW: raw data for agent lines
         self.available_props_df = None
 
         # Color palette (shared between time series and histograms)
@@ -70,10 +83,61 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             width=800
         )
 
-        # Single-row layout
+        # Quantile controls
+        lower_quantile_slider = pn.widgets.FloatSlider.from_param(
+            self.param.lower_quantile,
+            name="Lower Quantile",
+            width=150,
+            step=0.05
+        )
+
+        upper_quantile_slider = pn.widgets.FloatSlider.from_param(
+            self.param.upper_quantile,
+            name="Upper Quantile",
+            width=150,
+            step=0.05
+        )
+
+        # Raw datapoints controls
+        show_raw_checkbox = pn.widgets.Checkbox.from_param(
+            self.param.show_raw_lines,
+            name="Show Agent Lines"
+        )
+
+        opacity_slider = pn.widgets.FloatSlider.from_param(
+            self.param.raw_line_opacity,
+            name="Opacity",
+            width=120
+        )
+
+        marker_size_slider = pn.widgets.IntSlider.from_param(
+            self.param.raw_marker_size,
+            name="Marker Size",
+            width=120
+        )
+
+        max_agents_slider = pn.widgets.IntSlider.from_param(
+            self.param.max_agents_to_plot,
+            name="Max Agents",
+            width=120
+        )
+
+        # Three-row layout
         return pn.Column(
             pn.Row(
                 property_selector,
+                sizing_mode="stretch_width"
+            ),
+            pn.Row(
+                lower_quantile_slider,
+                upper_quantile_slider,
+                sizing_mode="stretch_width"
+            ),
+            pn.Row(
+                show_raw_checkbox,
+                opacity_slider,
+                marker_size_slider,
+                max_agents_slider,
                 sizing_mode="stretch_width"
             ),
             sizing_mode="stretch_width"
@@ -106,17 +170,28 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
         prop_list = self.available_props_df['property_id'].tolist()
         self.param.selected_properties.objects = prop_list
 
-        # Default to first 3-5 properties if available
-        default_props = prop_list[:min(5, len(prop_list))]
-        self.selected_properties = default_props
+        # Preserve previous selection if possible, otherwise default to all off
+        previous_selection = list(self.selected_properties) if self.selected_properties else []
+
+        # Keep only properties that still exist in the new episode
+        preserved_selection = [prop for prop in previous_selection if prop in prop_list]
+
+        # Update selection (will be empty list on first load or if no properties match)
+        self.selected_properties = preserved_selection
 
         logger.info(f"Found {len(prop_list)} properties: {prop_list}")
+        if preserved_selection:
+            logger.info(f"Preserved {len(preserved_selection)} selected properties from previous load")
+        else:
+            logger.info("No properties selected (default: all off)")
 
-        # Load property time series
-        logger.info("Loading property time series...")
+        # Load property time series with configurable quantiles
+        logger.info(f"Loading property time series (quantiles: {self.lower_quantile:.0%} - {self.upper_quantile:.0%})...")
         self.properties_ts_df = self.query_with_context(
             'get_extended_properties_timeseries',
-            property_ids=None  # Get all, filter later
+            property_ids=None,  # Get all, filter later
+            lower_quantile=self.lower_quantile,
+            upper_quantile=self.upper_quantile
         )
 
         # Load property distributions
@@ -125,6 +200,17 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             'get_property_distributions',
             property_ids=None  # Get all, filter later
         )
+
+        # Load raw property data if show_raw_lines is enabled
+        if self.show_raw_lines:
+            logger.info("Loading raw property data for agent lines...")
+            self.properties_raw_df = self.query_with_context(
+                'get_extended_properties_raw',
+                property_ids=None  # Get all, filter later
+            )
+            logger.info(f"Loaded {len(self.properties_raw_df)} raw observations")
+        else:
+            self.properties_raw_df = None
 
         # Create the initial visualizations
         timeseries_plot = self._create_timeseries_plot()
@@ -200,9 +286,39 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             has_data = True
             color = self.property_color_map[prop_id]
 
-            # Create mean line curve
+            # Add individual agent lines FIRST (so they render behind aggregated lines)
+            if self.show_raw_lines and self.properties_raw_df is not None:
+                agent_lines = self._create_agent_lines(prop_id, color)
+                overlay_elements.extend(agent_lines)
+
+            # Add shaded band for quantile range if available
+            if 'q_lower' in prop_df.columns and 'q_upper' in prop_df.columns:
+                # Filter to rows where quantiles are finite
+                quantile_df = prop_df[
+                    np.isfinite(prop_df['median_value']) &
+                    np.isfinite(prop_df['q_lower']) &
+                    np.isfinite(prop_df['q_upper'])
+                ]
+                if len(quantile_df) > 0:
+                    # Compute error bands for Spread element (distance from median to quantiles)
+                    neg_err = quantile_df['median_value'] - quantile_df['q_lower']
+                    pos_err = quantile_df['q_upper'] - quantile_df['median_value']
+
+                    # Add quantile spread without showing in legend
+                    spread = hv.Spread(
+                        (quantile_df['time_window'], quantile_df['median_value'], neg_err, pos_err),
+                        kdims='Time Window',
+                        vdims=['Value', 'neg_err', 'pos_err']
+                    ).opts(
+                        color=color,
+                        show_legend=False  # Explicitly hide from legend
+                    )
+
+                    overlay_elements.append(spread)
+
+            # Create median line curve (on top of agent lines and IQR spread)
             curve = hv.Curve(
-                (prop_df['time_window'], prop_df['avg_value']),
+                (prop_df['time_window'], prop_df['median_value']),
                 kdims='Time Window',
                 vdims='Value',
                 label=prop_id
@@ -212,28 +328,6 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             )
 
             overlay_elements.append(curve)
-
-            # Add shaded band for std (if available and not NaN)
-            if 'std_value' in prop_df.columns:
-                # Filter to rows where std_value is finite and positive
-                std_df = prop_df[np.isfinite(prop_df['std_value']) & (prop_df['std_value'] > 0)]
-                if len(std_df) > 0:
-                    # Compute error bands for Spread element
-                    neg_err = std_df['std_value']
-                    pos_err = std_df['std_value']
-
-                    # Add spread without showing in legend
-                    spread = hv.Spread(
-                        (std_df['time_window'], std_df['avg_value'], neg_err, pos_err),
-                        kdims='Time Window',
-                        vdims=['Value', 'neg_err', 'pos_err']
-                    ).opts(
-                        color=color,
-                        show_legend=False  # Explicitly hide from legend
-                        # alpha not supported in plotly backend
-                    )
-
-                    overlay_elements.append(spread)
 
         if not has_data:
             logger.warning("No valid data for any selected properties in time series")
@@ -346,24 +440,179 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
                 title="Histograms (no valid data)"
             )
 
+    def _hex_to_rgba(self, hex_color: str, opacity: float) -> str:
+        """
+        Convert hex color to rgba string for Plotly.
+
+        Parameters
+        ----------
+        hex_color : str
+            Hex color like '#1f77b4'
+        opacity : float
+            Opacity value 0.0-1.0
+
+        Returns
+        -------
+        str
+            RGBA color string like 'rgba(31, 119, 180, 0.3)'
+        """
+        # Remove '#' if present
+        hex_color = hex_color.lstrip('#')
+
+        # Convert to RGB
+        r = int(hex_color[0:2], 16)
+        g = int(hex_color[2:4], 16)
+        b = int(hex_color[4:6], 16)
+
+        return f'rgba({r}, {g}, {b}, {opacity})'
+
+    def _create_agent_lines(self, prop_id: str, base_color: str) -> List[hv.Curve]:
+        """
+        Create individual agent trajectory lines for a property.
+
+        Parameters
+        ----------
+        prop_id : str
+            Property ID to plot
+        base_color : str
+            Base color for this property (will be used with opacity)
+
+        Returns
+        -------
+        List[hv.Curve]
+            List of curve elements, one per agent (up to max_agents_to_plot)
+        """
+        if self.properties_raw_df is None:
+            return []
+
+        # Filter to this property
+        prop_raw = self.properties_raw_df[self.properties_raw_df['property_id'] == prop_id].copy()
+
+        if len(prop_raw) == 0:
+            return []
+
+        # Filter out NaN/inf values
+        prop_raw = prop_raw[np.isfinite(prop_raw['value_float'])]
+
+        if len(prop_raw) == 0:
+            return []
+
+        # Get unique agents
+        agents = prop_raw['agent_id'].unique()
+
+        # Limit number of agents to plot for performance
+        if len(agents) > self.max_agents_to_plot:
+            logger.info(f"Limiting agent lines from {len(agents)} to {self.max_agents_to_plot} agents")
+            # Sample agents deterministically (same agents each time)
+            agents = np.sort(agents)[:self.max_agents_to_plot]
+
+        # Convert base color to rgba with opacity (Plotly doesn't support alpha parameter)
+        rgba_color = self._hex_to_rgba(base_color, self.raw_line_opacity)
+
+        # Create a curve for each agent
+        agent_curves = []
+        for agent_id in agents:
+            agent_data = prop_raw[prop_raw['agent_id'] == agent_id].sort_values('time_index')
+
+            if len(agent_data) < 2:
+                # Need at least 2 points for a line
+                continue
+
+            # Create curve with markers (Plotly-compatible)
+            curve = hv.Curve(
+                (agent_data['time_index'], agent_data['value_float']),
+                kdims='Time Window',
+                vdims='Value'
+            ).opts(
+                color=rgba_color,  # Use rgba color with opacity
+                line_width=1,
+                show_legend=False
+            )
+
+            # Add markers using Scatter overlay
+            scatter = hv.Scatter(
+                (agent_data['time_index'], agent_data['value_float']),
+                kdims='Time Window',
+                vdims='Value'
+            ).opts(
+                color=rgba_color,
+                size=self.raw_marker_size,
+                show_legend=False
+            )
+
+            # Combine line and markers
+            agent_curves.append(curve * scatter)
+
+        logger.info(f"Created {len(agent_curves)} agent lines for property {prop_id}")
+        return agent_curves
+
     @param.depends('selected_properties', watch=True)
     def _on_properties_change(self):
         """Handle property selection changes."""
         if self.properties_ts_df is not None and len(self.display_pane.objects) > 1:
-            # Recreate both plots
-            timeseries_plot = self._create_timeseries_plot()
-            histogram_layout = self._create_histogram_layout()
+            self._update_plots()
 
-            # Prepare histogram pane
-            if isinstance(histogram_layout, pn.GridBox):
-                histogram_pane = histogram_layout
-            else:
-                histogram_pane = pn.pane.HoloViews(histogram_layout, sizing_mode="stretch_width", min_height=300)
+    @param.depends('show_raw_lines', watch=True)
+    def _on_show_raw_lines_change(self):
+        """Handle show_raw_lines toggle - reload data if needed."""
+        if self.properties_ts_df is None:
+            return  # No data loaded yet
 
-            # Rebuild the entire objects list to trigger Panel update
-            self.display_pane.objects = [
-                pn.pane.Markdown("## Time Series Panel"),
-                pn.pane.HoloViews(timeseries_plot, sizing_mode="stretch_width", height=400),
-                pn.pane.Markdown("## Histogram Panel"),
-                histogram_pane
-            ]
+        # If enabling raw lines and we don't have the data, query it
+        if self.show_raw_lines and self.properties_raw_df is None:
+            logger.info("Loading raw property data for agent lines...")
+            self.properties_raw_df = self.query_with_context(
+                'get_extended_properties_raw',
+                property_ids=None
+            )
+            logger.info(f"Loaded {len(self.properties_raw_df)} raw observations")
+
+        # Update plots
+        if len(self.display_pane.objects) > 1:
+            self._update_plots()
+
+    @param.depends('raw_line_opacity', 'raw_marker_size', 'max_agents_to_plot', watch=True)
+    def _on_raw_params_change(self):
+        """Handle changes to raw line parameters."""
+        if self.show_raw_lines and self.properties_raw_df is not None and len(self.display_pane.objects) > 1:
+            self._update_plots()
+
+    @param.depends('lower_quantile', 'upper_quantile', watch=True)
+    def _on_quantile_change(self):
+        """Handle quantile parameter changes - reload aggregated data."""
+        if self.properties_ts_df is None:
+            return  # No data loaded yet
+
+        logger.info(f"Reloading time series with new quantiles: {self.lower_quantile:.0%} - {self.upper_quantile:.0%}")
+
+        # Reload aggregated data with new quantiles
+        self.properties_ts_df = self.query_with_context(
+            'get_extended_properties_timeseries',
+            property_ids=None,
+            lower_quantile=self.lower_quantile,
+            upper_quantile=self.upper_quantile
+        )
+
+        # Update plots
+        if len(self.display_pane.objects) > 1:
+            self._update_plots()
+
+    def _update_plots(self):
+        """Helper to update both time series and histogram plots."""
+        # Recreate both plots
+        timeseries_plot = self._create_timeseries_plot()
+        histogram_layout = self._create_histogram_layout()
+
+        # Prepare histogram pane
+        if isinstance(histogram_layout, pn.GridBox):
+            histogram_pane = histogram_layout
+        else:
+            histogram_pane = pn.pane.HoloViews(histogram_layout, sizing_mode="stretch_width", min_height=300)
+
+        # Rebuild the entire objects list to trigger Panel update
+        self.display_pane.objects = [
+            pn.pane.Markdown("## Time Series Panel"),
+            pn.pane.HoloViews(timeseries_plot, sizing_mode="stretch_width", height=400),
+            pn.pane.Markdown("## Histogram Panel"),
+            histogram_pane
+        ]

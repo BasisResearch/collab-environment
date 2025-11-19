@@ -81,6 +81,13 @@ INSERT INTO property_definitions (property_id, property_name, data_type, descrip
     ('attn_weight_food', 'Food Attention Weight', 'float', 'Attention to food agent', 'dimensionless')
 ON CONFLICT (property_id) DO NOTHING;
 
+-- 2D Boids distance metrics
+INSERT INTO property_definitions (property_id, property_name, data_type, description, unit) VALUES
+    ('distance_to_food', 'Distance to Food', 'float', 'Euclidean distance from boid to food location', 'scene_units'),
+    ('distance_to_food_actual', 'Distance to Actual Food', 'float', 'Euclidean distance from boid to true food location (from actual episode) - predicted episodes only', 'scene_units'),
+    ('distance_to_food_predicted', 'Distance to Predicted Food', 'float', 'Euclidean distance from boid to GNN-predicted food location - predicted episodes only', 'scene_units')
+ON CONFLICT (property_id) DO NOTHING;
+
 -- =============================================================================
 -- END OF SEED DATA
 -- =============================================================================

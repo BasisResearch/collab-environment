@@ -331,6 +331,8 @@ class QueryBackend:
         end_time: Optional[int] = None,
         agent_type: str = 'agent',
         property_ids: Optional[list] = None,
+        lower_quantile: float = 0.10,
+        upper_quantile: float = 0.90,
         **kwargs
     ) -> pd.DataFrame:
         """
@@ -354,6 +356,10 @@ class QueryBackend:
             Agent type to filter ('agent', 'target', 'all')
         property_ids : list, optional
             List of property IDs to filter (applied in Python after query)
+        lower_quantile : float, default=0.10
+            Lower quantile for uncertainty band (e.g., 0.10 for 10th percentile)
+        upper_quantile : float, default=0.90
+            Upper quantile for uncertainty band (e.g., 0.90 for 90th percentile)
         **kwargs
             Additional parameters (ignored)
 
@@ -361,7 +367,7 @@ class QueryBackend:
         -------
         pd.DataFrame
             Time series with columns: time_window, property_id, n_observations,
-            avg_value, std_value, min_value, max_value, median_value
+            avg_value, std_value, min_value, max_value, median_value, q_lower, q_upper
             Filtered to property_ids if provided.
         """
         df = self._execute_query(
@@ -370,7 +376,9 @@ class QueryBackend:
             window_size=window_size,
             start_time=start_time,
             end_time=end_time,
-            agent_type=agent_type
+            agent_type=agent_type,
+            lower_quantile=lower_quantile,
+            upper_quantile=upper_quantile
         )
 
         # Filter by property_ids if provided
@@ -459,6 +467,57 @@ class QueryBackend:
             episode_id=episode_id,
             agent_type=agent_type
         )
+
+    def get_extended_properties_raw(
+        self,
+        episode_id: str,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
+        agent_type: str = 'agent',
+        property_ids: Optional[list] = None,
+        **kwargs
+    ) -> pd.DataFrame:
+        """
+        Get raw (unaggregated) extended property values with time indices.
+
+        Returns individual observations for plotting agent trajectories
+        as lines on time series plots. Data is in long format with
+        property_id as a column for flexibility.
+
+        Parameters
+        ----------
+        episode_id : str
+            Episode to analyze
+        start_time : int, optional
+            Start time index
+        end_time : int, optional
+            End time index
+        agent_type : str, default='agent'
+            Agent type to filter ('agent', 'target', 'all')
+        property_ids : list, optional
+            List of property IDs to filter (applied in Python after query)
+        **kwargs
+            Additional parameters (ignored)
+
+        Returns
+        -------
+        pd.DataFrame
+            Raw property values with columns: time_index, agent_id, property_id, value_float
+            Filtered to property_ids if provided.
+        """
+        df = self._execute_query(
+            'get_extended_properties_raw',
+            episode_id=episode_id,
+            start_time=start_time,
+            end_time=end_time,
+            agent_type=agent_type
+        )
+
+        # Filter by property_ids if provided
+        if property_ids is not None and len(df) > 0:
+            df = df[df['property_id'].isin(property_ids)]
+
+        return df
 
     # ==================== Correlations ====================
 

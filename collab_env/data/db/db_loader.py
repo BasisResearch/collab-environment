@@ -72,6 +72,54 @@ def convert_to_json_serializable(obj: Any) -> Any:
         return obj
 
 
+def get_food_location_from_config(config: Dict[str, Any], scene_size: float) -> Optional[Tuple[float, float]]:
+    """
+    Extract food location from 2D boids species config.
+
+    The config structure is:
+    {
+        'A': {'width': 480, 'height': 480, ...},
+        'food0': {'x': 160.0, 'y': 0, 'counts': 1}
+    }
+
+    Food coordinates in config are in pixel coordinates. We normalize them
+    and then scale by scene_size to match the coordinate system used for
+    agent positions.
+
+    Args:
+        config: Species configuration dictionary
+        scene_size: Scene size for coordinate scaling (default 480.0)
+
+    Returns:
+        (food_x, food_y) in scaled scene coordinates, or None if no food
+    """
+    if not config or 'food0' not in config:
+        return None
+
+    food_config = config['food0']
+
+    # Get scene dimensions (default to scene_size if not in config)
+    if 'A' in config:
+        width = config['A'].get('width', scene_size)
+        height = config['A'].get('height', scene_size)
+    else:
+        width = height = scene_size
+
+    # Food config stores pixel coordinates, normalize first
+    food_x_normalized = food_config['x'] / width
+    food_y_normalized = food_config['y'] / height
+
+    # Scale to scene coordinates (same as agent positions)
+    food_x = food_x_normalized * scene_size
+    food_y = food_y_normalized * scene_size
+
+    logger.debug(f"Food location: pixel=({food_config['x']}, {food_config['y']}), "
+                 f"normalized=({food_x_normalized:.4f}, {food_y_normalized:.4f}), "
+                 f"scaled=({food_x:.2f}, {food_y:.2f})")
+
+    return (food_x, food_y)
+
+
 @dataclass
 class SessionMetadata:
     """Metadata for a simulation/tracking session."""
@@ -910,6 +958,32 @@ class Boids2DLoader(BaseDataLoader):
 
         self.load_observations_batch(observations, episode_id, conn=conn)
 
+        # Compute extended properties: distance to food (if food is present)
+        extended_props = {}
+        food_location = get_food_location_from_config(config, scene_size)
+
+        if food_location is not None:
+            food_x, food_y = food_location
+
+            # Compute distance to food for each boid at each timestep
+            # Distance = sqrt((boid_x - food_x)^2 + (boid_y - food_y)^2)
+            #
+            # Note: Food agent itself (last agent if species[-1] == 1) gets distance 0
+            # but we compute for all agents for simplicity
+
+            dx = positions_flat[:, 0] - food_x
+            dy = positions_flat[:, 1] - food_y
+            distances = np.sqrt(dx**2 + dy**2)
+
+            # Create multi-index for extended properties
+            idx = pd.MultiIndex.from_arrays([time_indices, agent_ids])
+            extended_props['distance_to_food'] = pd.Series(distances, index=idx)
+
+            logger.info(f"Computed distance_to_food for {len(distances)} observations")
+
+        if extended_props:
+            self.load_extended_properties_batch(episode_id, extended_props, conn=conn)
+
         logger.info(f"Loaded sample {sample_idx}: {num_timesteps} frames, {num_agents} agents")
 
 
@@ -1262,20 +1336,19 @@ class GNNRolloutLoader(BaseDataLoader):
                 # Self-attention
                 attn_self_frame[agent_id] = A[agent_id, agent_id]
 
+                boid_mask = np.ones(num_agents, dtype=bool)
+                boid_mask[agent_id] = False  # Exclude self
                 # Attention to other boids
                 if food_agent_idx >= 0:
                     # Sum attention to all boids (excluding self and food)
-                    boid_mask = np.ones(num_agents, dtype=bool)
-                    boid_mask[agent_id] = False  # Exclude self
                     boid_mask[food_agent_idx] = False  # Exclude food
-                    attn_boid_frame[agent_id] = np.sum(A[agent_id, boid_mask])
-
                     # Attention to food
                     attn_food_frame[agent_id] = A[agent_id, food_agent_idx]
                 else:
                     # No food, all non-self are boids
-                    attn_boid_frame[agent_id] = np.sum(A[agent_id, :]) - attn_self_frame[agent_id]
                     attn_food_frame[agent_id] = 0.0
+
+                attn_boid_frame[agent_id] = np.mean(A[agent_id, boid_mask])
 
             attn_self_all.append(attn_self_frame)
             attn_boid_all.append(attn_boid_frame)
@@ -1310,6 +1383,7 @@ class GNNRolloutLoader(BaseDataLoader):
         num_agents: int = None,
         episode_type: str = 'actual',  # 'actual' or 'predicted'
         food_agent_idx: int = -1,
+        actual_food_positions: Optional[np.ndarray] = None,  # [frames, 2] - TRUE food positions from actual episode
         metadata: Dict = None,
         scene_size: float = 480.0,
         conn=None
@@ -1391,6 +1465,70 @@ class GNNRolloutLoader(BaseDataLoader):
                 W_frames, traj_idx, num_frames, num_agents, food_agent_idx
             )
             extended_props.update(attention_props)
+
+        # 6. Compute distance to food (if food agent exists)
+        if food_agent_idx >= 0:
+            # positions_scaled: [frames, agents, 2]
+            time_indices_all = np.repeat(np.arange(num_frames), num_agents)
+            agent_ids_all = np.tile(np.arange(num_agents), num_frames)
+            idx = pd.MultiIndex.from_arrays([time_indices_all, agent_ids_all])
+
+            if episode_type == 'actual':
+                # ACTUAL EPISODE: Compute distance to actual food position
+                food_positions = positions_scaled[:, food_agent_idx, :]  # [frames, 2]
+
+                distances = []
+                for time_idx in range(num_frames):
+                    for agent_id in range(num_agents):
+                        if agent_id == food_agent_idx:
+                            distances.append(0.0)
+                        else:
+                            boid_x, boid_y = positions_scaled[time_idx, agent_id, :]
+                            food_x, food_y = food_positions[time_idx, :]
+                            distance = np.sqrt((boid_x - food_x)**2 + (boid_y - food_y)**2)
+                            distances.append(distance)
+
+                extended_props['distance_to_food'] = pd.Series(distances, index=idx)
+                logger.debug(f"Computed distance_to_food for actual episode ({len(distances)} observations)")
+
+            else:  # episode_type == 'predicted'
+                # PREDICTED EPISODE: Compute TWO distance metrics
+                # 1. distance_to_food_actual: Distance to TRUE food position (from actual episode)
+                # 2. distance_to_food_predicted: Distance to PREDICTED food position
+
+                predicted_food_positions = positions_scaled[:, food_agent_idx, :]  # [frames, 2]
+
+                distances_to_actual_food = []
+                distances_to_predicted_food = []
+
+                for time_idx in range(num_frames):
+                    for agent_id in range(num_agents):
+                        if agent_id == food_agent_idx:
+                            # Food agent itself
+                            distances_to_actual_food.append(0.0)
+                            distances_to_predicted_food.append(0.0)
+                        else:
+                            # Boid positions
+                            boid_x, boid_y = positions_scaled[time_idx, agent_id, :]
+
+                            # Distance to TRUE food (from actual episode)
+                            if actual_food_positions is not None:
+                                actual_food_x, actual_food_y = actual_food_positions[time_idx, :]
+                                dist_to_actual = np.sqrt((boid_x - actual_food_x)**2 + (boid_y - actual_food_y)**2)
+                                distances_to_actual_food.append(dist_to_actual)
+                            else:
+                                distances_to_actual_food.append(np.nan)
+
+                            # Distance to PREDICTED food
+                            pred_food_x, pred_food_y = predicted_food_positions[time_idx, :]
+                            dist_to_predicted = np.sqrt((boid_x - pred_food_x)**2 + (boid_y - pred_food_y)**2)
+                            distances_to_predicted_food.append(dist_to_predicted)
+
+                extended_props['distance_to_food_actual'] = pd.Series(distances_to_actual_food, index=idx)
+                extended_props['distance_to_food_predicted'] = pd.Series(distances_to_predicted_food, index=idx)
+
+                logger.debug(f"Computed distance_to_food_actual and distance_to_food_predicted "
+                           f"for predicted episode ({len(distances_to_actual_food)} observations)")
 
         if extended_props:
             self.load_extended_properties_batch(
@@ -1475,6 +1613,7 @@ class GNNRolloutLoader(BaseDataLoader):
         """
 
         logger.info(f"Loading GNN rollout from: {rollout_path}")
+        logger.info(f"Loader max_episodes setting: {self.max_episodes}")
 
         # 1. Parse filename
         metadata = self._parse_rollout_filename(rollout_path)
@@ -1497,9 +1636,8 @@ class GNNRolloutLoader(BaseDataLoader):
             """Internal function to load data with given connection."""
             self.load_session(session_metadata, conn=conn)
 
-            episode_counter = 0
             trajectories_loaded = 0
-
+            episode_counter = 0
             # Iterate epochs → batches → trajectories
             for epoch_id, epoch_data in rollout_data.items():
                 for batch_id, batch_data in epoch_data.items():
@@ -1518,7 +1656,10 @@ class GNNRolloutLoader(BaseDataLoader):
 
                     # 6. Process each trajectory in batch
                     for traj_idx in range(batch_size):
+                        # Check if we've reached max episodes before loading this trajectory
+                        # Each trajectory creates 2 episodes (actual + predicted)
                         if trajectories_loaded >= self.max_episodes:
+                            logger.info(f"Reached max_episodes limit: {trajectories_loaded} >= {self.max_episodes}, stopping...")
                             break
 
                         # Extract data for this trajectory
@@ -1529,6 +1670,13 @@ class GNNRolloutLoader(BaseDataLoader):
 
                         # Detect food agent (same for actual and predicted)
                         food_agent_idx = self._detect_food_agent(metadata['dataset'], num_agents)
+
+                        # Extract actual food positions for use in predicted episode
+                        # This is the TRUE food location that should remain stationary
+                        actual_food_positions = None
+                        if food_agent_idx >= 0:
+                            # Scale actual food positions to scene coordinates
+                            actual_food_positions = actual_traj[:, food_agent_idx, :] * scene_size  # [frames, 2]
 
                         # Load ACTUAL episode (no attention weights for ground truth)
                         episode_id_actual = f"{session_id}-{trajectories_loaded:04d}-actual"
@@ -1544,6 +1692,7 @@ class GNNRolloutLoader(BaseDataLoader):
                             num_agents=num_agents,
                             episode_type='actual',
                             food_agent_idx=food_agent_idx,
+                            actual_food_positions=None,  # Not needed for actual episode
                             metadata={
                                 'source_epoch': int(epoch_id),
                                 'source_batch': int(batch_id),
@@ -1553,10 +1702,12 @@ class GNNRolloutLoader(BaseDataLoader):
                             scene_size=scene_size,
                             conn=conn
                         )
-                        episode_counter += 1
 
                         # Load PREDICTED episode (with attention weights from model)
                         episode_id_predicted = f"{session_id}-{trajectories_loaded:04d}-predicted"
+                        
+                        episode_counter += 1
+                        
                         self._load_trajectory_episode(
                             session_id=session_id,
                             episode_id=episode_id_predicted,
@@ -1569,6 +1720,7 @@ class GNNRolloutLoader(BaseDataLoader):
                             num_agents=num_agents,
                             episode_type='predicted',
                             food_agent_idx=food_agent_idx,
+                            actual_food_positions=actual_food_positions,  # Pass TRUE food positions
                             metadata={
                                 'source_epoch': int(epoch_id),
                                 'source_batch': int(batch_id),
@@ -1585,14 +1737,9 @@ class GNNRolloutLoader(BaseDataLoader):
                             scene_size=scene_size,
                             conn=conn
                         )
-                        episode_counter += 1
+                        
                         trajectories_loaded += 1
-
-                    if trajectories_loaded >= self.max_episodes:
-                        break
-
-                if trajectories_loaded >= self.max_episodes:
-                    break
+                        episode_counter += 1
 
             logger.info(f"Completed loading rollout: {session_id} ({trajectories_loaded} trajectories, {episode_counter} episodes)")
 
@@ -1606,6 +1753,9 @@ class GNNRolloutLoader(BaseDataLoader):
     def load_rollouts_bulk(self, rollouts_dir: Path, scene_size: float = 480.0):
         """
         Load multiple rollout files from a directory in a single transaction.
+
+        Each rollout file becomes a separate session. The max_episodes limit applies
+        independently to each file/session.
 
         Args:
             rollouts_dir: Directory containing rollout .pkl files
@@ -1657,10 +1807,10 @@ Examples:
     )
     
     parser.add_argument(
-        '--max_episodes_per_session',
+        '--max-episodes-per-session',
         type=int,
-        default=np.inf,
-        help='Maximum number of episodes to load per session'
+        default=None,
+        help='Maximum number of episodes to load per session (default: unlimited)'
     )
 
     parser.add_argument(
@@ -1702,9 +1852,14 @@ Examples:
     db_conn.connect()
 
     try:
+        # Convert None to np.inf for unlimited episodes
+        max_eps = args.max_episodes_per_session if args.max_episodes_per_session is not None else np.inf
+        logger.info(f"max_episodes_per_session argument: {args.max_episodes_per_session}")
+        logger.info(f"Effective max_episodes: {max_eps}")
+
         # Load data based on source type
         if args.source == 'boids3d':
-            loader = Boids3DLoader(db_conn, max_episodes=args.max_episodes_per_session)
+            loader = Boids3DLoader(db_conn, max_episodes=max_eps)
 
             # Check if path is a directory with multiple simulations or a single simulation
             if args.path.is_dir():
@@ -1721,7 +1876,7 @@ Examples:
                 raise ValueError(f"Path must be a directory: {args.path}")
 
         elif args.source == 'boids2d':
-            loader = Boids2DLoader(db_conn, max_episodes=args.max_episodes_per_session)
+            loader = Boids2DLoader(db_conn, max_episodes=max_eps)
 
             # Check if path is a file or directory
             if args.path.is_file() and args.path.suffix == '.pt':
@@ -1736,7 +1891,7 @@ Examples:
                 raise ValueError(f"Path must be a .pt file or directory: {args.path}")
 
         elif args.source == 'tracking':
-            loader = TrackingCSVLoader(db_conn, max_episodes=args.max_episodes_per_session)
+            loader = TrackingCSVLoader(db_conn, max_episodes=max_eps)
 
             # Check if path is a single session or parent directory
             if args.path.is_dir():
@@ -1753,7 +1908,7 @@ Examples:
                 raise ValueError(f"Path must be a directory: {args.path}")
 
         elif args.source == 'boids2d_rollout':
-            loader = GNNRolloutLoader(db_conn, max_episodes=args.max_episodes_per_session)
+            loader = GNNRolloutLoader(db_conn, max_episodes=max_eps)
 
             if args.path.is_file() and args.path.suffix == '.pkl':
                 # Single rollout file

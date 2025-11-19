@@ -151,6 +151,13 @@ class BaseAnalysisWidget(param.Parameterized):
 
     def _create_ui(self):
         """Create UI components (called by __init__)."""
+        # Scope display (shows current session/episode)
+        self.scope_display = pn.pane.Markdown(
+            "**No data loaded**",
+            sizing_mode="stretch_width",
+            styles={'background': '#f0f0f0', 'padding': '10px', 'border-radius': '5px'}
+        )
+
         # Load button (standard for all widgets)
         self.load_btn = pn.widgets.Button(
             name=f"Load {self.widget_name}",
@@ -174,6 +181,9 @@ class BaseAnalysisWidget(param.Parameterized):
             self.context.report_loading(f"Loading {self.widget_name}...")
 
             self.load_data()
+
+            # Update scope display after successful load
+            self._update_scope_display()
 
             self.context.report_success(f"{self.widget_name} loaded successfully")
 
@@ -206,11 +216,20 @@ class BaseAnalysisWidget(param.Parameterized):
 
         return True
 
+    def _update_scope_display(self):
+        """Update the scope display with current session/episode information."""
+        if self.context and self.context.scope:
+            scope_str = str(self.context.scope)
+            self.scope_display.object = f"**Current Scope:** {scope_str}"
+        else:
+            self.scope_display.object = "**No data loaded**"
+
     def get_tab_content(self) -> pn.Column:
         """
         Return complete tab content (controls + display).
 
         Layout:
+        - Scope display (current session/episode)
         - Load button
         - Custom controls (if any)
         - Display pane
@@ -220,7 +239,7 @@ class BaseAnalysisWidget(param.Parameterized):
         pn.Column
             Complete widget content for tab
         """
-        components = [self.load_btn]
+        components = [self.scope_display, self.load_btn]
 
         if self.custom_controls:
             components.append(pn.layout.Divider())

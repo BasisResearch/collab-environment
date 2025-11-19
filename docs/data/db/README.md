@@ -222,6 +222,8 @@ The 2D loader will:
 - Compute velocities from position differences: `v[t] = p[t+1] - p[t]`
 - Scale coordinates from normalized [0,1] to scene coordinates [0, scene_size]
 - Create 2D observations (z and v_z are NULL)
+- **Compute extended properties** (if food is present in config):
+  - `distance_to_food`: Euclidean distance from each boid to food location
 
 **Performance**: 8,000+ observations/second for bulk loading
 
@@ -343,9 +345,14 @@ The GNN rollout loader will:
   - `attn_weight_self`: Self-attention weight
   - `attn_weight_boid`: Sum of attention to other boid agents
   - `attn_weight_food`: Attention to food agent (if present)
+- Compute spatial metrics:
+  - **Actual episodes**: `distance_to_food` - distance to actual food position
+  - **Predicted episodes**:
+    - `distance_to_food_actual` - distance to TRUE food position (from actual episode)
+    - `distance_to_food_predicted` - distance to GNN-predicted food position
 - Store extended properties:
-  - **Actual episodes**: acceleration_x, acceleration_y
-  - **Predicted episodes**: acceleration_x, acceleration_y, attn_weight_self, attn_weight_boid, attn_weight_food
+  - **Actual episodes**: acceleration_x, acceleration_y, distance_to_food (if food present)
+  - **Predicted episodes**: acceleration_x, acceleration_y, distance_to_food_actual, distance_to_food_predicted (if food present), attn_weight_self, attn_weight_boid, attn_weight_food
 - Handle CUDA tensors safely (automatic CPU mapping for CPU-only machines)
 - Scale coordinates from normalized [0,1] to scene coordinates [0, scene_size]
 
@@ -752,7 +759,7 @@ docs/data/db/
 - [x] Multi-session bulk loading (single transaction)
 - [x] Batch loading with pandas to_sql
 - [x] Environment entity support with composite primary keys
-- [x] Extended properties loading (distances, mesh coordinates, accelerations, attention weights)
+- [x] Extended properties loading (distances, mesh coordinates, accelerations, attention weights, distance to food)
 - [x] Cascading deletes (PostgreSQL only, DuckDB limitation documented)
 - [x] Grafana dashboards (prototype with query library and templates)
 
