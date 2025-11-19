@@ -386,8 +386,7 @@ def train_single_config(params):
             Create the parent directories if they don't exist. 
             """
             logger.debug(f"rollout path {rollout_path}")
-            rollout_path.parent.parent.mkdir(exist_ok=True)
-            rollout_path.parent.mkdir(exist_ok=True)
+            rollout_path.parent.mkdir(exist_ok=True, parents=True)
 
             # rollout_path = expand_path(
             #    f"trained_models/{save_name}.pkl",

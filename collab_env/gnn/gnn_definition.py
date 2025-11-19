@@ -22,6 +22,7 @@ class GNN(torch.nn.Module):
         hidden_dim=128,
         output_dim=2,
         self_loops=False,
+        self_loops_layer_2=False,
     ):
         super().__init__()
 
@@ -81,12 +82,12 @@ class GNN(torch.nn.Module):
             )
 
         """
-        TOC -- 111325 8:40AM 
-        I am using self loops at this layer but I am unsure of the motivation. At the previous layer we are using the 
-        self loops to allow a proper distribution of attention weights, but it is unclear how it helps down here. Also 
-        I am not specifying a fill value -- what does it use for that by default? 
+        TOC -- 111925 10:08AM 
+        It is unclear how self loops help down here, so leave it off by default
         """
-        self.gcn2 = GCNConv(hidden_dim * heads, hidden_dim, add_self_loops=self_loops)
+        self.gcn2 = GCNConv(
+            hidden_dim * heads, hidden_dim, add_self_loops=self_loops_layer_2
+        )
 
         # Final linear layer to predict 2D acceleration
         self.out = torch.nn.Linear(hidden_dim, output_dim)
