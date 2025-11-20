@@ -88,6 +88,12 @@ INSERT INTO property_definitions (property_id, property_name, data_type, descrip
     ('distance_to_food_predicted', 'Distance to Predicted Food', 'float', 'Euclidean distance from boid to GNN-predicted food location - predicted episodes only', 'scene_units')
 ON CONFLICT (property_id) DO NOTHING;
 
+-- GNN prediction metrics
+INSERT INTO property_definitions (property_id, property_name, data_type, description, unit) VALUES
+    ('prediction_error', 'Position Prediction Error', 'float', 'Euclidean distance between actual and predicted agent position - predicted episodes only', 'scene_units'),
+    ('loss', 'Frame-Level MSE Loss', 'float', 'Mean squared error loss for acceleration prediction (averaged over all agents) - predicted episodes only', 'scene_units^2/frame^4')
+ON CONFLICT (property_id) DO NOTHING;
+
 -- =============================================================================
 -- END OF SEED DATA
 -- =============================================================================

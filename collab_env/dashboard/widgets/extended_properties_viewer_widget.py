@@ -10,6 +10,7 @@ Property selection affects both time series and histograms.
 """
 
 import logging
+import textwrap
 from typing import Optional, List
 
 import param
@@ -421,23 +422,46 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
                 title="Time Series (no valid data)"
             )
 
-        def legend_hook(plot, element):
-            """Position legend inside plot for plotly backend."""
+        def layout_hook(plot, element):
+            """Position legend and style title for plotly backend."""
             fig = plot.state
+            # Position legend inside plot
             fig["layout"]["legend"] = dict(
                 yanchor="top",
                 y=0.98,
                 xanchor="right",
                 x=0.98
             )
+            # Reduce title font size for long scope strings
+            # Title might be a string or dict, so we need to handle both
+            current_title = fig["layout"].get("title", "")
+            if isinstance(current_title, str):
+                title_text = current_title
+            else:
+                title_text = current_title.get("text", "")
+
+            fig["layout"]["title"] = dict(
+                text=title_text,
+                font=dict(size=9)
+            )
 
         # Create overlay and apply options
+        scope_str = str(self.context.scope) if self.context and self.context.scope else "Unknown Scope"
+        # Wrap title text for long scope strings using <br> for Plotly
+        full_title = f"Property Time Series - {scope_str}"
+        if len(full_title) > 80:
+            # Split at a reasonable point (prefer after " - ")
+            parts = textwrap.wrap(full_title, width=80)
+            wrapped_title = "<br>".join(parts)
+        else:
+            wrapped_title = full_title
+
         return hv.Overlay(overlay_elements).opts(
             width=800,
             height=400,
-            title="Property Time Series",
+            title=wrapped_title,
             show_legend=True,
-            hooks=[legend_hook]
+            hooks=[layout_hook]
         )
 
     def _create_histogram_layout(self):

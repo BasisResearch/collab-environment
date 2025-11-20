@@ -34,10 +34,12 @@ The Dashboard System provides interactive web-based visualization and analysis f
 **Current (Production Ready):**
 
 - **Basic Data Viewer** (Phase 7.1): Unified episode viewer with 4 synchronized panels:
-  - Animated 2D/3D track visualization with playback controls
+  - Animated 2D track visualization with client-side playback (smooth 60fps)
+  - Full-screen modal viewer with embedded data (no server round-trips)
   - Spatial density heatmaps (integrated, replaces standalone widget)
   - Multi-property time series with synchronized timeline
   - Dynamic histogram panel for property distributions
+  - *Note: 3D client-side animation not yet implemented (requires three.js)*
 - Enhanced legacy widgets (Phase 6+):
   - **Velocity Stats**: Comprehensive velocity analysis with three groups
     - Individual agent speed (histogram + time series with median and IQR bands)
@@ -241,11 +243,11 @@ collab_env/dashboard/
 
 **Running the Dashboard:**
 ```bash
-# Development mode with autoreload
-panel serve collab_env/dashboard/spatial_analysis_app.py --dev --show --port 5008
+# Development mode with autoreload and static file serving (REQUIRED for animation viewer)
+panel serve collab_env/dashboard/spatial_analysis_app.py --dev --show --port 5008 --static-dirs dashboard-static=collab_env/dashboard/static
 
 # Production mode
-panel serve collab_env/dashboard/spatial_analysis_app.py --port 5008
+panel serve collab_env/dashboard/spatial_analysis_app.py --port 5008 --static-dirs dashboard-static=collab_env/dashboard/static
 ```
 
 ### Known Limitations
@@ -317,9 +319,13 @@ properties = query.get_extended_properties_timeseries(
 - **4-Panel Synchronized Layout**:
   1. **Animation Panel** (top-left)
      - Animated 2D/3D scatter plot of agent tracks
-     - Playback controls: play/pause, speed (0.1x-10x), time scrubbing
+     - Client-side playback: Opens full-screen modal with embedded data
+     - Smooth 60fps animation using Canvas 2D API and requestAnimationFrame
+     - No server round-trips during playback (all data embedded in JavaScript)
+     - Playback controls: play/pause, speed (0.1x-10x), stop, keyboard shortcuts
      - Trails with configurable length
      - Toggle agent IDs
+     - **TODO**: 3D client-side animation (currently only 2D Canvas implemented, 3D requires three.js)
 
   2. **Spatial Heatmap Panel** (top-right)
      - Density heatmap of agent positions over time window
@@ -454,7 +460,11 @@ properties = query.get_extended_properties_timeseries(
 - [x] Create `BasicDataViewerWidget` class skeleton
 - [x] Implement 4-panel layout (animation, heatmap, timeseries, histograms)
 - [x] Implement `load_data()` to fetch all data
-- [x] Add playback controls (play/pause, speed control, time scrubbing, trail length)
+- [x] Client-side modal animation viewer with embedded data (replaces laggy server-based playback)
+- [x] JavaScript-based Canvas 2D rendering with FrameManager for smooth 60fps animation
+- [x] Full-screen modal overlay injected directly into document.body
+- [x] Playback controls (play/pause, stop, speed slider, frame info, close button, keyboard shortcuts)
+- [ ] **TODO**: 3D client-side animation using three.js (currently only 2D Canvas implemented)
 
 **Step 4: Panel Visualizations (4-5 hours)** ✅
 

@@ -157,6 +157,7 @@ pip install -e ".[dev]"
 - **Dashboard (GCS Mode)**: `python -m collab_env.dashboard.cli`
 - **Dashboard (Read-Only Mode)**: `python -m collab_env.dashboard.cli --read-only`
 - **Development with Autoreload**: `./scripts/dev_dashboard.sh`
+- **Spatial Analysis Dashboard**: `panel serve collab_env/dashboard/spatial_analysis_app.py --dev --show --port 5008 --static-dirs dashboard-static=collab_env/dashboard/static`
 - **Simulation Viewer**: `python -m collab_env.dashboard.persistent_video_server --mode simulation --data-dir simulated_data/hackathon --port 5051`
 
 **Development with Autoreload:**
@@ -198,6 +199,30 @@ Advanced video analysis feature for viewing tracking data overlays:
 - **Dynamic Loading**: Add videos from dashboard, switch between them via dropdown selector
 - **Resource Efficient**: One server process regardless of number of videos viewed
 - **Clean Lifecycle**: Start/stop server management integrated with dashboard
+
+**Spatial Analysis Dashboard:**
+
+Interactive web-based dashboard for analyzing boid simulation episodes and animal tracking data:
+
+- **Basic Data Viewer**: Unified 4-panel viewer with:
+  - **Client-Side Animation**: Full-screen modal with smooth 60fps playback (Canvas 2D, no server round-trips)
+    - *TODO: 3D client-side animation using three.js (currently only 2D Canvas implemented)*
+  - **Spatial Heatmap**: Density visualization synchronized with animation
+  - **Time Series**: Multi-property analysis with mean ± std bands
+  - **Histograms**: Dynamic distribution analysis for selected properties
+- **Velocity & Distance Stats**: Enhanced widgets with median/IQR bands and distinct color schemes
+- **Correlation Analysis**: Episode-level velocity correlations
+- **Property-Agnostic Design**: Works with any extended property without code changes
+
+**IMPORTANT**: The `--static-dirs` flag is **required** for client-side animation to work. This maps JavaScript modules to the `/dashboard-static/` URL route.
+
+```bash
+# Development mode (REQUIRED: --static-dirs flag)
+panel serve collab_env/dashboard/spatial_analysis_app.py --dev --show --port 5008 --static-dirs dashboard-static=collab_env/dashboard/static
+
+# Production mode
+panel serve collab_env/dashboard/spatial_analysis_app.py --port 5008 --static-dirs dashboard-static=collab_env/dashboard/static
+```
 
 **Simulation Viewer Mode:**
 

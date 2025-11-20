@@ -1348,7 +1348,7 @@ class GNNRolloutLoader(BaseDataLoader):
                     # No food, all non-self are boids
                     attn_food_frame[agent_id] = 0.0
 
-                attn_boid_frame[agent_id] = np.mean(A[agent_id, boid_mask])
+                attn_boid_frame[agent_id] = np.sum(A[agent_id, boid_mask])
 
             attn_self_all.append(attn_self_frame)
             attn_boid_all.append(attn_boid_frame)
@@ -1370,6 +1370,68 @@ class GNNRolloutLoader(BaseDataLoader):
             'attn_weight_food': pd.Series(attn_food_all.flatten(), index=idx),
         }
 
+    def _prepare_loss_observations(
+        self,
+        loss_values: List[float],  # List of scalars, one per frame
+        num_frames: int,
+        scene_size: float
+    ) -> Tuple[pd.DataFrame, Dict[str, pd.Series]]:
+        """
+        Prepare per-frame loss as 'env' agent observations.
+
+        Args:
+            loss_values: List of scalar loss values (one per frame)
+            num_frames: Number of frames
+            scene_size: Scene size for positioning env node at center
+
+        Returns:
+            observations: DataFrame with env agent observations at scene center
+            extended_props: Dict with 'loss' property
+        """
+        # Verify we have the right number of loss values
+        loss_array = np.array(loss_values)
+        if len(loss_array) != num_frames:
+            logger.warning(
+                f"Loss array length ({len(loss_array)}) != num_frames ({num_frames}). "
+                f"Truncating or padding with NaN."
+            )
+            # Pad with NaN or truncate as needed
+            if len(loss_array) < num_frames:
+                loss_array = np.pad(
+                    loss_array,
+                    (0, num_frames - len(loss_array)),
+                    constant_values=np.nan
+                )
+            else:
+                loss_array = loss_array[:num_frames]
+
+        # Position env node at scene center
+        scene_center = scene_size / 2.0  # 240.0 for default scene_size=480.0
+
+        # Create observations with agent_type_id='env', agent_id=-1 (arbitrary, but distinct)
+        observations = pd.DataFrame({
+            'time_index': np.arange(num_frames),
+            'agent_id': -1,  # Use -1 to distinguish from regular agent IDs (0, 1, 2, ...)
+            'agent_type_id': 'env',
+            'x': scene_center,
+            'y': scene_center,
+            'z': None,
+            'v_x': None,  # NULL velocity for env node
+            'v_y': None,
+            'v_z': None
+        })
+
+        # Create extended property for loss
+        idx = pd.MultiIndex.from_arrays([
+            np.arange(num_frames),           # time_index
+            np.full(num_frames, -1, dtype=int)  # agent_id=-1
+        ])
+        extended_props = {
+            'loss': pd.Series(loss_array, index=idx)
+        }
+
+        return observations, extended_props
+
     def _load_trajectory_episode(
         self,
         session_id: str,
@@ -1378,17 +1440,19 @@ class GNNRolloutLoader(BaseDataLoader):
         positions: np.ndarray,  # [frames, agents, 2]
         accelerations: np.ndarray,  # [frames, agents, 2]
         W_frames: Optional[List] = None,  # List of (edge_index, edge_weight) tuples
+        loss_frames: Optional[List] = None,  # List of scalar loss values (one per frame)
         traj_idx: int = 0,  # Trajectory index within batch
         num_frames: int = None,
         num_agents: int = None,
         episode_type: str = 'actual',  # 'actual' or 'predicted'
         food_agent_idx: int = -1,
         actual_food_positions: Optional[np.ndarray] = None,  # [frames, 2] - TRUE food positions from actual episode
+        actual_positions: Optional[np.ndarray] = None,  # [frames, agents, 2] - Actual positions for prediction error
         metadata: Dict = None,
         scene_size: float = 480.0,
         conn=None
     ):
-        """Load a single trajectory as an episode with accelerations and attention weights."""
+        """Load a single trajectory as an episode with accelerations, attention weights, loss, and prediction error."""
 
         # Infer dimensions if not provided
         if num_frames is None:
@@ -1454,10 +1518,22 @@ class GNNRolloutLoader(BaseDataLoader):
 
         self.load_observations_batch(observations, episode_id, conn=conn)
 
+        # 3b. Load env observations for loss (predicted episodes only)
+        if episode_type == 'predicted' and loss_frames is not None:
+            env_observations, loss_props = self._prepare_loss_observations(
+                loss_frames, num_frames, scene_size
+            )
+            self.load_observations_batch(env_observations, episode_id, conn=conn)
+            logger.debug(f"Added {len(loss_props['loss'])} loss observations for env agent")
+
         # 4. Load accelerations as extended properties
         extended_props = self._prepare_acceleration_properties(
             accelerations, num_frames, num_agents, scene_size
         )
+
+        # 4b. Merge loss properties if we loaded env observations
+        if episode_type == 'predicted' and loss_frames is not None:
+            extended_props.update(loss_props)
 
         # 5. Load attention weights as extended properties (if available)
         if W_frames is not None:
@@ -1529,6 +1605,30 @@ class GNNRolloutLoader(BaseDataLoader):
 
                 logger.debug(f"Computed distance_to_food_actual and distance_to_food_predicted "
                            f"for predicted episode ({len(distances_to_actual_food)} observations)")
+
+        # 7. Compute prediction error (predicted episodes only)
+        if episode_type == 'predicted' and actual_positions is not None:
+            # actual_positions: [frames, agents, 2] (normalized coordinates)
+            # positions: [frames, agents, 2] (predicted, normalized coordinates)
+
+            time_indices_all = np.repeat(np.arange(num_frames), num_agents)
+            agent_ids_all = np.tile(np.arange(num_agents), num_frames)
+            idx = pd.MultiIndex.from_arrays([time_indices_all, agent_ids_all])
+
+            # Compute L2 distance in scene units
+            actual_scaled = actual_positions * scene_size    # [frames, agents, 2]
+            predicted_scaled = positions * scene_size        # [frames, agents, 2]
+
+            prediction_errors = []
+            for time_idx in range(num_frames):
+                for agent_id in range(num_agents):
+                    actual_pos = actual_scaled[time_idx, agent_id, :]
+                    predicted_pos = predicted_scaled[time_idx, agent_id, :]
+                    error = np.sqrt(np.sum((actual_pos - predicted_pos)**2))
+                    prediction_errors.append(error)
+
+            extended_props['prediction_error'] = pd.Series(prediction_errors, index=idx)
+            logger.debug(f"Computed prediction_error for predicted episode ({len(prediction_errors)} observations)")
 
         if extended_props:
             self.load_extended_properties_batch(
@@ -1650,6 +1750,9 @@ class GNNRolloutLoader(BaseDataLoader):
                     # Extract attention weights if available
                     W_frames = batch_data.get('W', None)  # List of (edge_index, edge_weight) tuples
 
+                    # Extract loss values if available
+                    loss_frames = batch_data.get('loss', None)  # List of scalar loss values (one per frame)
+
                     num_frames = actual.shape[0]
                     batch_size = actual.shape[1]
                     num_agents = actual.shape[2]
@@ -1715,12 +1818,14 @@ class GNNRolloutLoader(BaseDataLoader):
                             positions=predicted_traj,
                             accelerations=predicted_acc_traj,
                             W_frames=W_frames,  # Include attention weights for predictions
+                            loss_frames=loss_frames,  # Include loss values per frame
                             traj_idx=traj_idx,
                             num_frames=num_frames,
                             num_agents=num_agents,
                             episode_type='predicted',
                             food_agent_idx=food_agent_idx,
                             actual_food_positions=actual_food_positions,  # Pass TRUE food positions
+                            actual_positions=actual_traj,  # Pass actual positions for prediction error
                             metadata={
                                 'source_epoch': int(epoch_id),
                                 'source_batch': int(batch_id),

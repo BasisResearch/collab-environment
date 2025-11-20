@@ -9,7 +9,9 @@ Both panels are synchronized by time window and current time.
 """
 
 import logging
+import json
 from typing import Optional, List
+from pathlib import Path
 
 import param
 import panel as pn
@@ -21,6 +23,7 @@ from bokeh.models import HoverTool, Span
 from bokeh.plotting import figure
 from bokeh.palettes import Category10_10, Category20_20
 
+from collab_env.data.file_utils import get_project_root
 from .base_analysis_widget import BaseAnalysisWidget
 from .query_scope import ScopeType
 
@@ -48,8 +51,7 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
 
     # Playback controls
     current_time = param.Integer(default=0, bounds=(0, None), doc="Current playback time index")
-    playback_speed = param.Number(default=1.0, bounds=(0.1, 10.0), doc="Playback speed multiplier")
-    is_playing = param.Boolean(default=False, doc="Whether animation is playing")
+    playback_speed = param.Number(default=1.0, bounds=(0.1, 10.0), doc="Default playback speed for modal viewer")
     trail_length = param.Integer(default=50, bounds=(0, 500), doc="Number of frames to show in trail")
 
     # Visualization options
@@ -69,11 +71,11 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
         self.heatmap_pane = None
         self.play_button = None
 
-        # Playback state
-        self._playback_callback = None  # Track periodic callback for playback
-
         # Data dimensionality (detected from loaded data)
         self.is_3d = True  # Default to 3D, will be updated based on data
+
+        # Animation modal - will hold the HTML overlay when shown
+        self.animation_modal_pane = pn.Column(sizing_mode='stretch_both')
 
         super().__init__(**params)
 
@@ -235,6 +237,41 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
         self._update_heatmap_panel()
 
         logger.info("Basic Data Viewer loaded successfully")
+
+    def get_animation_data_json(self):
+        """Return JSON-serializable animation data for client-side rendering.
+
+        This method prepares all data needed for the client-side viewer.
+        No HTTP requests needed - data is embedded directly in the modal HTML.
+        """
+        if self.tracks_df is None:
+            return {}
+
+        # Convert agent_color_map keys to native Python int (from numpy.int64)
+        agent_colors_serializable = {
+            int(agent_id): color
+            for agent_id, color in self.agent_color_map.items()
+        }
+
+        return {
+            'tracks': self.tracks_df.to_dict('records'),  # List of all track points
+            'settings': {
+                'trail_length': int(self.trail_length),
+                'show_agent_ids': bool(self.show_agent_ids),
+                'playback_speed': float(self.playback_speed),
+            },
+            'bounds': {
+                'x_range': [float(self.x_range[0]), float(self.x_range[1])],
+                'y_range': [float(self.y_range[0]), float(self.y_range[1])],
+                'z_range': [float(self.z_range[0]), float(self.z_range[1])] if self.z_range else None,
+            },
+            'is_3d': bool(self.is_3d),
+            'agent_colors': agent_colors_serializable,
+            'time_range': [
+                int(self.tracks_df['time_index'].min()),
+                int(self.tracks_df['time_index'].max())
+            ]
+        }
 
     def _init_visualization_panes(self):
         """Remove loading messages, keep visualization panes."""
@@ -474,64 +511,72 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
         self.heatmap_viz_pane.object = viz
 
     def _toggle_playback(self, event):
-        """Toggle animation playback."""
-        self.is_playing = not self.is_playing
-
-        if self.is_playing:
-            self.play_button.name = "⏸ Pause"
-            self.play_button.button_type = "warning"
-            # Start playback loop using periodic callback
-            self._start_playback()
-        else:
-            self.play_button.name = "▶ Play"
-            self.play_button.button_type = "success"
-            # Stop playback loop
-            self._stop_playback()
-
-    def _start_playback(self):
-        """Start periodic playback updates."""
-        # Always stop any existing callback first to prevent pile-up
-        self._stop_playback()
-
-        if self.tracks_df is not None:
-            # Calculate period in milliseconds based on playback_speed
-            # playback_speed = frames per second, so period = 1000ms / fps
-            period = int(1000 / self.playback_speed)
-            self._playback_callback = pn.state.add_periodic_callback(
-                self._advance_frame,
-                period=period
-            )
-
-    def _stop_playback(self):
-        """Stop periodic playback updates."""
-        if self._playback_callback is not None:
-            try:
-                self._playback_callback.stop()  # Call .stop() on the callback object
-            except Exception as e:
-                logger.warning(f"Error stopping playback callback: {e}")
-            finally:
-                self._playback_callback = None
-
-    def _advance_frame(self):
-        """Advance animation by one frame (called by periodic callback)."""
-        # Safety check: stop callback if playback is no longer active
-        if not self.is_playing or self.tracks_df is None:
-            self._stop_playback()
+        """Open modal dialog for client-side animation."""
+        if self.tracks_df is None:
+            logger.warning("No track data available for animation")
             return
 
-        # Advance current time
-        max_time = int(self.tracks_df['time_index'].max())
-        if self.current_time >= max_time:
-            self.current_time = int(self.tracks_df['time_index'].min())
-        else:
-            self.current_time += 1
+        # Generate animation data from in-memory tracks
+        animation_data = self.get_animation_data_json()
 
-    @param.depends('playback_speed', watch=True)
-    def _on_speed_change(self):
-        """Handle playback speed changes (restart callback if playing)."""
-        if self.is_playing:
-            self._stop_playback()
-            self._start_playback()
+        # Create and show modal
+        self._show_animation_modal(animation_data)
+
+    def _show_animation_modal(self, animation_data):
+        """Create and display full-screen animation modal with client-side playback.
+
+        The modal is injected directly into document.body via JavaScript, creating a
+        true overlay that works outside of Panel's component tree. All track data is
+        embedded as JSON in the HTML, enabling smooth 60fps client-side animation
+        with no server round-trips during playback.
+
+        Features:
+        - Canvas 2D rendering with requestAnimationFrame for smooth animation
+        - Playback controls: play/pause, stop, speed (0.1x-10x)
+        - Keyboard shortcuts: Space (play/pause), Escape (close)
+        - Dynamic frame indicator and speed slider
+        - Close button to remove modal from DOM
+        """
+        # Validate data
+        if not animation_data or not animation_data.get('tracks'):
+            logger.warning("No track data available for animation")
+            return
+
+        # Check data size and warn if large
+        num_points = len(animation_data['tracks'])
+        if num_points > 10000:
+            logger.warning(f"Large dataset: {num_points} track points - animation may be slow")
+
+        # Serialize data to JSON string for embedding
+        try:
+            animation_json = json.dumps(animation_data)
+        except Exception as e:
+            logger.error(f"Failed to serialize animation data: {e}")
+            return
+
+        # Load template from file using project root for robust path resolution
+        template_path = get_project_root() / 'collab_env' / 'dashboard' / 'templates' / 'animation_modal.html'
+        try:
+            template_content = template_path.read_text()
+        except Exception as e:
+            logger.error(f"Failed to load animation modal template: {e}")
+            return
+
+        # Render template with variables
+        html_content = template_content.format(
+            animation_json=animation_json,
+            playback_speed=animation_data['settings']['playback_speed'],
+            max_frame=animation_data['time_range'][1]
+        )
+
+        # Create HTML pane - let it size naturally
+        viewer_pane = pn.pane.HTML(html_content, sizing_mode='stretch_both')
+
+        # Add to modal pane (which is part of the widget layout)
+        self.animation_modal_pane.clear()
+        self.animation_modal_pane.append(viewer_pane)
+
+        logger.info("Animation modal displayed")
 
     @param.depends('current_time', watch=True)
     def _on_time_change(self):
@@ -552,3 +597,17 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
             # Force re-render by clearing the object first
             self.heatmap_viz_pane.object = None
             self._update_heatmap_panel()
+
+    def get_tab_content(self) -> pn.Column:
+        """
+        Override to add modal pane to component tree.
+
+        Modal overlay will be injected here when Play is clicked.
+        """
+        # Get base components from parent class
+        base_content = super().get_tab_content()
+
+        # Add modal pane to the column (empty by default, filled when Play is clicked)
+        base_content.append(self.animation_modal_pane)
+
+        return base_content

@@ -1,0 +1,135 @@
+<script>
+    (function() {{
+        // Data embedded directly - no HTTP request needed!
+        const animationData = {animation_json};
+
+        console.log('Creating animation modal overlay...');
+
+        // Create modal HTML structure
+        const modalHTML = `
+            <div id="animation-modal-overlay" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+                 background: rgba(0,0,0,0.95); z-index: 10000; display: flex; align-items: center; justify-content: center;">
+
+                <div id="animation-viewer-container" style="width: 80vw; height: 70vh; max-width: 1200px;
+                     background: #1a1a1a; border-radius: 8px; display: flex; flex-direction: column;">
+
+                    <canvas id="animation-canvas" style="flex: 1; min-height: 0; background: #1a1a1a; width: 100%;"></canvas>
+
+                    <div id="controls-container" style="flex-shrink: 0; height: 60px; background: rgba(0,0,0,0.9); padding: 10px;
+                         display: flex; gap: 10px; align-items: center; border-top: 1px solid #444;">
+                        <button id="playPauseBtn" class="control-btn">▶ Play</button>
+                        <button id="stopBtn" class="control-btn">⏹ Stop</button>
+                        <input type="range" id="speedSlider" min="0.1" max="10" step="0.1"
+                               value="{playback_speed}" style="width: 150px;">
+                        <span id="speedValue" style="color: #fff; min-width: 50px;">{playback_speed}x</span>
+                        <span id="frameInfo" style="color: #fff; margin-left: 20px;">Frame: 0 / {max_frame}</span>
+                        <button id="closeBtn" class="control-btn close-btn" style="margin-left: auto;">✖ Close</button>
+                    </div>
+                </div>
+            </div>
+
+            <style>
+                .control-btn {{
+                    padding: 8px 16px;
+                    background: #0066cc;
+                    color: white;
+                    border: none;
+                    border-radius: 4px;
+                    cursor: pointer;
+                    font-size: 14px;
+                }}
+                .control-btn:hover {{
+                    background: #0088ff;
+                }}
+                .close-btn {{
+                    background: #cc0000 !important;
+                }}
+                .close-btn:hover {{
+                    background: #ff0000 !important;
+                }}
+            </style>
+        `;
+
+        // Inject modal into document body
+        const tempDiv = document.createElement('div');
+        tempDiv.innerHTML = modalHTML;
+        while (tempDiv.firstChild) {{
+            document.body.appendChild(tempDiv.firstChild);
+        }}
+
+        console.log('Modal injected into document.body');
+
+        // Now get references to the elements
+        const canvas = document.getElementById('animation-canvas');
+        const playPauseBtn = document.getElementById('playPauseBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const speedSlider = document.getElementById('speedSlider');
+        const speedValue = document.getElementById('speedValue');
+        const closeBtn = document.getElementById('closeBtn');
+        const modalOverlay = document.getElementById('animation-modal-overlay');
+
+        if (!canvas || !playPauseBtn) {{
+            console.error('Failed to find modal elements even after injection!');
+            return;
+        }}
+
+        console.log('Modal elements found, loading viewer module...');
+
+        // Load and initialize viewer
+        import('/dashboard-static/js/viewers/episode_animation_viewer.js')
+            .then(({{ EpisodeAnimationViewer }}) => {{
+                console.log('EpisodeAnimationViewer module loaded');
+
+                // Initialize viewer
+                const viewer = new EpisodeAnimationViewer(animationData, 'animation-canvas');
+                window.viewer = viewer;
+
+                // Play/Pause button
+                playPauseBtn.addEventListener('click', () => {{
+                    viewer.frameManager.togglePlayPause();
+                }});
+
+                // Stop button
+                stopBtn.addEventListener('click', () => {{
+                    viewer.frameManager.pause();
+                    viewer.frameManager.jumpToStart();
+                }});
+
+                // Speed slider
+                speedSlider.addEventListener('input', (e) => {{
+                    const speed = parseFloat(e.target.value);
+                    viewer.frameManager.setSpeed(speed);
+                    speedValue.textContent = speed.toFixed(1) + 'x';
+                }});
+
+                // Close button - remove the modal from DOM
+                closeBtn.addEventListener('click', () => {{
+                    viewer.destroy();
+                    modalOverlay.remove();
+                }});
+
+                // Update UI on frame change
+                viewer.frameManager.onFrameChange((frame) => {{
+                    document.getElementById('frameInfo').textContent =
+                        `Frame: ${{frame}} / {max_frame}`;
+                    playPauseBtn.textContent = viewer.frameManager.isPlaying ? '⏸ Pause' : '▶ Play';
+                }});
+
+                // Keyboard shortcuts
+                document.addEventListener('keydown', (e) => {{
+                    if (e.key === ' ') {{
+                        e.preventDefault();
+                        viewer.frameManager.togglePlayPause();
+                    }} else if (e.key === 'Escape') {{
+                        viewer.destroy();
+                        modalOverlay.remove();
+                    }}
+                }});
+
+                console.log('✅ Animation viewer initialized successfully');
+            }})
+            .catch(error => {{
+                console.error('Failed to load animation viewer:', error);
+            }});
+    }})();
+</script>
