@@ -54,6 +54,9 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
     raw_marker_size = param.Integer(default=4, bounds=(1, 12), doc="Size of markers on individual agent lines")
     max_agents_to_plot = param.Integer(default=20, bounds=(1, 100), doc="Maximum number of agent lines to display")
 
+    # Normalization option
+    normalize = param.Boolean(default=False, doc="Z-score normalize all properties to display on same scale")
+
     def __init__(self, **params):
         # Initialize data storage
         self.properties_ts_df = None
@@ -122,7 +125,13 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             width=120
         )
 
-        # Three-row layout
+        # Normalize checkbox
+        normalize_checkbox = pn.widgets.Checkbox.from_param(
+            self.param.normalize,
+            name="Z-Score Normalize"
+        )
+
+        # Four-row layout
         return pn.Column(
             pn.Row(
                 property_selector,
@@ -131,6 +140,7 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             pn.Row(
                 lower_quantile_slider,
                 upper_quantile_slider,
+                normalize_checkbox,
                 sizing_mode="stretch_width"
             ),
             pn.Row(
@@ -233,6 +243,63 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
 
         logger.info("Extended Properties Viewer loaded successfully")
 
+    def _get_normalization_stats(self, prop_id: str):
+        """
+        Compute mean and std for a property from distribution data.
+
+        Parameters
+        ----------
+        prop_id : str
+            Property ID to compute stats for
+
+        Returns
+        -------
+        tuple
+            (mean, std) for z-score normalization
+        """
+        if self.properties_dist_df is None:
+            return 0.0, 1.0
+
+        # Get all values for this property
+        prop_values = self.properties_dist_df[
+            self.properties_dist_df['property_id'] == prop_id
+        ]['value_float'].values
+
+        # Filter out NaN/inf
+        prop_values = prop_values[np.isfinite(prop_values)]
+
+        if len(prop_values) == 0:
+            return 0.0, 1.0
+
+        mean = np.mean(prop_values)
+        std = np.std(prop_values)
+
+        # Avoid division by zero
+        if std == 0 or not np.isfinite(std):
+            std = 1.0
+
+        return mean, std
+
+    def _normalize_values(self, values: np.ndarray, mean: float, std: float) -> np.ndarray:
+        """
+        Apply z-score normalization to values.
+
+        Parameters
+        ----------
+        values : np.ndarray
+            Values to normalize
+        mean : float
+            Mean for normalization
+        std : float
+            Standard deviation for normalization
+
+        Returns
+        -------
+        np.ndarray
+            Normalized values
+        """
+        return (values - mean) / std
+
     def _create_timeseries_plot(self):
         """Create time series plot with selected properties."""
         if self.properties_ts_df is None or len(self.properties_ts_df) == 0:
@@ -277,7 +344,7 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
                 continue
 
             # Filter out rows with NaN/inf in avg_value
-            prop_df = prop_df[np.isfinite(prop_df['avg_value'])]
+            prop_df = prop_df[np.isfinite(prop_df['avg_value'])].copy()
 
             if len(prop_df) == 0:
                 logger.warning(f"No valid time series data for property {prop_id}")
@@ -285,6 +352,12 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
 
             has_data = True
             color = self.property_color_map[prop_id]
+
+            # Get normalization stats if needed
+            if self.normalize:
+                mean, std = self._get_normalization_stats(prop_id)
+            else:
+                mean, std = 0.0, 1.0
 
             # Add individual agent lines FIRST (so they render behind aggregated lines)
             if self.show_raw_lines and self.properties_raw_df is not None:
@@ -298,8 +371,14 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
                     np.isfinite(prop_df['median_value']) &
                     np.isfinite(prop_df['q_lower']) &
                     np.isfinite(prop_df['q_upper'])
-                ]
+                ].copy()
                 if len(quantile_df) > 0:
+                    # Apply normalization if needed
+                    if self.normalize:
+                        quantile_df['median_value'] = self._normalize_values(quantile_df['median_value'].values, mean, std)
+                        quantile_df['q_lower'] = self._normalize_values(quantile_df['q_lower'].values, mean, std)
+                        quantile_df['q_upper'] = self._normalize_values(quantile_df['q_upper'].values, mean, std)
+
                     # Compute error bands for Spread element (distance from median to quantiles)
                     neg_err = quantile_df['median_value'] - quantile_df['q_lower']
                     pos_err = quantile_df['q_upper'] - quantile_df['median_value']
@@ -316,9 +395,14 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
 
                     overlay_elements.append(spread)
 
+            # Prepare median values for curve
+            median_values = prop_df['median_value'].values
+            if self.normalize:
+                median_values = self._normalize_values(median_values, mean, std)
+
             # Create median line curve (on top of agent lines and IQR spread)
             curve = hv.Curve(
-                (prop_df['time_window'], prop_df['median_value']),
+                (prop_df['time_window'], median_values),
                 kdims='Time Window',
                 vdims='Value',
                 label=prop_id
@@ -404,6 +488,11 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             if len(values) == 0:
                 logger.warning(f"No valid values for property {prop_id}")
                 continue
+
+            # Apply normalization if needed
+            if self.normalize:
+                mean, std = self._get_normalization_stats(prop_id)
+                values = self._normalize_values(values, mean, std)
 
             # Create histogram using HoloViews
             # Use the same color as the time series for this property
@@ -492,10 +581,15 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             return []
 
         # Filter out NaN/inf values
-        prop_raw = prop_raw[np.isfinite(prop_raw['value_float'])]
+        prop_raw = prop_raw[np.isfinite(prop_raw['value_float'])].copy()
 
         if len(prop_raw) == 0:
             return []
+
+        # Apply normalization if needed
+        if self.normalize:
+            mean, std = self._get_normalization_stats(prop_id)
+            prop_raw['value_float'] = self._normalize_values(prop_raw['value_float'].values, mean, std)
 
         # Get unique agents
         agents = prop_raw['agent_id'].unique()
@@ -594,6 +688,18 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
         )
 
         # Update plots
+        if len(self.display_pane.objects) > 1:
+            self._update_plots()
+
+    @param.depends('normalize', watch=True)
+    def _on_normalize_change(self):
+        """Handle normalization toggle - update plots with z-scored values."""
+        if self.properties_ts_df is None:
+            return  # No data loaded yet
+
+        logger.info(f"Normalization {'enabled' if self.normalize else 'disabled'}")
+
+        # Update plots (normalization is applied client-side)
         if len(self.display_pane.objects) > 1:
             self._update_plots()
 
