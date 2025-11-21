@@ -24,7 +24,7 @@ export POSTGRES_USER=${DB_USER}
 
 # Cloud Run Configuration
 export SERVICE_NAME="${SERVICE_NAME:-spatial-analysis-dashboard}"
-export MEMORY="${MEMORY:-2Gi}"
+export MEMORY="${MEMORY:-5Gi}"
 export CPU="${CPU:-2}"
 export TIMEOUT="${TIMEOUT:-3600}"
 
