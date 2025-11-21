@@ -40,19 +40,31 @@ The Dashboard System provides interactive web-based visualization and analysis f
   - Multi-property time series with synchronized timeline
   - Dynamic histogram panel for property distributions
   - *Note: 3D client-side animation not yet implemented (requires three.js)*
+- **Extended Properties Viewer** ✨ NEW: Property-agnostic viewer with session support
+  - **Dual scope support**: Episode-level OR session-level analysis
+  - **Time series panel** (episode only): Multi-property time series with configurable quantile bands (default: 10th-90th percentile)
+  - **Distribution panel**: Histogram or violin plot toggle
+  - **Configurable histogram bins** (10-100)
+  - **Z-score normalization** for multi-scale properties
+  - **Optional agent trajectories**: Individual agent lines with configurable opacity and markers
+  - **Session aggregation**: Combines distributions across all episodes in a session
+  - **Scope validation**: Clear error messages for incompatible scopes
 - Enhanced legacy widgets (Phase 6+):
-  - **Velocity Stats**: Comprehensive velocity analysis with three groups
+  - **Velocity Stats**: Comprehensive velocity analysis (episode-only)
     - Individual agent speed (histogram + time series with median and IQR bands)
     - Mean velocity magnitude (normalized velocities, then magnitude of mean vector)
     - Relative velocity magnitude (pairwise ||v_i - v_j|| with median and IQR bands)
     - Distinct color schemes per group with interactive legends
-  - **Distances**: Relative locations analysis
+  - **Distances**: Relative locations analysis (episode-only)
     - Pairwise distances ||x_i - x_j|| between agents
     - Histogram + time series with median and IQR (25th-75th percentile) bands
     - Distinct color scheme (darkviolet/plum) with interactive legends
   - **Velocity Correlations**: Episode-level correlation analysis
-- Session/episode management and selection
-- Episode and session-level aggregation (SQL-optimized)
+- **Flexible scope selection**: Episode/Session toggle with dynamic UI
+  - Episode mode: Shows all selectors and time controls
+  - Session mode: Hides episode selector and time controls
+  - Automatic validation with user-friendly error messages
+- SQL-optimized episode and session-level aggregation
 - Modular widget architecture
 
 **Planned (Phase 7.2-7.3):**

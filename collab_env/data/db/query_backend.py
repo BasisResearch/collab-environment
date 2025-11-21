@@ -389,7 +389,8 @@ class QueryBackend:
 
     def get_property_distributions(
         self,
-        episode_id: str,
+        episode_id: Optional[str] = None,
+        session_id: Optional[str] = None,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
         agent_type: str = 'agent',
@@ -403,10 +404,14 @@ class QueryBackend:
         values for distribution analysis. Filter by property_ids in Python
         after retrieval if needed.
 
+        Supports both episode-level and session-level analysis.
+
         Parameters
         ----------
-        episode_id : str
-            Episode to analyze
+        episode_id : str, optional
+            Episode to analyze (mutually exclusive with session_id)
+        session_id : str, optional
+            Session to analyze - aggregates all episodes in session (mutually exclusive with episode_id)
         start_time : int, optional
             Start time index
         end_time : int, optional
@@ -424,9 +429,15 @@ class QueryBackend:
             Property values with columns: property_id, value_float
             Filtered to property_ids if provided.
         """
+        if episode_id is None and session_id is None:
+            raise ValueError("Either episode_id or session_id must be provided")
+        if episode_id is not None and session_id is not None:
+            raise ValueError("Cannot specify both episode_id and session_id")
+
         df = self._execute_query(
             'get_property_distributions',
             episode_id=episode_id,
+            session_id=session_id,
             start_time=start_time,
             end_time=end_time,
             agent_type=agent_type
@@ -440,17 +451,22 @@ class QueryBackend:
 
     def get_available_properties(
         self,
-        episode_id: str,
+        episode_id: Optional[str] = None,
+        session_id: Optional[str] = None,
         agent_type: str = 'agent',
         **kwargs
     ) -> pd.DataFrame:
         """
-        Get list of available extended properties for an episode.
+        Get list of available extended properties for an episode or session.
+
+        Supports both episode-level and session-level analysis.
 
         Parameters
         ----------
-        episode_id : str
-            Episode to analyze
+        episode_id : str, optional
+            Episode to analyze (mutually exclusive with session_id)
+        session_id : str, optional
+            Session to analyze - aggregates all episodes in session (mutually exclusive with episode_id)
         agent_type : str, default='agent'
             Agent type to filter ('agent', 'target', 'all')
         **kwargs
@@ -462,9 +478,15 @@ class QueryBackend:
             Available properties with columns: property_id, property_name,
             description, unit, data_type
         """
+        if episode_id is None and session_id is None:
+            raise ValueError("Either episode_id or session_id must be provided")
+        if episode_id is not None and session_id is not None:
+            raise ValueError("Cannot specify both episode_id and session_id")
+
         return self._execute_query(
             'get_available_properties',
             episode_id=episode_id,
+            session_id=session_id,
             agent_type=agent_type
         )
 

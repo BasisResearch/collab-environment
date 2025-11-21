@@ -17,6 +17,7 @@ import holoviews as hv
 from holoviews import opts
 
 from .base_analysis_widget import BaseAnalysisWidget
+from .query_scope import ScopeType
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +68,13 @@ class DistanceStatsWidget(BaseAnalysisWidget):
 
     def load_data(self) -> None:
         """Load and visualize relative location statistics."""
+        # Validate this is episode scope only
+        if self.context.scope.scope_type != ScopeType.EPISODE:
+            raise ValueError(
+                "Spatial Analysis widget only supports episode-level analysis. "
+                "Please select an episode scope instead of session scope."
+            )
+
         # Get raw episode tracks (positions for all agents at all times)
         df_tracks = self.query_with_context('get_episode_tracks')
 

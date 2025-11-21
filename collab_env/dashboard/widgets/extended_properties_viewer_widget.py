@@ -58,6 +58,11 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
     # Normalization option
     normalize = param.Boolean(default=False, doc="Z-score normalize all properties to display on same scale")
 
+    # Histogram/violin plot options
+    bin_count = param.Integer(default=30, bounds=(10, 100), doc="Number of bins for histograms")
+    plot_type = param.Selector(default="Histogram", objects=["Histogram", "Violin Plot"],
+                              doc="Distribution plot type")
+
     def __init__(self, **params):
         # Initialize data storage
         self.properties_ts_df = None
@@ -132,7 +137,20 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             name="Z-Score Normalize"
         )
 
-        # Four-row layout
+        # Distribution plot controls
+        bin_count_slider = pn.widgets.IntSlider.from_param(
+            self.param.bin_count,
+            name="Histogram Bins",
+            width=150
+        )
+
+        plot_type_selector = pn.widgets.Select.from_param(
+            self.param.plot_type,
+            name="Plot Type",
+            width=150
+        )
+
+        # Five-row layout
         return pn.Column(
             pn.Row(
                 property_selector,
@@ -151,6 +169,11 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
                 max_agents_slider,
                 sizing_mode="stretch_width"
             ),
+            pn.Row(
+                bin_count_slider,
+                plot_type_selector,
+                sizing_mode="stretch_width"
+            ),
             sizing_mode="stretch_width"
         )
 
@@ -167,15 +190,16 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
     def load_data(self) -> None:
         """Load extended properties data for time series and histograms."""
 
-        # Validate this is episode scope only
-        if self.context.scope.scope_type != ScopeType.EPISODE:
-            raise ValueError("Extended Properties Viewer only supports episode-level analysis")
+        # Validate scope type (support both episode and session)
+        if self.context.scope.scope_type not in [ScopeType.EPISODE, ScopeType.SESSION]:
+            raise ValueError("Extended Properties Viewer only supports episode and session scopes")
 
-        logger.info("Loading available properties...")
+        scope_label = "episode" if self.context.scope.scope_type == ScopeType.EPISODE else "session"
+        logger.info(f"Loading available properties for {scope_label}...")
         self.available_props_df = self.query_with_context('get_available_properties')
 
         if len(self.available_props_df) == 0:
-            raise ValueError("No extended properties found for this episode")
+            raise ValueError(f"No extended properties found for this {scope_label}")
 
         # Update property selector options
         prop_list = self.available_props_df['property_id'].tolist()
@@ -184,7 +208,7 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
         # Preserve previous selection if possible, otherwise default to all off
         previous_selection = list(self.selected_properties) if self.selected_properties else []
 
-        # Keep only properties that still exist in the new episode
+        # Keep only properties that still exist in the new scope
         preserved_selection = [prop for prop in previous_selection if prop in prop_list]
 
         # Update selection (will be empty list on first load or if no properties match)
@@ -196,53 +220,77 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
         else:
             logger.info("No properties selected (default: all off)")
 
-        # Load property time series with configurable quantiles
-        logger.info(f"Loading property time series (quantiles: {self.lower_quantile:.0%} - {self.upper_quantile:.0%})...")
-        self.properties_ts_df = self.query_with_context(
-            'get_extended_properties_timeseries',
-            property_ids=None,  # Get all, filter later
-            lower_quantile=self.lower_quantile,
-            upper_quantile=self.upper_quantile
-        )
+        # Conditional data loading based on scope
+        if self.context.scope.scope_type == ScopeType.EPISODE:
+            # Episode scope: Load time series, distributions, and optionally raw data
+            logger.info(f"Loading property time series (quantiles: {self.lower_quantile:.0%} - {self.upper_quantile:.0%})...")
+            self.properties_ts_df = self.query_with_context(
+                'get_extended_properties_timeseries',
+                property_ids=None,  # Get all, filter later
+                lower_quantile=self.lower_quantile,
+                upper_quantile=self.upper_quantile
+            )
 
-        # Load property distributions
-        logger.info("Loading property distributions...")
-        self.properties_dist_df = self.query_with_context(
-            'get_property_distributions',
-            property_ids=None  # Get all, filter later
-        )
-
-        # Load raw property data if show_raw_lines is enabled
-        if self.show_raw_lines:
-            logger.info("Loading raw property data for agent lines...")
-            self.properties_raw_df = self.query_with_context(
-                'get_extended_properties_raw',
+            logger.info("Loading property distributions...")
+            self.properties_dist_df = self.query_with_context(
+                'get_property_distributions',
                 property_ids=None  # Get all, filter later
             )
-            logger.info(f"Loaded {len(self.properties_raw_df)} raw observations")
-        else:
+
+            # Load raw property data if show_raw_lines is enabled
+            if self.show_raw_lines:
+                logger.info("Loading raw property data for agent lines...")
+                self.properties_raw_df = self.query_with_context(
+                    'get_extended_properties_raw',
+                    property_ids=None  # Get all, filter later
+                )
+                logger.info(f"Loaded {len(self.properties_raw_df)} raw observations")
+            else:
+                self.properties_raw_df = None
+
+            # Create both time series and distribution visualizations
+            timeseries_plot = self._create_timeseries_plot()
+            histogram_layout = self._create_histogram_layout()
+
+            # Update display pane with both panels
+            if isinstance(histogram_layout, pn.GridBox):
+                histogram_pane = histogram_layout
+            else:
+                histogram_pane = pn.pane.HoloViews(histogram_layout, sizing_mode="stretch_width", min_height=300)
+
+            self.display_pane.objects = [
+                pn.pane.Markdown("## Time Series Panel"),
+                pn.pane.HoloViews(timeseries_plot, sizing_mode="stretch_width", height=400),
+                pn.pane.Markdown("## Distribution Panel"),
+                histogram_pane
+            ]
+
+        else:  # SESSION scope
+            # Session scope: Load only distributions (aggregated across all episodes in session)
+            logger.info("Loading property distributions (session-level aggregation)...")
+            self.properties_ts_df = None
             self.properties_raw_df = None
+            self.properties_dist_df = self.query_with_context(
+                'get_property_distributions',
+                property_ids=None  # Get all, filter later
+            )
 
-        # Create the initial visualizations
-        timeseries_plot = self._create_timeseries_plot()
-        histogram_layout = self._create_histogram_layout()
+            # Create only distribution visualization
+            histogram_layout = self._create_histogram_layout()
 
-        # Update display pane with plots
-        # histogram_layout can be either a Panel GridBox or a HoloViews element (for empty states)
-        if isinstance(histogram_layout, pn.GridBox):
-            histogram_pane = histogram_layout
-        else:
-            # It's a HoloViews element (empty placeholder)
-            histogram_pane = pn.pane.HoloViews(histogram_layout, sizing_mode="stretch_width", min_height=300)
+            # Update display pane with single panel
+            if isinstance(histogram_layout, pn.GridBox):
+                histogram_pane = histogram_layout
+            else:
+                histogram_pane = pn.pane.HoloViews(histogram_layout, sizing_mode="stretch_width", min_height=300)
 
-        self.display_pane.objects = [
-            pn.pane.Markdown("## Time Series Panel"),
-            pn.pane.HoloViews(timeseries_plot, sizing_mode="stretch_width", height=400),
-            pn.pane.Markdown("## Histogram Panel"),
-            histogram_pane
-        ]
+            self.display_pane.objects = [
+                pn.pane.Markdown("## Distribution Panel (Session-Level Aggregation)"),
+                pn.pane.Markdown("_Time series plots are not available for session-level analysis_"),
+                histogram_pane
+            ]
 
-        logger.info("Extended Properties Viewer loaded successfully")
+        logger.info(f"Extended Properties Viewer loaded successfully ({scope_label} scope)")
 
     def _get_normalization_stats(self, prop_id: str):
         """
@@ -518,26 +566,45 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
                 mean, std = self._get_normalization_stats(prop_id)
                 values = self._normalize_values(values, mean, std)
 
-            # Create histogram using HoloViews
+            # Create histogram or violin plot based on plot_type
             # Use the same color as the time series for this property
             color = self.property_color_map.get(prop_id, 'navy')
 
             try:
-                frequencies, edges = np.histogram(values, bins=30)
-                hist = hv.Histogram((edges, frequencies)).opts(
-                    opts.Histogram(
+                if self.plot_type == "Histogram":
+                    # Create histogram with configurable bin count
+                    frequencies, edges = np.histogram(values, bins=self.bin_count)
+                    plot = hv.Histogram((edges, frequencies)).opts(
+                        opts.Histogram(
+                            color=color,
+                            width=400,
+                            height=300,
+                            xlabel='Value',
+                            ylabel='Count',
+                            title=prop_id
+                            # alpha not supported in plotly backend
+                        )
+                    )
+                else:  # Violin Plot
+                    # Create violin plot using HoloViews Violin element
+                    # Violin expects a DataFrame with proper structure (property column + value column)
+                    violin_df = pd.DataFrame({
+                        'Property': [prop_id] * len(values),
+                        'Value': values
+                    })
+                    # Use plotly-compatible options (color for plotly, no violin_width)
+                    plot = hv.Violin(violin_df, kdims=['Property'], vdims=['Value']).opts(
                         color=color,
                         width=400,
                         height=300,
-                        xlabel='Value',
-                        ylabel='Count',
-                        title=prop_id
-                        # alpha not supported in plotly backend
+                        xlabel='Property',
+                        ylabel='Value',
+                        title=prop_id,
+                        backend='plotly'
                     )
-                )
-                histogram_plots.append(hist)
+                histogram_plots.append(plot)
             except Exception as e:
-                logger.error(f"Failed to create histogram for {prop_id}: {e}")
+                logger.error(f"Failed to create {self.plot_type.lower()} for {prop_id}: {e}")
                 continue
 
         # Return layout
@@ -667,7 +734,8 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
     @param.depends('selected_properties', watch=True)
     def _on_properties_change(self):
         """Handle property selection changes."""
-        if self.properties_ts_df is not None and len(self.display_pane.objects) > 1:
+        # Update plots if any data is loaded (time series OR distributions)
+        if (self.properties_ts_df is not None or self.properties_dist_df is not None) and len(self.display_pane.objects) > 1:
             self._update_plots()
 
     @param.depends('show_raw_lines', watch=True)
@@ -718,7 +786,7 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
     @param.depends('normalize', watch=True)
     def _on_normalize_change(self):
         """Handle normalization toggle - update plots with z-scored values."""
-        if self.properties_ts_df is None:
+        if self.properties_ts_df is None and self.properties_dist_df is None:
             return  # No data loaded yet
 
         logger.info(f"Normalization {'enabled' if self.normalize else 'disabled'}")
@@ -727,22 +795,65 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
         if len(self.display_pane.objects) > 1:
             self._update_plots()
 
+    @param.depends('bin_count', watch=True)
+    def _on_bin_count_change(self):
+        """Handle bin count changes - update histogram plots."""
+        if self.properties_dist_df is None:
+            return  # No data loaded yet
+
+        logger.info(f"Histogram bin count changed to {self.bin_count}")
+
+        # Update plots (only affects histograms)
+        if len(self.display_pane.objects) > 1:
+            self._update_plots()
+
+    @param.depends('plot_type', watch=True)
+    def _on_plot_type_change(self):
+        """Handle plot type changes - switch between histogram and violin."""
+        if self.properties_dist_df is None:
+            return  # No data loaded yet
+
+        logger.info(f"Plot type changed to {self.plot_type}")
+
+        # Update plots (only affects distribution panel)
+        if len(self.display_pane.objects) > 1:
+            self._update_plots()
+
     def _update_plots(self):
-        """Helper to update both time series and histogram plots."""
-        # Recreate both plots
-        timeseries_plot = self._create_timeseries_plot()
-        histogram_layout = self._create_histogram_layout()
+        """Helper to update plots based on current scope."""
+        # Determine scope type
+        if self.context.scope.scope_type == ScopeType.EPISODE:
+            # Episode scope: Update both time series and distribution panels
+            timeseries_plot = self._create_timeseries_plot()
+            histogram_layout = self._create_histogram_layout()
 
-        # Prepare histogram pane
-        if isinstance(histogram_layout, pn.GridBox):
-            histogram_pane = histogram_layout
-        else:
-            histogram_pane = pn.pane.HoloViews(histogram_layout, sizing_mode="stretch_width", min_height=300)
+            # Prepare histogram pane
+            if isinstance(histogram_layout, pn.GridBox):
+                histogram_pane = histogram_layout
+            else:
+                histogram_pane = pn.pane.HoloViews(histogram_layout, sizing_mode="stretch_width", min_height=300)
 
-        # Rebuild the entire objects list to trigger Panel update
-        self.display_pane.objects = [
-            pn.pane.Markdown("## Time Series Panel"),
-            pn.pane.HoloViews(timeseries_plot, sizing_mode="stretch_width", height=400),
-            pn.pane.Markdown("## Histogram Panel"),
-            histogram_pane
-        ]
+            # Rebuild the entire objects list to trigger Panel update
+            self.display_pane.objects = [
+                pn.pane.Markdown("## Time Series Panel"),
+                pn.pane.HoloViews(timeseries_plot, sizing_mode="stretch_width", height=400),
+                pn.pane.Markdown("## Distribution Panel"),
+                histogram_pane
+            ]
+
+        else:  # SESSION scope
+            # Session scope: Update only distribution panel
+            histogram_layout = self._create_histogram_layout()
+
+            # Prepare histogram pane
+            if isinstance(histogram_layout, pn.GridBox):
+                histogram_pane = histogram_layout
+            else:
+                histogram_pane = pn.pane.HoloViews(histogram_layout, sizing_mode="stretch_width", min_height=300)
+
+            # Rebuild the objects list for session scope
+            self.display_pane.objects = [
+                pn.pane.Markdown("## Distribution Panel (Session-Level Aggregation)"),
+                pn.pane.Markdown("_Time series plots are not available for session-level analysis_"),
+                histogram_pane
+            ]

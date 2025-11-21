@@ -44,7 +44,7 @@ class SpatialAnalysisGUI(param.Parameterized):
     selected_episode = param.String(default="", doc="Selected episode ID")
     scope_type = param.Selector(
         default="Episode",
-        objects=["Episode"],  # Session scope disabled - widgets require episode-level data
+        objects=["Episode", "Session"],
         doc="Analysis scope type"
     )
 
@@ -86,13 +86,11 @@ class SpatialAnalysisGUI(param.Parameterized):
         """Create all UI widgets."""
 
         # === Data Scope Selection ===
-        # Session scope disabled - current widgets require episode-level data
         self.scope_type_select = pn.widgets.RadioButtonGroup(
             name="Analysis Scope",
-            options=["Episode"],
+            options=["Episode", "Session"],
             value="Episode",
-            button_type="success",
-            visible=False  # Hidden since only one option
+            button_type="success"
         )
 
         self.category_select = pn.widgets.Select(
@@ -459,33 +457,70 @@ class SpatialAnalysisGUI(param.Parameterized):
                 widget.context = context
             logger.debug(f"Updated widget contexts: {context.scope}")
 
+    @param.depends('scope_type_select.value')
+    def _get_data_selectors(self):
+        """Get data selection widgets based on current scope type."""
+        scope = self.scope_type_select.value
+
+        if scope == "Episode":
+            # Episode scope: show category, session, and episode selectors
+            return pn.Column(
+                self.category_select,
+                self.session_select,
+                self.episode_select
+            )
+        else:  # Session scope
+            # Session scope: show only category and session selectors (no episode)
+            return pn.Column(
+                self.category_select,
+                self.session_select,
+                pn.pane.Markdown("_Episode selection not required for session-level analysis_",
+                                styles={'font-size': '0.9em', 'color': '#666'})
+            )
+
+    @param.depends('scope_type_select.value')
+    def _get_time_range_controls(self):
+        """Get time range controls (only for Episode scope)."""
+        scope = self.scope_type_select.value
+
+        if scope == "Episode":
+            # Episode scope: show time range controls
+            return pn.Column(
+                "## Time Range",
+                self.start_time_slider,
+                self.end_time_slider,
+                pn.Row(
+                    self.btn_before_500,
+                    self.btn_after_500,
+                    self.btn_full_range
+                ),
+                pn.layout.Divider()
+            )
+        else:  # Session scope
+            # Session scope: time filtering not applicable
+            return pn.Column(
+                pn.pane.Markdown("_Time range filtering not available for session-level analysis_",
+                                styles={'font-size': '0.9em', 'color': '#666'}),
+                pn.layout.Divider()
+            )
+
     # ==================== Layout ====================
 
     def create_layout(self):
         """Create the dashboard layout with dynamic widget tabs."""
 
         # Sidebar with scope selection + shared parameters
-        # Note: scope_type_select is hidden (only Episode scope available)
         sidebar = pn.Column(
-            "## Episode Selection",
-            self.category_select,
-            self.session_select,
-            self.episode_select,
+            "## Data Selection",
+            self.scope_type_select,
+            self._get_data_selectors,
             pn.layout.Divider(),
 
             "## Agent Type",
             self.agent_type_select,
             pn.layout.Divider(),
 
-            "## Time Range",
-            self.start_time_slider,
-            self.end_time_slider,
-            pn.Row(
-                self.btn_before_500,
-                self.btn_after_500,
-                self.btn_full_range
-            ),
-            pn.layout.Divider(),
+            self._get_time_range_controls,
 
             "## Shared Parameters",
             self.spatial_bin_input,
