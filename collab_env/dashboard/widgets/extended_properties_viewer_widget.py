@@ -60,7 +60,7 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
 
     # Histogram/violin plot options
     bin_count = param.Integer(default=30, bounds=(10, 100), doc="Number of bins for histograms")
-    plot_type = param.Selector(default="Histogram", objects=["Histogram", "Violin Plot"],
+    plot_type = param.Selector(default="Histogram", objects=["Histogram", "Violin Plot (separate)", "Violin Plot (merged)"],
                               doc="Distribution plot type")
 
     def __init__(self, **params):
@@ -253,10 +253,7 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             histogram_layout = self._create_histogram_layout()
 
             # Update display pane with both panels
-            if isinstance(histogram_layout, pn.GridBox):
-                histogram_pane = histogram_layout
-            else:
-                histogram_pane = pn.pane.HoloViews(histogram_layout, sizing_mode="stretch_width", min_height=300)
+            histogram_pane = self._wrap_distribution_pane(histogram_layout)
 
             self.display_pane.objects = [
                 pn.pane.Markdown("## Time Series Panel"),
@@ -279,10 +276,7 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             histogram_layout = self._create_histogram_layout()
 
             # Update display pane with single panel
-            if isinstance(histogram_layout, pn.GridBox):
-                histogram_pane = histogram_layout
-            else:
-                histogram_pane = pn.pane.HoloViews(histogram_layout, sizing_mode="stretch_width", min_height=300)
+            histogram_pane = self._wrap_distribution_pane(histogram_layout)
 
             self.display_pane.objects = [
                 pn.pane.Markdown("## Distribution Panel (Session-Level Aggregation)"),
@@ -518,14 +512,14 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             return hv.Curve([]).opts(
                 width=800,
                 height=300,
-                title="Histograms (no properties available)"
+                title="Distribution plots (no properties available)"
             )
 
         if len(self.selected_properties) == 0:
             return hv.Curve([]).opts(
                 width=800,
                 height=300,
-                title="Histograms (select properties to display)"
+                title="Distribution plots (select properties to display)"
             )
 
         # Filter to selected properties
@@ -535,7 +529,7 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             return hv.Curve([]).opts(
                 width=800,
                 height=300,
-                title="Histograms (no data for selected properties)"
+                title="Distribution plots (no data for selected properties)"
             )
 
         # Ensure color map is built (same as in time series)
@@ -545,7 +539,16 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
                 for i, prop_id in enumerate(self.selected_properties)
             }
 
-        # Create histogram for each property using HoloViews
+        # Dispatch to appropriate helper method based on plot_type
+        if self.plot_type == "Histogram":
+            return self._create_histograms(df)
+        elif self.plot_type == "Violin Plot (separate)":
+            return self._create_separate_violins(df)
+        else:  # "Violin Plot (merged)"
+            return self._create_merged_violin(df)
+
+    def _create_histograms(self, df: pd.DataFrame):
+        """Create separate histogram for each property."""
         histogram_plots = []
         for prop_id in self.selected_properties:
             prop_df = df[df['property_id'] == prop_id]
@@ -566,58 +569,187 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
                 mean, std = self._get_normalization_stats(prop_id)
                 values = self._normalize_values(values, mean, std)
 
-            # Create histogram or violin plot based on plot_type
             # Use the same color as the time series for this property
             color = self.property_color_map.get(prop_id, 'navy')
 
             try:
-                if self.plot_type == "Histogram":
-                    # Create histogram with configurable bin count
-                    frequencies, edges = np.histogram(values, bins=self.bin_count)
-                    plot = hv.Histogram((edges, frequencies)).opts(
-                        opts.Histogram(
-                            color=color,
-                            width=400,
-                            height=300,
-                            xlabel='Value',
-                            ylabel='Count',
-                            title=prop_id
-                            # alpha not supported in plotly backend
-                        )
-                    )
-                else:  # Violin Plot
-                    # Create violin plot using HoloViews Violin element
-                    # Violin expects a DataFrame with proper structure (property column + value column)
-                    violin_df = pd.DataFrame({
-                        'Property': [prop_id] * len(values),
-                        'Value': values
-                    })
-                    # Use plotly-compatible options (color for plotly, no violin_width)
-                    plot = hv.Violin(violin_df, kdims=['Property'], vdims=['Value']).opts(
+                # Create histogram with configurable bin count
+                frequencies, edges = np.histogram(values, bins=self.bin_count)
+                plot = hv.Histogram((edges, frequencies)).opts(
+                    opts.Histogram(
                         color=color,
                         width=400,
                         height=300,
-                        xlabel='Property',
-                        ylabel='Value',
-                        title=prop_id,
-                        backend='plotly'
+                        xlabel='Value',
+                        ylabel='Count',
+                        title=prop_id
                     )
+                )
                 histogram_plots.append(plot)
             except Exception as e:
-                logger.error(f"Failed to create {self.plot_type.lower()} for {prop_id}: {e}")
+                logger.error(f"Failed to create histogram for {prop_id}: {e}")
                 continue
 
         # Return layout
         if histogram_plots:
-            # For plotly backend, use Panel GridBox instead of HoloViews Layout
-            # This ensures each histogram has independent axes
-            # Arrange in rows of 3 columns
+            # Use Panel GridBox for independent axes, arranged in rows of 3 columns
             return pn.GridBox(*[pn.pane.HoloViews(h) for h in histogram_plots], ncols=3)
         else:
             return hv.Curve([]).opts(
                 width=800,
                 height=300,
                 title="Histograms (no valid data)"
+            )
+
+    def _create_separate_violins(self, df: pd.DataFrame):
+        """Create separate violin plot for each property."""
+        violin_plots = []
+        for prop_id in self.selected_properties:
+            prop_df = df[df['property_id'] == prop_id]
+
+            if len(prop_df) == 0:
+                continue
+
+            # Get values and clean them (remove NaN/inf)
+            values = prop_df['value_float'].values
+            values = values[np.isfinite(values)]
+
+            if len(values) == 0:
+                logger.warning(f"No valid values for property {prop_id}")
+                continue
+
+            # Apply normalization if needed
+            if self.normalize:
+                mean, std = self._get_normalization_stats(prop_id)
+                values = self._normalize_values(values, mean, std)
+
+            # Use the same color as the time series for this property
+            color = self.property_color_map.get(prop_id, 'navy')
+
+            try:
+                # Create violin plot using HoloViews Violin element
+                violin_df = pd.DataFrame({
+                    'Property': [prop_id] * len(values),
+                    'Value': values
+                })
+                plot = hv.Violin(violin_df, kdims=['Property'], vdims=['Value']).opts(
+                    color=color,
+                    width=400,
+                    height=300,
+                    xlabel='Property',
+                    ylabel='Value',
+                    title=prop_id,
+                    backend='plotly'
+                )
+                violin_plots.append(plot)
+            except Exception as e:
+                logger.error(f"Failed to create violin plot for {prop_id}: {e}")
+                continue
+
+        # Return layout
+        if violin_plots:
+            # Use Panel GridBox for independent axes, arranged in rows of 3 columns
+            return pn.GridBox(*[pn.pane.HoloViews(h) for h in violin_plots], ncols=3)
+        else:
+            return hv.Curve([]).opts(
+                width=800,
+                height=300,
+                title="Violin plots (no valid data)"
+            )
+
+    def _create_merged_violin(self, df: pd.DataFrame):
+        """Create a single merged violin plot with all selected properties."""
+        # Collect all property values into a single DataFrame
+        all_values = []
+        for prop_id in self.selected_properties:
+            prop_df = df[df['property_id'] == prop_id]
+
+            if len(prop_df) == 0:
+                continue
+
+            # Get values and clean them (remove NaN/inf)
+            values = prop_df['value_float'].values
+            values = values[np.isfinite(values)]
+
+            if len(values) == 0:
+                logger.warning(f"No valid values for property {prop_id}")
+                continue
+
+            # Apply normalization if needed
+            if self.normalize:
+                mean, std = self._get_normalization_stats(prop_id)
+                values = self._normalize_values(values, mean, std)
+
+            # Add rows with property label
+            for val in values:
+                all_values.append({'Property': prop_id, 'Value': val})
+
+        if not all_values:
+            return hv.Curve([]).opts(
+                width=800,
+                height=300,
+                title="Merged violin plot (no valid data)"
+            )
+
+        # Create merged DataFrame
+        merged_df = pd.DataFrame(all_values)
+
+        # Create single violin plot with all properties
+        # Use matplotlib backend for simpler, less cluttered visualization
+        try:
+            plot = hv.Violin(merged_df, kdims=['Property'], vdims=['Value']).opts(
+                width=800,
+                height=400,
+                xlabel='Property',
+                ylabel='Value',
+                title='Property Distributions (Merged View)',
+                backend='matplotlib',
+                show_legend=False
+            )
+
+            # Apply color mapping via hooks
+            def color_hook(plot, element):
+                """Apply per-property colors to violin plot."""
+                try:
+                    # Try to get axis from handles (different keys may be used)
+                    ax = None
+                    if hasattr(plot, 'handles'):
+                        # Try common handle keys
+                        for key in ['axis', 'axes', 'ax']:
+                            if key in plot.handles:
+                                ax = plot.handles[key]
+                                break
+
+                    # Fallback: get current axis from plot state
+                    if ax is None and hasattr(plot, 'state'):
+                        # plot.state might be the figure, get current axes
+                        import matplotlib.pyplot as plt
+                        ax = plt.gca()
+
+                    if ax is None:
+                        logger.warning("Could not access matplotlib axis for color customization")
+                        return
+
+                    # Get violin parts (PolyCollection objects)
+                    if hasattr(ax, 'collections') and len(ax.collections) > 0:
+                        for i, (collection, prop_id) in enumerate(zip(ax.collections, self.selected_properties)):
+                            if prop_id in self.property_color_map:
+                                color = self.property_color_map[prop_id]
+                                collection.set_facecolor(color)
+                                collection.set_edgecolor(color)
+                                collection.set_alpha(0.6)
+                except Exception as e:
+                    logger.warning(f"Failed to apply colors to merged violin plot: {e}")
+
+            plot = plot.opts(hooks=[color_hook])
+
+            return plot
+        except Exception as e:
+            logger.error(f"Failed to create merged violin plot: {e}")
+            return hv.Curve([]).opts(
+                width=800,
+                height=300,
+                title="Merged violin plot (error during creation)"
             )
 
     def _hex_to_rgba(self, hex_color: str, opacity: float) -> str:
@@ -819,6 +951,19 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
         if len(self.display_pane.objects) > 1:
             self._update_plots()
 
+    def _wrap_distribution_pane(self, histogram_layout):
+        """Wrap distribution plot layout in appropriate Panel pane."""
+        if isinstance(histogram_layout, pn.GridBox):
+            # GridBox is already a Panel component
+            return histogram_layout
+        else:
+            # For merged violin (matplotlib) or empty plots, wrap in HoloViews pane
+            # Use fixed height for matplotlib backend to prevent rendering issues
+            if self.plot_type == "Violin Plot (merged)":
+                return pn.pane.HoloViews(histogram_layout, sizing_mode="stretch_width", height=500)
+            else:
+                return pn.pane.HoloViews(histogram_layout, sizing_mode="stretch_width", min_height=300)
+
     def _update_plots(self):
         """Helper to update plots based on current scope."""
         # Determine scope type
@@ -828,10 +973,7 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             histogram_layout = self._create_histogram_layout()
 
             # Prepare histogram pane
-            if isinstance(histogram_layout, pn.GridBox):
-                histogram_pane = histogram_layout
-            else:
-                histogram_pane = pn.pane.HoloViews(histogram_layout, sizing_mode="stretch_width", min_height=300)
+            histogram_pane = self._wrap_distribution_pane(histogram_layout)
 
             # Rebuild the entire objects list to trigger Panel update
             self.display_pane.objects = [
@@ -846,10 +988,7 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             histogram_layout = self._create_histogram_layout()
 
             # Prepare histogram pane
-            if isinstance(histogram_layout, pn.GridBox):
-                histogram_pane = histogram_layout
-            else:
-                histogram_pane = pn.pane.HoloViews(histogram_layout, sizing_mode="stretch_width", min_height=300)
+            histogram_pane = self._wrap_distribution_pane(histogram_layout)
 
             # Rebuild the objects list for session scope
             self.display_pane.objects = [
