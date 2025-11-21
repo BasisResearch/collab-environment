@@ -80,6 +80,33 @@ echo "✅ Cloud SQL instance created: ${INSTANCE_NAME}"
 echo "📝 Database password stored in Secret Manager: postgres-password"
 ```
 
+### Grant IAM Permissions
+
+Your account needs permission to connect to Cloud SQL via the proxy:
+
+```bash
+# Get your current account
+USER_EMAIL=$(gcloud config get-value account)
+
+# Grant Cloud SQL Client role
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+    --member="user:${USER_EMAIL}" \
+    --role="roles/cloudsql.client"
+
+# OR if using service account from GOOGLE_APPLICATION_CREDENTIALS
+SA_EMAIL=$(cat ${GOOGLE_APPLICATION_CREDENTIALS} | python3 -c "import sys, json; print(json.load(sys.stdin)['client_email'])")
+gcloud projects add-iam-policy-binding ${PROJECT_ID} \
+    --member="serviceAccount:${SA_EMAIL}" \
+    --role="roles/cloudsql.client"
+
+# Refresh credentials (important!)
+gcloud auth application-default login
+
+echo "✅ IAM permissions granted"
+```
+
+**Note:** IAM changes can take up to 60 seconds to propagate.
+
 ### Initialize Database Schema
 
 ```bash
@@ -87,8 +114,10 @@ echo "📝 Database password stored in Secret Manager: postgres-password"
 curl -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.13.0/cloud-sql-proxy.darwin.amd64
 chmod +x cloud-sql-proxy
 
-# Start proxy in background
-./cloud-sql-proxy ${PROJECT_ID}:${REGION}:${INSTANCE_NAME} &
+# Start proxy in background (use port 5433 if you have local postgres on 5432)
+./cloud-sql-proxy ${PROJECT_ID}:${REGION}:${INSTANCE_NAME} \
+    --credentials-file ${GOOGLE_APPLICATION_CREDENTIALS} \
+    --port 5433 &
 PROXY_PID=$!
 
 # Wait for connection
@@ -97,7 +126,7 @@ sleep 3
 # Initialize database
 export DB_BACKEND=postgres
 export POSTGRES_HOST=localhost
-export POSTGRES_PORT=5432
+export POSTGRES_PORT=5433
 export POSTGRES_DB=${DB_NAME}
 export POSTGRES_USER=${DB_USER}
 export POSTGRES_PASSWORD=$(gcloud secrets versions access latest --secret=postgres-password)
@@ -147,7 +176,7 @@ export INSTANCE_NAME="spatial-analysis-db"
 # Database connection (via Cloud SQL Auth Proxy)
 export DB_BACKEND=postgres
 export POSTGRES_HOST=localhost
-export POSTGRES_PORT=5432
+export POSTGRES_PORT=5433  # Use 5433 if local postgres is on 5432
 export POSTGRES_DB=tracking_analytics
 export POSTGRES_USER=postgres
 export POSTGRES_PASSWORD=$(gcloud secrets versions access latest --secret=postgres-password 2>/dev/null || echo "password")
@@ -168,7 +197,11 @@ source .envrc
 **Terminal 1: Start Cloud SQL Proxy**
 ```bash
 source .envrc
-./cloud-sql-proxy ${CLOUD_SQL_INSTANCE}
+
+# Use port 5433 to avoid conflict with local postgres
+./cloud-sql-proxy ${CLOUD_SQL_INSTANCE} \
+    --credentials-file ${GOOGLE_APPLICATION_CREDENTIALS} \
+    --port 5433
 
 # Leave running...
 ```
@@ -331,11 +364,13 @@ gcloud sql backups restore BACKUP_ID --backup-instance ${INSTANCE_NAME}
 ### Connect to Database Directly
 
 ```bash
-# Via Cloud SQL Proxy
-./cloud-sql-proxy ${PROJECT_ID}:${REGION}:${INSTANCE_NAME}
+# Via Cloud SQL Proxy (use port 5433 to avoid conflict with local postgres)
+./cloud-sql-proxy ${PROJECT_ID}:${REGION}:${INSTANCE_NAME} \
+    --credentials-file ${GOOGLE_APPLICATION_CREDENTIALS} \
+    --port 5433
 
 # In another terminal
-psql "host=localhost port=5432 dbname=tracking_analytics user=postgres"
+psql "host=localhost port=5433 dbname=tracking_analytics user=postgres"
 ```
 
 ### Delete Session Data

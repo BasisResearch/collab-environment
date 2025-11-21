@@ -1,0 +1,87 @@
+# .gcloudignore - Exclude files from Cloud Build uploads
+# This works like .dockerignore but for gcloud builds submit
+
+# Data directories (IMPORTANT - exclude large data files)
+# Use / prefix to match only at root level
+/data/
+/simulated_data/
+/trained_models/
+/meshes/
+*.duckdb
+*.duckdb.wal
+
+# Git
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+.venv-*/
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Documentation
+docs/
+*.md
+*.rst
+
+# Tests
+tests/
+.pytest_cache/
+
+# Notebooks
+*.ipynb
+.ipynb_checkpoints/
+
+# Cache
+.cache/
+*.cache
+
+# Models and weights (if you have any)
+*.pth
+*.pt
+*.pkl
+*.h5
+*.onnx
+
+# Docker (keep only what we need)
+Dockerfile
+.dockerignore
+
+# Misc
+.DS_Store
+*.log
+*.tmp
+
+# Keep only essential files for dashboard deployment
+!requirements-db.txt
+!pyproject.toml
+!README.rst
+!collab_env/
+!schema/
+!scripts/deploy/
+
+.mypy_cache/
+submodules/
+sim-output/
+config-local/
+results/
+analysis/
+.ruff_cache/

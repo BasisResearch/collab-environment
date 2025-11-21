@@ -33,10 +33,21 @@ class PostgresConfig:
 
     def connection_string(self, include_password: bool = True) -> str:
         """Generate PostgreSQL connection string for SQLAlchemy"""
-        if self.password and include_password:
-            return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.dbname}"
+        # Check if host is a Unix socket path (starts with '/')
+        # For Cloud Run, POSTGRES_HOST=/cloudsql/PROJECT:REGION:INSTANCE
+        if self.host.startswith('/'):
+            # Unix socket connection - pass directory path, driver adds .s.PGSQL.5432
+            # See: https://cloud.google.com/sql/docs/postgres/samples/cloud-sql-postgres-sqlalchemy-connect-unix
+            if self.password and include_password:
+                return f"postgresql://{self.user}:{self.password}@/{self.dbname}?host={self.host}"
+            else:
+                return f"postgresql://{self.user}@/{self.dbname}?host={self.host}"
         else:
-            return f"postgresql://{self.user}@{self.host}:{self.port}/{self.dbname}"
+            # Standard TCP connection
+            if self.password and include_password:
+                return f"postgresql://{self.user}:{self.password}@{self.host}:{self.port}/{self.dbname}"
+            else:
+                return f"postgresql://{self.user}@{self.host}:{self.port}/{self.dbname}"
 
     def psycopg2_params(self) -> dict:
         """Get parameters for psycopg2.connect() (for direct connections)"""

@@ -1,0 +1,43 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    libpq-dev \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv
+RUN pip install uv
+
+# Copy application code first (needed for pyproject.toml)
+COPY collab_env/ /app/collab_env/
+COPY schema/ /app/schema/
+COPY pyproject.toml .
+COPY README.rst .
+
+# Install dependencies with uv
+COPY requirements-db.txt .
+RUN uv pip install --system --no-cache -r requirements-db.txt
+
+# Install package in editable mode with uv
+RUN uv pip install --system --no-cache -e .
+
+# Environment
+ENV PORT=8080
+ENV PYTHONUNBUFFERED=1
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD python -c "import requests; requests.get('http://localhost:8080/', timeout=5)" || exit 1
+
+# Run dashboard
+# Use wildcard for Cloud Run deployment (per Panel docs)
+CMD panel serve collab_env/dashboard/spatial_analysis_app.py \
+    --address 0.0.0.0 \
+    --port ${PORT} \
+    --allow-websocket-origin="*" \
+    --num-threads 4 \
+    --static-dirs dashboard-static=collab_env/dashboard/static
