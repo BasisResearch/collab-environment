@@ -1,3 +1,12 @@
+<script type="importmap">
+{{
+    "imports": {{
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }}
+}}
+</script>
+
 <script>
     (function() {{
         // Data embedded directly - no HTTP request needed!
@@ -75,10 +84,14 @@
 
         console.log('Modal elements found, loading viewer module...');
 
-        // Load and initialize viewer
-        import('/dashboard-static/js/viewers/episode_animation_viewer.js')
+        // Load and initialize viewer (2D or 3D based on data)
+        const viewerModule = animationData.is_3d
+            ? '/dashboard-static/js/viewers/episode_animation_viewer_3d.js'
+            : '/dashboard-static/js/viewers/episode_animation_viewer.js';
+
+        import(viewerModule)
             .then(({{ EpisodeAnimationViewer }}) => {{
-                console.log('EpisodeAnimationViewer module loaded');
+                console.log(`${{animationData.is_3d ? '3D' : '2D'}} EpisodeAnimationViewer module loaded`);
 
                 // Initialize viewer
                 const viewer = new EpisodeAnimationViewer(animationData, 'animation-canvas');
