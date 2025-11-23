@@ -86,6 +86,10 @@ def finite_diff_data(position):
 
     v[:, 1:, :, :] = torch.diff(position, axis=1)
     a[:, :-1, :, :] = torch.diff(v, axis=1)
+    
+    # TODO: Check if this is correct. Alternative:
+    # v[:, :-1, :, :] = torch.diff(position, axis=1)
+    # a[:, :-2, :, :] = torch.diff(v[:,:-1, :, :], axis=1)
 
     return position, v, a, None
 
