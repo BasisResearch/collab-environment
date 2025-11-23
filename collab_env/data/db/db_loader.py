@@ -1343,12 +1343,12 @@ class GNNRolloutLoader(BaseDataLoader):
                     # Sum attention to all boids (excluding self and food)
                     boid_mask[food_agent_idx] = False  # Exclude food
                     # Attention to food
-                    attn_food_frame[agent_id] = A[agent_id, food_agent_idx]
+                    attn_food_frame[agent_id] = A[food_agent_idx, agent_id]
                 else:
                     # No food, all non-self are boids
                     attn_food_frame[agent_id] = 0.0
 
-                attn_boid_frame[agent_id] = np.sum(A[agent_id, boid_mask])
+                attn_boid_frame[agent_id] = np.sum(A[boid_mask, agent_id])
 
             attn_self_all.append(attn_self_frame)
             attn_boid_all.append(attn_boid_frame)
