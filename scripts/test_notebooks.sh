@@ -10,6 +10,7 @@ EXCLUDED_NOTEBOOKS=(
     "docs/gnn/ModelSelection-food.ipynb"
     "docs/alignment/align.ipynb"
     "docs/alignment/reprojection.ipynb"
+    "docs/tracking/full_pipeline.ipynb"
 )
 
 # Build the ignore flags
