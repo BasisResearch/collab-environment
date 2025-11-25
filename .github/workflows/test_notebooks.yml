@@ -18,13 +18,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
-      - name: pip cache
+      - name: UV cache
         uses: actions/cache@v4
         with:
-          path: ~/.cache/pip
-          key: pip-${{ hashFiles('**/pyproject.toml') }}
+          path: ~/.cache/uv
+          key: uv-${{ hashFiles('**/pyproject.toml') }}
           restore-keys: |
-            pip-
+            uv-
 
       - name: Install ExifTool
         run: sudo apt-get update && sudo apt-get install -y exiftool
