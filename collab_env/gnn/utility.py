@@ -118,7 +118,7 @@ def fit_spline_to_data(time, position, query=None):
 
 
 def dataset2testloader(
-    dataset, train_size=0.7, batch_size=1, return_train=0, device=None
+    dataset, generator=None, train_size=0.7, batch_size=1, return_train=0, device=None
 ):
     # have to use seed = 2025
     # split data into training set and test set
@@ -128,7 +128,8 @@ def dataset2testloader(
     # Create generator on the appropriate device
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
-    generator = torch.Generator(device=device).manual_seed(2025)
+    if generator is None:
+        generator = torch.Generator(device=device).manual_seed(2025)
 
     train_dataset, test_dataset = random_split(
         dataset, [train_size, test_size], generator=generator
