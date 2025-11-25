@@ -62,15 +62,18 @@ jobs:
                 export GOOGLE_APPLICATION_CREDENTIALS="$(pwd)/config-local/collab-data-463313-c340ad86b28e.json"
                 export GITHUB_ACTION=true
       
-      - name: Main Environment Setup 
+      - name: Install UV (faster package installer)
         run: |
-          chmod +x ./setup.sh
-          ./setup.sh
-        
-      - name: Install Python dependencies
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install CPU-only PyTorch (save disk space in CI)
         run: |
-            pip install --upgrade pip
-            pip install -e .[dev]
+          uv pip install --system torch==2.3.1 torchvision --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install dependencies
+        run: |
+          uv pip install --system -e .[dev]
     
       - name: Run Notebook Test
         run: | 
