@@ -48,20 +48,17 @@ GROUP BY time_window, ep.property_id
 ORDER BY time_window, ep.property_id;
 
 
--- name: get_property_distributions
--- Get raw property values for histogram generation
+-- name: get_property_distributions_episode
+-- Get raw property values for histogram generation (episode scope)
 -- Property-agnostic query - gets all properties, filter in Python if needed
 -- Returns individual property values for distribution analysis
--- Supports both episode_id (single episode) and session_id (all episodes in session)
+-- Optimized version without NULL checks (episode scope only)
 SELECT
     ep.property_id,
     ep.value_float
 FROM observations o
 JOIN extended_properties ep ON o.observation_id = ep.observation_id
-WHERE ((:episode_id IS NOT NULL AND o.episode_id = :episode_id)
-    OR (:session_id IS NOT NULL AND o.episode_id IN (
-        SELECT episode_id FROM episodes WHERE session_id = :session_id
-    )))
+WHERE o.episode_id = :episode_id
   AND (:start_time IS NULL OR o.time_index >= :start_time)
   AND (:end_time IS NULL OR o.time_index <= :end_time)
   AND (:agent_type = 'all' OR o.agent_type_id = :agent_type)
@@ -69,24 +66,67 @@ WHERE ((:episode_id IS NOT NULL AND o.episode_id = :episode_id)
 ORDER BY ep.property_id, ep.value_float;
 
 
--- name: get_available_properties
--- Get list of available extended properties for an episode or session
+-- name: get_property_distributions_session
+-- Get raw property values for histogram generation (session scope)
+-- Property-agnostic query - gets all properties, filter in Python if needed
+-- Returns individual property values for distribution analysis
+-- Optimized version without NULL checks (session scope only)
+SELECT
+    ep.property_id,
+    ep.value_float
+FROM observations o
+JOIN extended_properties ep ON o.observation_id = ep.observation_id
+WHERE o.episode_id IN (
+        SELECT episode_id FROM episodes WHERE session_id = :session_id
+    )
+  AND (:start_time IS NULL OR o.time_index >= :start_time)
+  AND (:end_time IS NULL OR o.time_index <= :end_time)
+  AND (:agent_type = 'all' OR o.agent_type_id = :agent_type)
+  AND ep.value_float IS NOT NULL
+ORDER BY ep.property_id, ep.value_float;
+
+
+-- name: get_available_properties_episode
+-- Get list of available extended properties for a single episode
 -- Returns property metadata for UI selection
--- Supports both episode_id (single episode) and session_id (all episodes in session)
-SELECT DISTINCT
+-- Optimized version without NULL checks (episode scope only)
+SELECT
     pd.property_id,
     pd.property_name,
     pd.description,
     pd.unit,
     pd.data_type
 FROM property_definitions pd
-JOIN extended_properties ep ON pd.property_id = ep.property_id
-JOIN observations o ON ep.observation_id = o.observation_id
-WHERE ((:episode_id IS NOT NULL AND o.episode_id = :episode_id)
-    OR (:session_id IS NOT NULL AND o.episode_id IN (
+WHERE pd.property_id IN (
+    SELECT DISTINCT ep.property_id
+    FROM extended_properties ep
+    JOIN observations o ON ep.observation_id = o.observation_id
+    WHERE o.episode_id = :episode_id
+      AND (:agent_type = 'all' OR o.agent_type_id = :agent_type)
+)
+ORDER BY pd.property_name;
+
+
+-- name: get_available_properties_session
+-- Get list of available extended properties for all episodes in a session
+-- Returns property metadata for UI selection
+-- Optimized version without NULL checks (session scope only)
+SELECT
+    pd.property_id,
+    pd.property_name,
+    pd.description,
+    pd.unit,
+    pd.data_type
+FROM property_definitions pd
+WHERE pd.property_id IN (
+    SELECT DISTINCT ep.property_id
+    FROM extended_properties ep
+    JOIN observations o ON ep.observation_id = o.observation_id
+    WHERE o.episode_id IN (
         SELECT episode_id FROM episodes WHERE session_id = :session_id
-    )))
-  AND (:agent_type = 'all' OR o.agent_type_id = :agent_type)
+    )
+    AND (:agent_type = 'all' OR o.agent_type_id = :agent_type)
+)
 ORDER BY pd.property_name;
 
 

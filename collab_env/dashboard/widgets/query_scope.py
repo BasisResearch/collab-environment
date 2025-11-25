@@ -98,6 +98,8 @@ class QueryScope:
     def from_session(
         cls,
         session_id: str,
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
         agent_type: str = "agent"
     ) -> "QueryScope":
         """
@@ -107,6 +109,10 @@ class QueryScope:
         ----------
         session_id : str
             Session identifier
+        start_time : int, optional
+            Start time (frame number)
+        end_time : int, optional
+            End time (frame number)
         agent_type : str, default="agent"
             Agent type filter
 
@@ -118,6 +124,8 @@ class QueryScope:
         return cls(
             scope_type=ScopeType.SESSION,
             session_id=session_id,
+            start_time=start_time,
+            end_time=end_time,
             agent_type=agent_type
         )
 
@@ -185,7 +193,10 @@ class QueryScope:
                 time_range = f" [{self.start_time or 0}:{self.end_time or '∞'}]"
             return f"Episode({self.episode_id}{time_range}, {self.agent_type})"
         elif self.scope_type == ScopeType.SESSION:
-            return f"Session({self.session_id}, {self.agent_type})"
+            time_range = ""
+            if self.start_time is not None or self.end_time is not None:
+                time_range = f" [{self.start_time or 0}:{self.end_time or '∞'}]"
+            return f"Session({self.session_id}{time_range}, {self.agent_type})"
         else:
             filters = ", ".join(f"{k}={v}" for k, v in self.custom_filters.items())
             return f"Custom({filters})"

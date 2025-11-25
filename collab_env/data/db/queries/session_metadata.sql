@@ -61,3 +61,13 @@ SELECT DISTINCT agent_type_id
 FROM observations
 WHERE episode_id = :episode_id
 ORDER BY agent_type_id;
+
+
+-- name: get_agent_types_for_session
+-- Get distinct agent types across all episodes in a session
+SELECT DISTINCT agent_type_id
+FROM observations
+WHERE episode_id IN (
+    SELECT episode_id FROM episodes WHERE session_id = :session_id
+)
+ORDER BY agent_type_id;

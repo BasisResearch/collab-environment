@@ -228,6 +228,22 @@ class QueryBackend:
         """
         return self._execute_query('get_agent_types', episode_id=episode_id)
 
+    def get_agent_types_for_session(self, session_id: str) -> pd.DataFrame:
+        """
+        Get distinct agent types across all episodes in a session.
+
+        Parameters
+        ----------
+        session_id : str
+            Session identifier
+
+        Returns
+        -------
+        pd.DataFrame
+            Agent types with column: agent_type_id
+        """
+        return self._execute_query('get_agent_types_for_session', session_id=session_id)
+
     # ==================== Spatial Analysis ====================
 
     def get_spatial_heatmap(
@@ -243,6 +259,9 @@ class QueryBackend:
     ) -> pd.DataFrame:
         """
         Compute spatial density heatmap with binned positions.
+
+        PERFORMANCE NOTE: This method uses separate optimized queries for episode
+        and session scopes to avoid query planner issues with NULL checks.
 
         Parameters
         ----------
@@ -273,16 +292,27 @@ class QueryBackend:
         if episode_id is not None and session_id is not None:
             raise ValueError("Cannot specify both episode_id and session_id")
 
-        return self._execute_query(
-            'get_spatial_heatmap',
-            episode_id=episode_id,
-            session_id=session_id,
-            bin_size=bin_size,
-            start_time=start_time,
-            end_time=end_time,
-            agent_type=agent_type,
-            min_count=min_count
-        )
+        # Use scope-specific query for optimal performance
+        if episode_id is not None:
+            return self._execute_query(
+                'get_spatial_heatmap_episode',
+                episode_id=episode_id,
+                bin_size=bin_size,
+                start_time=start_time,
+                end_time=end_time,
+                agent_type=agent_type,
+                min_count=min_count
+            )
+        else:
+            return self._execute_query(
+                'get_spatial_heatmap_session',
+                session_id=session_id,
+                bin_size=bin_size,
+                start_time=start_time,
+                end_time=end_time,
+                agent_type=agent_type,
+                min_count=min_count
+            )
 
     # ==================== Basic Data Viewer ====================
 
@@ -406,6 +436,10 @@ class QueryBackend:
 
         Supports both episode-level and session-level analysis.
 
+        PERFORMANCE NOTE: This method uses separate optimized queries for episode
+        and session scopes to avoid query planner issues with NULL checks that
+        caused 2x performance degradation.
+
         Parameters
         ----------
         episode_id : str, optional
@@ -434,14 +468,23 @@ class QueryBackend:
         if episode_id is not None and session_id is not None:
             raise ValueError("Cannot specify both episode_id and session_id")
 
-        df = self._execute_query(
-            'get_property_distributions',
-            episode_id=episode_id,
-            session_id=session_id,
-            start_time=start_time,
-            end_time=end_time,
-            agent_type=agent_type
-        )
+        # Use scope-specific query for optimal performance
+        if episode_id is not None:
+            df = self._execute_query(
+                'get_property_distributions_episode',
+                episode_id=episode_id,
+                start_time=start_time,
+                end_time=end_time,
+                agent_type=agent_type
+            )
+        else:
+            df = self._execute_query(
+                'get_property_distributions_session',
+                session_id=session_id,
+                start_time=start_time,
+                end_time=end_time,
+                agent_type=agent_type
+            )
 
         # Filter by property_ids if provided
         if property_ids is not None and len(df) > 0:
@@ -460,6 +503,10 @@ class QueryBackend:
         Get list of available extended properties for an episode or session.
 
         Supports both episode-level and session-level analysis.
+
+        PERFORMANCE NOTE: This method uses separate optimized queries for episode
+        and session scopes to avoid query planner issues with NULL checks and OR
+        conditions that caused 3x performance degradation.
 
         Parameters
         ----------
@@ -483,12 +530,19 @@ class QueryBackend:
         if episode_id is not None and session_id is not None:
             raise ValueError("Cannot specify both episode_id and session_id")
 
-        return self._execute_query(
-            'get_available_properties',
-            episode_id=episode_id,
-            session_id=session_id,
-            agent_type=agent_type
-        )
+        # Use scope-specific query for optimal performance
+        if episode_id is not None:
+            return self._execute_query(
+                'get_available_properties_episode',
+                episode_id=episode_id,
+                agent_type=agent_type
+            )
+        else:
+            return self._execute_query(
+                'get_available_properties_session',
+                session_id=session_id,
+                agent_type=agent_type
+            )
 
     def get_extended_properties_raw(
         self,

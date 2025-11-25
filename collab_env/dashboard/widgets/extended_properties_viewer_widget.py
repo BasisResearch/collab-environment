@@ -79,19 +79,74 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
         self.timeseries_pane = None
         self.histogram_pane = None
 
+        # Two-stage loading UI components
+        self.load_names_btn = None
+        self.load_data_btn = None
+        self.property_selector = None
+        self.property_status = None
+
         super().__init__(**params)
 
-    def create_custom_controls(self) -> Optional[pn.Column]:
-        """Create property selection controls."""
+    def _create_ui(self):
+        """Override to hide the base class load button."""
+        super()._create_ui()
+        # Hide the base load button to avoid confusion (we have our own 2-button workflow)
+        self.load_btn.visible = False
 
-        # Property selection (will be populated after data load)
-        property_selector = pn.widgets.CheckBoxGroup.from_param(
-            self.param.selected_properties,
-            name="Select Properties",
-            inline=True,
-            width=800
+    def create_custom_controls(self) -> Optional[pn.Column]:
+        """Create property selection controls with two-stage loading."""
+
+        # === Stage 1: Load Property Names ===
+        self.load_names_btn = pn.widgets.Button(
+            name="1. Load Property Names",
+            button_type="primary",
+            width=200
+        )
+        self.load_names_btn.on_click(self._on_load_names_click)
+
+        self.property_status = pn.pane.Markdown(
+            "_Click 'Load Property Names' to see available properties_",
+            styles={'color': '#666', 'font-style': 'italic'}
         )
 
+        load_names_section = pn.Column(
+            "### Step 1: Load Property Names",
+            pn.Row(self.load_names_btn),
+            self.property_status
+        )
+
+        # === Stage 2: Select and Load Properties ===
+        # Property selection (disabled until names are loaded)
+        self.property_selector = pn.widgets.CheckBoxGroup.from_param(
+            self.param.selected_properties,
+            name="Select Properties to Load",
+            inline=True,
+            width=800,
+            disabled=True
+        )
+
+        self.load_data_btn = pn.widgets.Button(
+            name="2. Load Selected Properties",
+            button_type="success",
+            width=200,
+            disabled=True
+        )
+        self.load_data_btn.on_click(self._on_load_data_click)
+
+        property_selection_section = pn.Column(
+            "### Step 2: Select Properties",
+            self.property_selector,
+            pn.Row(
+                self.load_data_btn,
+                pn.pane.Markdown("_Load only selected properties_", styles={'color': '#666', 'font-style': 'italic'})
+            ),
+            pn.pane.Markdown(
+                "**Note:** Time range filtering is controlled by the Start/End Time fields in the main panel (not widget-specific).",
+                styles={'color': '#666', 'font-size': '0.85em', 'font-style': 'italic', 'margin-top': '10px'}
+            )
+        )
+
+        # === Visualization Options ===
         # Quantile controls
         lower_quantile_slider = pn.widgets.FloatSlider.from_param(
             self.param.lower_quantile,
@@ -105,6 +160,12 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             name="Upper Quantile",
             width=150,
             step=0.05
+        )
+
+        # Normalize checkbox
+        normalize_checkbox = pn.widgets.Checkbox.from_param(
+            self.param.normalize,
+            name="Z-Score Normalize"
         )
 
         # Raw datapoints controls
@@ -131,12 +192,6 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             width=120
         )
 
-        # Normalize checkbox
-        normalize_checkbox = pn.widgets.Checkbox.from_param(
-            self.param.normalize,
-            name="Z-Score Normalize"
-        )
-
         # Distribution plot controls
         bin_count_slider = pn.widgets.IntSlider.from_param(
             self.param.bin_count,
@@ -150,12 +205,8 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             width=150
         )
 
-        # Five-row layout
-        return pn.Column(
-            pn.Row(
-                property_selector,
-                sizing_mode="stretch_width"
-            ),
+        viz_options = pn.Column(
+            "### Visualization Options",
             pn.Row(
                 lower_quantile_slider,
                 upper_quantile_slider,
@@ -173,7 +224,16 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
                 bin_count_slider,
                 plot_type_selector,
                 sizing_mode="stretch_width"
-            ),
+            )
+        )
+
+        # === Complete Layout ===
+        return pn.Column(
+            load_names_section,
+            pn.layout.Divider(),
+            property_selection_section,
+            pn.layout.Divider(),
+            viz_options,
             sizing_mode="stretch_width"
         )
 
@@ -183,42 +243,156 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
         # Return a Column that we'll update with content after data loads
         # This matches the pattern used by velocity_widget
         return pn.Column(
-            pn.pane.Markdown('**Extended Properties Viewer**\n\nClick "Load Extended Properties Viewer" to load data.'),
+            pn.pane.Markdown('**Extended Properties Viewer**\n\nClick "1. Load Property Names" to begin.'),
             sizing_mode="stretch_both"
         )
 
-    def load_data(self) -> None:
-        """Load extended properties data for time series and histograms."""
+    def _on_load_names_click(self, event):
+        """Handle Stage 1: Load property names only (no data)."""
+        if not self._validate_context():
+            return
 
+        try:
+            self.context.report_loading("Loading property names...")
+
+            # Determine scope label
+            scope_label = "episode" if self.context.scope.scope_type == ScopeType.EPISODE else "session"
+            logger.info(f"Loading available properties for {scope_label}...")
+
+            # Query for available property names
+            self.available_props_df = self.query_with_context('get_available_properties')
+
+            if len(self.available_props_df) == 0:
+                raise ValueError(f"No extended properties found for this {scope_label}")
+
+            # Update property selector options
+            prop_list = self.available_props_df['property_id'].tolist()
+            self.param.selected_properties.objects = prop_list
+
+            # Preserve previous selection if possible
+            previous_selection = list(self.selected_properties) if self.selected_properties else []
+            preserved_selection = [prop for prop in previous_selection if prop in prop_list]
+            self.selected_properties = preserved_selection
+
+            # Enable UI controls
+            self.property_selector.disabled = False
+            self.load_data_btn.disabled = False
+
+            # Update status
+            status_msg = f"✓ Found **{len(prop_list)}** properties"
+            if preserved_selection:
+                status_msg += f" ({len(preserved_selection)} previously selected)"
+            status_msg += ". Select properties and click 'Load Selected Properties'."
+            self.property_status.object = status_msg
+
+            self.context.report_success(f"Loaded {len(prop_list)} property names")
+            logger.info(f"Property names loaded: {prop_list}")
+
+        except Exception as e:
+            logger.error(f"Failed to load property names: {e}", exc_info=True)
+            self.context.report_error(f"Failed to load property names: {e}")
+
+    def _on_load_data_click(self, event):
+        """Handle Stage 2: Load selected property data."""
+        if not self._validate_context():
+            return
+
+        # Validate that property names are loaded
+        if self.available_props_df is None or len(self.available_props_df) == 0:
+            self.context.report_error("Please load property names first (Step 1)")
+            return
+
+        # Validate that at least one property is selected
+        if not self.selected_properties or len(self.selected_properties) == 0:
+            self.context.report_error("Please select at least one property to load")
+            return
+
+        try:
+            self.context.report_loading(f"Loading {len(self.selected_properties)} selected properties...")
+
+            # Call load_data with selected properties
+            self.load_data(property_ids=list(self.selected_properties))
+
+            # Update scope display after successful load
+            self._update_scope_display()
+
+            self.context.report_success(f"Loaded {len(self.selected_properties)} properties successfully")
+
+        except Exception as e:
+            logger.error(f"Failed to load properties: {e}", exc_info=True)
+            self.context.report_error(f"Failed to load properties: {e}")
+
+    def _reset_loading_state(self):
+        """Reset UI to initial state (used when scope changes)."""
+        self.available_props_df = None
+        self.properties_ts_df = None
+        self.properties_dist_df = None
+        self.properties_raw_df = None
+        self.param.selected_properties.objects = []
+        self.selected_properties = []
+
+        if self.property_selector:
+            self.property_selector.disabled = True
+        if self.load_data_btn:
+            self.load_data_btn.disabled = True
+        if self.property_status:
+            self.property_status.object = "_Click 'Load Property Names' to see available properties_"
+
+        # Reset display pane
+        self.display_pane.objects = [
+            pn.pane.Markdown('**Extended Properties Viewer**\n\nClick "1. Load Property Names" to begin.')
+        ]
+
+    def _validate_context(self) -> bool:
+        """
+        Validate that context has required data scope.
+
+        Returns
+        -------
+        bool
+            True if context is valid, False otherwise
+        """
+        if not self.context:
+            logger.error("No context set")
+            return False
+
+        scope = self.context.scope
+
+        if scope.scope_type == ScopeType.EPISODE and not scope.episode_id:
+            self.context.report_error("Please select an episode first")
+            return False
+
+        if scope.scope_type == ScopeType.SESSION and not scope.session_id:
+            self.context.report_error("Please select a session first")
+            return False
+
+        return True
+
+    def load_data(self, property_ids: Optional[List[str]] = None) -> None:
+        """
+        Load extended properties data for time series and histograms.
+
+        Parameters
+        ----------
+        property_ids : list of str, optional
+            Specific properties to load. If None, uses selected_properties.
+            If no properties selected and None, raises error.
+        """
         # Validate scope type (support both episode and session)
         if self.context.scope.scope_type not in [ScopeType.EPISODE, ScopeType.SESSION]:
             raise ValueError("Extended Properties Viewer only supports episode and session scopes")
 
+        # Use selected properties if not specified
+        if property_ids is None:
+            if not self.selected_properties:
+                raise ValueError(
+                    "No properties selected. Please select properties first, "
+                    "or use 'Load Property Names' to see available options."
+                )
+            property_ids = list(self.selected_properties)
+
         scope_label = "episode" if self.context.scope.scope_type == ScopeType.EPISODE else "session"
-        logger.info(f"Loading available properties for {scope_label}...")
-        self.available_props_df = self.query_with_context('get_available_properties')
-
-        if len(self.available_props_df) == 0:
-            raise ValueError(f"No extended properties found for this {scope_label}")
-
-        # Update property selector options
-        prop_list = self.available_props_df['property_id'].tolist()
-        self.param.selected_properties.objects = prop_list
-
-        # Preserve previous selection if possible, otherwise default to all off
-        previous_selection = list(self.selected_properties) if self.selected_properties else []
-
-        # Keep only properties that still exist in the new scope
-        preserved_selection = [prop for prop in previous_selection if prop in prop_list]
-
-        # Update selection (will be empty list on first load or if no properties match)
-        self.selected_properties = preserved_selection
-
-        logger.info(f"Found {len(prop_list)} properties: {prop_list}")
-        if preserved_selection:
-            logger.info(f"Preserved {len(preserved_selection)} selected properties from previous load")
-        else:
-            logger.info("No properties selected (default: all off)")
+        logger.info(f"Loading {len(property_ids)} properties for {scope_label}: {property_ids}")
 
         # Conditional data loading based on scope
         if self.context.scope.scope_type == ScopeType.EPISODE:
@@ -226,7 +400,7 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             logger.info(f"Loading property time series (quantiles: {self.lower_quantile:.0%} - {self.upper_quantile:.0%})...")
             self.properties_ts_df = self.query_with_context(
                 'get_extended_properties_timeseries',
-                property_ids=None,  # Get all, filter later
+                property_ids=property_ids,  # Load ONLY selected properties
                 lower_quantile=self.lower_quantile,
                 upper_quantile=self.upper_quantile
             )
@@ -234,7 +408,7 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             logger.info("Loading property distributions...")
             self.properties_dist_df = self.query_with_context(
                 'get_property_distributions',
-                property_ids=None  # Get all, filter later
+                property_ids=property_ids  # Load ONLY selected properties
             )
 
             # Load raw property data if show_raw_lines is enabled
@@ -242,7 +416,7 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
                 logger.info("Loading raw property data for agent lines...")
                 self.properties_raw_df = self.query_with_context(
                     'get_extended_properties_raw',
-                    property_ids=None  # Get all, filter later
+                    property_ids=property_ids  # Load ONLY selected properties
                 )
                 logger.info(f"Loaded {len(self.properties_raw_df)} raw observations")
             else:
@@ -264,12 +438,21 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
 
         else:  # SESSION scope
             # Session scope: Load only distributions (aggregated across all episodes in session)
-            logger.info("Loading property distributions (session-level aggregation)...")
+            # Use time range from context.scope (shared with main UI)
+            start_time = self.context.scope.start_time
+            end_time = self.context.scope.end_time
+
+            time_filter_msg = ""
+            if start_time is not None or end_time is not None:
+                time_filter_msg = f" (time range: {start_time or 0}-{end_time or '∞'})"
+            logger.info(f"Loading property distributions (session-level aggregation{time_filter_msg})...")
+
             self.properties_ts_df = None
             self.properties_raw_df = None
             self.properties_dist_df = self.query_with_context(
                 'get_property_distributions',
-                property_ids=None  # Get all, filter later
+                property_ids=property_ids  # Load ONLY selected properties
+                # start_time and end_time automatically passed via query_with_context from scope
             )
 
             # Create only distribution visualization
@@ -278,13 +461,17 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
             # Update display pane with single panel
             histogram_pane = self._wrap_distribution_pane(histogram_layout)
 
+            session_header = "## Distribution Panel (Session-Level Aggregation)"
+            if time_filter_msg:
+                session_header += f"\n_Filtered{time_filter_msg}_"
+
             self.display_pane.objects = [
-                pn.pane.Markdown("## Distribution Panel (Session-Level Aggregation)"),
+                pn.pane.Markdown(session_header),
                 pn.pane.Markdown("_Time series plots are not available for session-level analysis_"),
                 histogram_pane
             ]
 
-        logger.info(f"Extended Properties Viewer loaded successfully ({scope_label} scope)")
+        logger.info(f"Extended Properties Viewer loaded successfully ({scope_label} scope, {len(property_ids)} properties)")
 
     def _get_normalization_stats(self, prop_id: str):
         """
@@ -879,9 +1066,11 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
         # If enabling raw lines and we don't have the data, query it
         if self.show_raw_lines and self.properties_raw_df is None:
             logger.info("Loading raw property data for agent lines...")
+            # Use selected properties (not all properties)
+            property_ids = list(self.selected_properties) if self.selected_properties else None
             self.properties_raw_df = self.query_with_context(
                 'get_extended_properties_raw',
-                property_ids=None
+                property_ids=property_ids
             )
             logger.info(f"Loaded {len(self.properties_raw_df)} raw observations")
 
@@ -904,9 +1093,11 @@ class ExtendedPropertiesViewerWidget(BaseAnalysisWidget):
         logger.info(f"Reloading time series with new quantiles: {self.lower_quantile:.0%} - {self.upper_quantile:.0%}")
 
         # Reload aggregated data with new quantiles
+        # Use selected properties (not all properties)
+        property_ids = list(self.selected_properties) if self.selected_properties else None
         self.properties_ts_df = self.query_with_context(
             'get_extended_properties_timeseries',
-            property_ids=None,
+            property_ids=property_ids,
             lower_quantile=self.lower_quantile,
             upper_quantile=self.upper_quantile
         )

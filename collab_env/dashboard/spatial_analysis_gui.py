@@ -338,7 +338,27 @@ class SpatialAnalysisGUI(param.Parameterized):
                 self.episode_select.options = [""] + list(episode_options.keys())
                 self.episode_select.param.trigger("options")
                 self._episode_map = episode_options
-                self._show_success(f"Loaded {len(episodes_df)} episodes")
+
+                # Update time range sliders based on session's episodes
+                # Use the maximum num_frames across all episodes in the session
+                max_frames = int(episodes_df['num_frames'].max())
+                self.start_time_slider.end = max_frames
+                self.end_time_slider.end = max_frames
+                self.end_time_slider.value = max_frames
+                logger.info(f"Updated time range for session: 0 to {max_frames} frames")
+
+                # Get agent types from session
+                agent_types_df = self.query.get_agent_types_for_session(session_id)
+                if len(agent_types_df) > 0:
+                    agent_types = agent_types_df['agent_type_id'].tolist()
+                    # Always include 'all' option
+                    agent_types_with_all = agent_types + ['all']
+                    self.agent_type_select.options = agent_types_with_all
+                    # Set default to first agent type
+                    self.agent_type_select.value = agent_types[0] if agent_types else 'all'
+                    logger.info(f"Loaded {len(agent_types)} agent types for session: {agent_types}")
+
+                self._show_success(f"Loaded {len(episodes_df)} episodes (max {max_frames} frames, {len(agent_types_df)} agent types)")
                 logger.info(f"Loaded {len(episodes_df)} episodes")
 
                 # Update widget contexts for session scope
@@ -427,6 +447,8 @@ class SpatialAnalysisGUI(param.Parameterized):
 
             return QueryScope.from_session(
                 session_id=self.selected_session,
+                start_time=self.start_time_slider.value,
+                end_time=self.end_time_slider.value,
                 agent_type=self.agent_type_select.value
             )
 
@@ -480,11 +502,11 @@ class SpatialAnalysisGUI(param.Parameterized):
 
     @param.depends('scope_type_select.value')
     def _get_time_range_controls(self):
-        """Get time range controls (only for Episode scope)."""
+        """Get time range controls (available for both Episode and Session scope)."""
         scope = self.scope_type_select.value
 
         if scope == "Episode":
-            # Episode scope: show time range controls
+            # Episode scope: show time range controls with quick action buttons
             return pn.Column(
                 "## Time Range",
                 self.start_time_slider,
@@ -497,9 +519,12 @@ class SpatialAnalysisGUI(param.Parameterized):
                 pn.layout.Divider()
             )
         else:  # Session scope
-            # Session scope: time filtering not applicable
+            # Session scope: show time range controls (filters across all episodes)
             return pn.Column(
-                pn.pane.Markdown("_Time range filtering not available for session-level analysis_",
+                "## Time Range (applies to all episodes in session)",
+                self.start_time_slider,
+                self.end_time_slider,
+                pn.pane.Markdown("_Filter data across all episodes in the session_",
                                 styles={'font-size': '0.9em', 'color': '#666'}),
                 pn.layout.Divider()
             )

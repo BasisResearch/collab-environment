@@ -35,18 +35,20 @@ hv.extension('plotly', 'bokeh')
 
 class BasicDataViewerWidget(BaseAnalysisWidget):
     """
-    Episode viewer with animation and spatial heatmap.
+    Data viewer with animation (episode only) and spatial heatmap (episode or session).
 
     Features:
-    - Animation of agent tracks with configurable playback and trails
-    - 2D/3D spatial density heatmap with configurable colormap
+    - Animation of agent tracks with configurable playback and trails (episode scope only)
+    - 2D/3D spatial density heatmap with configurable colormap (episode or session scope)
     - Synchronized time control across both panels
 
-    Both panels respect time window and synchronize current playback time.
+    Scope Support:
+    - Episode scope: Both animation and heatmap available
+    - Session scope: Only heatmap available (aggregated across all episodes)
     """
 
     widget_name = "Basic Data Viewer"
-    widget_description = "Episode viewer with animated agent tracks and spatial density heatmap"
+    widget_description = "Animated agent tracks (episode) and spatial density heatmap (episode or session)"
     widget_category = "visualization"
 
     # Playback controls
@@ -189,54 +191,125 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
         self.is_3d = (z_std > 0.01) and (z_range > 0.01)
 
     def load_data(self) -> None:
-        """Load track data for animation and heatmap panels."""
+        """Load data for animation and heatmap panels.
 
-        # Validate this is episode scope only
-        if self.context.scope.scope_type != ScopeType.EPISODE:
-            raise ValueError("Basic Data Viewer only supports episode-level analysis")
+        Animation is only available for episode scope.
+        Heatmap is available for both episode and session scope.
+        """
+        scope_type = self.context.scope.scope_type
+        scope_label = "episode" if scope_type == ScopeType.EPISODE else "session"
+        logger.info(f"Loading Basic Data Viewer for {scope_label} scope")
 
-        logger.info("Loading episode tracks...")
-        self.tracks_df = self.query_with_context('get_episode_tracks')
+        if scope_type == ScopeType.EPISODE:
+            # Episode scope: Load tracks for animation + heatmap
+            logger.info("Loading episode tracks for animation and heatmap...")
+            self.tracks_df = self.query_with_context('get_episode_tracks')
 
-        if len(self.tracks_df) == 0:
-            raise ValueError("No track data found for selected episode")
+            if len(self.tracks_df) == 0:
+                raise ValueError("No track data found for selected episode")
 
-        # Detect if data is 2D or 3D
-        self._detect_dimensionality()
+            # Detect if data is 2D or 3D
+            self._detect_dimensionality()
 
-        # Compute and store fixed spatial bounds for consistent axis limits
-        self.x_range = (float(self.tracks_df['x'].min()), float(self.tracks_df['x'].max()))
-        self.y_range = (float(self.tracks_df['y'].min()), float(self.tracks_df['y'].max()))
-        if self.is_3d:
-            self.z_range = (float(self.tracks_df['z'].min()), float(self.tracks_df['z'].max()))
+            # Compute and store fixed spatial bounds for consistent axis limits
+            self.x_range = (float(self.tracks_df['x'].min()), float(self.tracks_df['x'].max()))
+            self.y_range = (float(self.tracks_df['y'].min()), float(self.tracks_df['y'].max()))
+            if self.is_3d:
+                self.z_range = (float(self.tracks_df['z'].min()), float(self.tracks_df['z'].max()))
+            else:
+                self.z_range = None
+
+            # Create color mapping for agent IDs (consistent colors across all frames)
+            unique_agents = sorted(self.tracks_df['agent_id'].unique())
+            self.agent_color_map = {agent_id: Category20_20[i % len(Category20_20)]
+                                    for i, agent_id in enumerate(unique_agents)}
+
+            logger.info(f"Loaded {len(self.tracks_df)} track observations for {self.tracks_df['agent_id'].nunique()} agents")
+            logger.info(f"Data dimensionality: {'3D' if self.is_3d else '2D'}")
+            logger.info(f"Spatial bounds - X: {self.x_range}, Y: {self.y_range}" + (f", Z: {self.z_range}" if self.is_3d else ""))
+
+            # Update time slider bounds based on data
+            min_time = int(self.tracks_df['time_index'].min())
+            max_time = int(self.tracks_df['time_index'].max())
+            self.param.current_time.bounds = (min_time, max_time)
+            self.current_time = min_time
+
+            logger.info(f"Time range: {min_time} to {max_time}")
+
+            # Convert placeholder panes to proper visualization panes
+            self._init_visualization_panes()
+
+            # Restore animation pane structure (in case it was replaced by session scope)
+            self.animation_pane.objects = [
+                pn.pane.Markdown("**Animation Panel**"),
+                self.animation_viz_pane
+            ]
+
+            # Update both panels
+            self._update_animation_panel()
+            self._update_heatmap_panel()
+
+            logger.info("Basic Data Viewer loaded successfully (episode scope)")
+
         else:
-            self.z_range = None
+            # Session scope: Only heatmap available (no animation tracks)
+            logger.info("Loading session scope heatmap (animation not available)")
 
-        # Create color mapping for agent IDs (consistent colors across all frames)
-        unique_agents = sorted(self.tracks_df['agent_id'].unique())
-        self.agent_color_map = {agent_id: Category20_20[i % len(Category20_20)]
-                                for i, agent_id in enumerate(unique_agents)}
+            # Clear track data (not available for session)
+            self.tracks_df = None
+            self.agent_color_map = None
 
-        logger.info(f"Loaded {len(self.tracks_df)} track observations for {self.tracks_df['agent_id'].nunique()} agents")
-        logger.info(f"Data dimensionality: {'3D' if self.is_3d else '2D'}")
-        logger.info(f"Spatial bounds - X: {self.x_range}, Y: {self.y_range}" + (f", Z: {self.z_range}" if self.is_3d else ""))
+            # Load heatmap data to determine spatial bounds and dimensionality
+            heatmap_df = self.query_with_context('get_spatial_heatmap')
 
-        # Update time slider bounds based on data
-        min_time = int(self.tracks_df['time_index'].min())
-        max_time = int(self.tracks_df['time_index'].max())
-        self.param.current_time.bounds = (min_time, max_time)
-        self.current_time = min_time
+            if len(heatmap_df) == 0:
+                raise ValueError("No heatmap data found for selected session")
 
-        logger.info(f"Time range: {min_time} to {max_time}")
+            # Detect dimensionality from heatmap data
+            # Check if z_bin has valid (non-NaN) values
+            has_valid_z = heatmap_df['z_bin'].notna().any()
+            if has_valid_z:
+                z_variance = heatmap_df['z_bin'].std()
+                z_range_span = heatmap_df['z_bin'].max() - heatmap_df['z_bin'].min()
+                self.is_3d = (z_variance > 0.01) and (z_range_span > 0.01)
+            else:
+                self.is_3d = False
 
-        # Convert placeholder panes to proper visualization panes
-        self._init_visualization_panes()
+            # Compute spatial bounds from heatmap bins
+            bin_size = self.context.spatial_bin_size
+            self.x_range = (float(heatmap_df['x_bin'].min()), float(heatmap_df['x_bin'].max() + bin_size))
+            self.y_range = (float(heatmap_df['y_bin'].min()), float(heatmap_df['y_bin'].max() + bin_size))
 
-        # Update both panels
-        self._update_animation_panel()
-        self._update_heatmap_panel()
+            if self.is_3d:
+                self.z_range = (float(heatmap_df['z_bin'].min()), float(heatmap_df['z_bin'].max() + bin_size))
+            else:
+                self.z_range = None
 
-        logger.info("Basic Data Viewer loaded successfully")
+            logger.info(f"Detected {'3D' if self.is_3d else '2D'} data for session heatmap")
+
+            # Convert placeholder panes to proper visualization panes
+            self._init_visualization_panes()
+
+            # Update animation panel to show "not available" message
+            self.animation_pane.objects = [
+                pn.pane.Markdown(
+                    "**Animation Panel**\n\n"
+                    "_Animation is only available for episode-level analysis._\n\n"
+                    "Switch to 'Episode' scope to view animated agent tracks.",
+                    styles={'color': '#666', 'font-style': 'italic'}
+                )
+            ]
+
+            # Restore heatmap pane structure
+            self.heatmap_pane.objects = [
+                pn.pane.Markdown("**Spatial Heatmap Panel**"),
+                self.heatmap_viz_pane
+            ]
+
+            # Update heatmap panel
+            self._update_heatmap_panel()
+
+            logger.info("Basic Data Viewer loaded successfully (session scope - heatmap only)")
 
     def get_animation_data_json(self):
         """Return JSON-serializable animation data for client-side rendering.
@@ -451,14 +524,8 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
         df['x_center'] = df['x_bin'] + (bin_size / 2)
         df['y_center'] = df['y_bin'] + (bin_size / 2)
 
-        # Debug logging
-        logger.info(f"Heatmap data ranges - X: ({df['x_center'].min()}, {df['x_center'].max()}), "
-                   f"Y: ({df['y_center'].min()}, {df['y_center'].max()})")
-        logger.info(f"Axis limits being applied - X: {self.x_range}, Y: {self.y_range}")
-
         if self.is_3d:
             df['z_center'] = df['z_bin'] + (bin_size / 2)
-            logger.info(f"Z: ({df['z_center'].min()}, {df['z_center'].max()}), Z_limit: {self.z_range}")
 
             # 3D scatter plot with density (PLOTLY)
             # Use fixed moderate opacity to help with overlapping points
