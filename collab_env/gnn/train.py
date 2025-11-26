@@ -380,13 +380,13 @@ def train_single_config(params):
         train_spec = {"visual_range": visual_range, "sigma": noise, "epochs": epochs}
         if rollout > 0:
             if ablate == 0:
-                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout_{rollout}"
+                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout{rollout}"
             elif ablate == 1:
-                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_ablate_rollout_{rollout}"
+                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_ablate_rollout{rollout}"
             elif ablate == 2:
-                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_perm_rollout_{rollout}"
+                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_perm_rollout{rollout}"
             elif ablate == 3:
-                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_zero_rollout_{rollout}"
+                save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_zero_rollout{rollout}"
         else:
             save_name = (
                 f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
