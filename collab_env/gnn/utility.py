@@ -84,12 +84,9 @@ def finite_diff_data(position):
     a = torch.zeros_like(position)
     # v_function = {}
 
-    # v[:, 1:, :, :] = torch.diff(position, axis=1)
-    # a[:, :-1, :, :] = torch.diff(v, axis=1)
-    
-    # TODO: Check if this is correct. Alternative:
-    v[:, :-1, :, :] = torch.diff(position, axis=1)
-    a[:, :-2, :, :] = torch.diff(v[:,:-1, :, :], axis=1)
+    v[:, 1:, :, :] = torch.diff(position, axis=1)
+    # a[:, :-1, :, :] = torch.diff(v, axis=1) # incorrect?
+    a[:, 1:, :, :] = torch.diff(v, axis=1) # correct?
 
     return position, v, a, None
 
