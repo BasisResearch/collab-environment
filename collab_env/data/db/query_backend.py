@@ -497,6 +497,8 @@ class QueryBackend:
         episode_id: Optional[str] = None,
         session_id: Optional[str] = None,
         agent_type: str = 'agent',
+        start_time: Optional[int] = None,
+        end_time: Optional[int] = None,
         **kwargs
     ) -> pd.DataFrame:
         """
@@ -516,6 +518,10 @@ class QueryBackend:
             Session to analyze - aggregates all episodes in session (mutually exclusive with episode_id)
         agent_type : str, default='agent'
             Agent type to filter ('agent', 'target', 'all')
+        start_time : int, optional
+            Start time index for filtering (session scope only)
+        end_time : int, optional
+            End time index for filtering (session scope only)
         **kwargs
             Additional parameters (ignored)
 
@@ -541,6 +547,8 @@ class QueryBackend:
             return self._execute_query(
                 'get_available_properties_session',
                 session_id=session_id,
+                start_time=start_time,
+                end_time=end_time,
                 agent_type=agent_type
             )
 

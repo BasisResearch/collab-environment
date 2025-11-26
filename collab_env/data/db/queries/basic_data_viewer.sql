@@ -110,7 +110,7 @@ ORDER BY pd.property_name;
 -- name: get_available_properties_session
 -- Get list of available extended properties for all episodes in a session
 -- Returns property metadata for UI selection
--- Optimized version without NULL checks (session scope only)
+-- Supports time filtering to reduce scan size
 SELECT
     pd.property_id,
     pd.property_name,
@@ -125,6 +125,8 @@ WHERE pd.property_id IN (
     WHERE o.episode_id IN (
         SELECT episode_id FROM episodes WHERE session_id = :session_id
     )
+    AND (:start_time IS NULL OR o.time_index >= :start_time)
+    AND (:end_time IS NULL OR o.time_index <= :end_time)
     AND (:agent_type = 'all' OR o.agent_type_id = :agent_type)
 )
 ORDER BY pd.property_name;
