@@ -26,6 +26,13 @@ jobs:
           restore-keys: |
             uv-      
       
+      - name: Install ExifTool
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y exiftool
+          # Cleanup to reduce disk usage in CI
+          sudo rm -rf /var/lib/apt/lists/*
+
       - name: Setup Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:

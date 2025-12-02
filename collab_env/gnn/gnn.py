@@ -25,14 +25,19 @@ def build_single_graph_edges(positions, visual_range):
 
     # Compute pairwise distances
     dist = torch.cdist(positions, positions, p=2)  # [N, N]
+    relative_positions = positions.unsqueeze(1) - positions.unsqueeze(0)
 
     # Apply visual range filter and remove self-loops
     threshold = visual_range
-    adj = (dist < threshold).to(torch.bool)
+    mask = dist < threshold
+
+    adj = mask.to(torch.bool)
     adj.fill_diagonal_(False)  # remove self-loops
     edge_index = adj.nonzero(as_tuple=False).T  # [2, E]
 
-    return edge_index
+    i, j = mask.nonzero(as_tuple=True)
+    relative_positions = relative_positions[i, j]
+    return edge_index, relative_positions
 
 
 def build_pyg_batch(
@@ -43,6 +48,7 @@ def build_pyg_batch(
     species_dim,
     visual_range,
     node_feature_function,
+    use_relative_positions=False,
 ):
     """
     Build PyTorch Geometric batch from individual graphs.
@@ -58,7 +64,9 @@ def build_pyg_batch(
     for b in range(B):
         # Build edge index for this single graph
         positions = past_p[b, -1]  # [N, D] - use latest frame
-        edge_index = build_single_graph_edges(positions, visual_range)
+        edge_index, relative_positions = build_single_graph_edges(
+            positions, visual_range
+        )
 
         # Get node features for this graph
         node_features = node_feature_function(
@@ -71,7 +79,15 @@ def build_pyg_batch(
 
         # Create edge attributes (weights) - uniform weights for all edges
         num_edges = edge_index.shape[1]
-        edge_attr = torch.ones(num_edges, 1, device=edge_index.device)
+
+        """
+        TOC -- 111225 1:34PM 
+        Need to pass the edge attr as the relative position when we move to that. 
+        """
+        if use_relative_positions:
+            edge_attr = relative_positions
+        else:
+            edge_attr = torch.ones(num_edges, 1, device=edge_index.device)
 
         # Create Data object
         data = Data(
@@ -332,6 +348,12 @@ def run_gnn_frame_pyg(model, pyg_batch, v_minushalf, delta_t, device=None):
     prediction_integration = model.prediction_integration
 
     # Forward pass - PyG handles batching automatically!
+    """
+    TOC -- 111225 1:32 PM 
+    Need to change the attribute to be relative positions here when we move to that.
+    Actually, that should be part of the build batch process -- not sure we need the 
+    squeeze though.  
+    """
     pred, W = model(pyg_batch.x, pyg_batch.edge_index, pyg_batch.edge_attr.squeeze(-1))
 
     pred = pred.to(device)
@@ -391,6 +413,7 @@ def run_gnn(
     rollout_everyother=-1,
     ablate_boid_interaction=False,
     collect_debug=True,
+    use_relative_positions=False,
 ):
     """
     This functions calls run_gnn_frame()
@@ -517,7 +540,14 @@ def run_gnn(
 
         # build PyG batch - much simpler!
         pyg_batch = build_pyg_batch(
-            past_p, past_v, past_a, species_idx, species_dim, visual_range, node_feature
+            past_p,
+            past_v,
+            past_a,
+            species_idx,
+            species_dim,
+            visual_range,
+            node_feature,
+            use_relative_positions=use_relative_positions,
         )
 
         if ablate_boid_interaction:
@@ -617,6 +647,7 @@ def train_rules_gnn(
     val_dataloader=None,
     early_stopping_patience=10,
     min_delta=1e-6,
+    use_relative_positions=False,
 ):
     if train_logger is None:
         train_logger = logger
@@ -679,6 +710,7 @@ def train_rules_gnn(
                 rollout_everyother=rollout_everyother,
                 ablate_boid_interaction=ablate_boid_interaction,
                 collect_debug=collect_debug,
+                use_relative_positions=use_relative_positions,
             )
 
             train_losses_by_batch.append(loss)
@@ -712,6 +744,7 @@ def train_rules_gnn(
                         rollout_everyother=rollout_everyother,
                         ablate_boid_interaction=ablate_boid_interaction,
                         collect_debug=False,
+                        use_relative_positions=use_relative_positions,
                     )
                     val_losses_by_batch.append(val_loss)
 
@@ -806,7 +839,7 @@ def get_input_adjcency_from_debug_batch(
             for file in range(S):
                 W_out[file_num + file] = []
                 for f in range(starting_frame, ending_frame):
-                    edge_index_input = build_single_graph_edges(
+                    edge_index_input, relative_positions = build_single_graph_edges(
                         position[file, f, :, :], visual_range=visual_range
                     )
                     W_input_frame = normalize_by_col(
@@ -879,7 +912,7 @@ def get_output_adjcency_from_debug_batch(
                 pos = debug_result[epoch_num][batch_ind]["actual"][frame]
                 pos = torch.tensor(pos)
                 for file_ind in range(pos.shape[0]):
-                    edge_index_input = build_single_graph_edges(
+                    edge_index_input, relative_positions = build_single_graph_edges(
                         pos[file_ind], visual_range=visual_range
                     )
                     W_input_frame = normalize_by_col(
