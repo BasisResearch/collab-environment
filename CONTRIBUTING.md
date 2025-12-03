@@ -24,11 +24,13 @@ This is a collaborative project where contributors merge their work via Pull Req
 
 **Development Setup:**
 
-To install development dependencies:
+To install with development dependencies (testing, linting tools):
 
-.. code:: sh
+```
+   bash setup.sh --dev
+```
 
-   pip install -e ".[dev]"
+This installs the package with all development dependencies. See `setup.sh --help` for more options.
 
 **Testing Requirements:**
 
@@ -48,14 +50,14 @@ All tests must pass before a PR can be merged. The testing suite includes:
   * **To exclude a notebook from testing**: Add it to the `EXCLUDED_NOTEBOOKS` list in `scripts/test_notebooks.sh`
   * **To exclude specific cells or code sections**: Use environment-based guards:
 
-    .. code:: python
+    ```
 
        smoke_test = "CI" in os.environ
        if not smoke_test:
            # Code that should only run locally and be excluded from CI
            expensive_computation()
            large_data_processing()
-
+    ```
 **Development Workflow:**
 
 1. Create a feature branch from main
