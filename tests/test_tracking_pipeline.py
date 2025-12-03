@@ -8,12 +8,6 @@ import pytest
 from collab_env.data.file_utils import expand_path, get_project_root
 from collab_env.data.gcs_utils import GCSClient
 
-
-# Skip when SKIP_GCS_TESTS is set - requires GCS credentials and downloads large files
-pytestmark = pytest.mark.skipif(
-    "SKIP_GCS_TESTS" in os.environ, reason="Tracking pipeline requires GCS credentials"
-)
-
 # Import Custom Scripts
 from collab_env.tracking.alignment_gui import align_videos_CI
 from collab_env.tracking.model.local_model_inference import infer_with_yolo
@@ -31,6 +25,12 @@ from collab_env.tracking.visualization import (  # overlay_tracks_on_video, # TO
     export_tracks_with_masks,
     plot_tracks_at_frame_bbox_from_video,
 )
+
+# Skip when SKIP_GCS_TESTS is set - requires GCS credentials and downloads large files
+pytestmark = pytest.mark.skipif(
+    "SKIP_GCS_TESTS" in os.environ, reason="Tracking pipeline requires GCS credentials"
+)
+
 
 # Import Environment Variables
 
