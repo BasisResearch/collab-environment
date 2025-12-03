@@ -32,33 +32,34 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
 
-      - name: Google Auth
-        id: auth
-        uses: google-github-actions/auth@v2
-        with:
-          credentials_json: '${{ secrets.GCP_SERVICE_KEY }}' 
+      # NOTE: GCS credentials commented out - notebooks excluded from CI don't need them
+      # - name: Google Auth
+      #   id: auth
+      #   uses: google-github-actions/auth@v2
+      #   with:
+      #     credentials_json: '${{ secrets.GCP_SERVICE_KEY }}'
 
-      - name: 'Set up Cloud SDK'
-        uses: 'google-github-actions/setup-gcloud@v2'
-        with:
-          version: '>= 363.0.0'
-    
-      - name: 'Use gcloud CLI'
-        run: 'gcloud info'          
-          
-      - name: Create config-local folder
-        run: |
-                mkdir config-local
-      
-      - name: Copy GCP credentials
-        run: |
-                echo '${{ secrets.GCP_SERVICE_KEY }}' > ./config-local/collab-data-463313-c340ad86b28e.json
-      
-      - name: set environment variables
-        run: |
-                export GOOGLE_APPLICATION_CREDENTIALS="$(pwd)/config-local/collab-data-463313-c340ad86b28e.json"
-                export GITHUB_ACTION=true
-      
+      # - name: 'Set up Cloud SDK'
+      #   uses: 'google-github-actions/setup-gcloud@v2'
+      #   with:
+      #     version: '>= 363.0.0'
+
+      # - name: 'Use gcloud CLI'
+      #   run: 'gcloud info'
+
+      # - name: Create config-local folder
+      #   run: |
+      #           mkdir config-local
+
+      # - name: Copy GCP credentials
+      #   run: |
+      #           echo '${{ secrets.GCP_SERVICE_KEY }}' > ./config-local/collab-data-463313-c340ad86b28e.json
+
+      # - name: set environment variables
+      #   run: |
+      #           export GOOGLE_APPLICATION_CREDENTIALS="$(pwd)/config-local/collab-data-463313-c340ad86b28e.json"
+      #           export GITHUB_ACTION=true
+
       - name: Install UV (faster package installer)
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -73,5 +74,8 @@ jobs:
           uv pip install --system -e .[dev]
     
       - name: Run Notebook Test
-        run: | 
+        env:
+          CI: "1"
+          SKIP_GCS_TESTS: "1"
+        run: |
           ./scripts/test_notebooks.sh

@@ -50,14 +50,25 @@ All tests must pass before a PR can be merged. The testing suite includes:
   * **To exclude a notebook from testing**: Add it to the `EXCLUDED_NOTEBOOKS` list in `scripts/test_notebooks.sh`
   * **To exclude specific cells or code sections**: Use environment-based guards:
 
-    ```
-
+    ```python
        smoke_test = "CI" in os.environ
        if not smoke_test:
            # Code that should only run locally and be excluded from CI
            expensive_computation()
            large_data_processing()
     ```
+
+* **Tests requiring GCS credentials**: Tests that need Google Cloud access (e.g., ``test_gcs.py``, ``test_tracking_pipeline.py``) use ``pytest.mark.skipif`` with ``SKIP_GCS_TESTS``:
+
+    ```python
+       import os
+       import pytest
+
+       pytestmark = pytest.mark.skipif("SKIP_GCS_TESTS" in os.environ, reason="Requires GCS credentials")
+    ```
+
+  These tests run locally when credentials are available but are skipped in GitHub Actions (where ``SKIP_GCS_TESTS=1`` is set).
+
 **Development Workflow:**
 
 1. Create a feature branch from main

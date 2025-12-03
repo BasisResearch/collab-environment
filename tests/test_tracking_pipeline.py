@@ -1,10 +1,18 @@
+import os
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 # Import Utility Functions
 from collab_env.data.file_utils import expand_path, get_project_root
 from collab_env.data.gcs_utils import GCSClient
+
+
+# Skip when SKIP_GCS_TESTS is set - requires GCS credentials and downloads large files
+pytestmark = pytest.mark.skipif(
+    "SKIP_GCS_TESTS" in os.environ, reason="Tracking pipeline requires GCS credentials"
+)
 
 # Import Custom Scripts
 from collab_env.tracking.alignment_gui import align_videos_CI
