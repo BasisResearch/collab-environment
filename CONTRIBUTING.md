@@ -58,13 +58,12 @@ All tests must pass before a PR can be merged. The testing suite includes:
            large_data_processing()
     ```
 
-* **Tests requiring GCS credentials**: Tests that need Google Cloud access (e.g., ``test_gcs.py``, ``test_tracking_pipeline.py``) use ``pytest.mark.skipif`` with ``SKIP_GCS_TESTS``:
+* **Tests requiring GCS credentials**: Tests that need Google Cloud access (e.g., ``test_gcs.py``, ``test_tracking_pipeline.py``) are excluded via ``tests/conftest.py`` when ``SKIP_GCS_TESTS`` is set. To add a new GCS-dependent test file, add it to the ``collect_ignore`` list in ``conftest.py``:
 
     ```python
-       import os
-       import pytest
-
-       pytestmark = pytest.mark.skipif("SKIP_GCS_TESTS" in os.environ, reason="Requires GCS credentials")
+       # tests/conftest.py
+       if "SKIP_GCS_TESTS" in os.environ:
+           collect_ignore.extend(["test_gcs.py", "test_tracking_pipeline.py"])
     ```
 
   These tests run locally when credentials are available but are skipped in GitHub Actions (where ``SKIP_GCS_TESTS=1`` is set).

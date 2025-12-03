@@ -26,11 +26,6 @@ from collab_env.tracking.visualization import (  # overlay_tracks_on_video, # TO
     plot_tracks_at_frame_bbox_from_video,
 )
 
-# Skip when SKIP_GCS_TESTS is set - requires GCS credentials and downloads large files
-pytestmark = pytest.mark.skipif(
-    "SKIP_GCS_TESTS" in os.environ, reason="Tracking pipeline requires GCS credentials"
-)
-
 
 # Import Environment Variables
 
@@ -44,6 +39,7 @@ skip_thermal_extraction = False
 
 # %% [markdown]
 # ### Setup gcloud
+@pytest.mark.skipif("SKIP_GCS_TESTS" in os.environ, reason="Requires GCS credentials")
 def test_tracking_pipeline():
     # %%
     gcs_client = GCSClient()  # use default connection credentials

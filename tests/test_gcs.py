@@ -1,16 +1,9 @@
-import os
 import uuid
 
 import pytest
 
 from collab_env.data.file_utils import expand_path, get_project_root
 from collab_env.data.gcs_utils import GCSClient
-
-
-# Skip GCS tests when SKIP_GCS_TESTS is set (e.g., in GitHub Actions)
-pytestmark = pytest.mark.skipif(
-    "SKIP_GCS_TESTS" in os.environ, reason="GCS tests require credentials"
-)
 
 
 # fixture
