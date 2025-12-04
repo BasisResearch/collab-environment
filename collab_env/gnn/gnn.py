@@ -2,10 +2,11 @@ import torch
 import torch.nn.functional as functional
 import numpy as np
 import pickle
+import gc
 import matplotlib.pyplot as plt
+from contextlib import nullcontext
 from collab_env.gnn.utility import handle_discrete_data, v_function_2_vminushalf
 
-# import gc  # Commented out - not used when gc.collect() is disabled
 from collab_env.gnn.gnn_definition import GNN, Lazy
 from collab_env.data.file_utils import expand_path, get_project_root
 from loguru import logger
@@ -608,20 +609,34 @@ def run_gnn(
             debug_result["actual"].append(target_pos.detach().cpu().numpy())
             # if training:
             debug_result["loss"].append(loss.detach().cpu().numpy())
-            debug_result["W"].append(W)
+            # Move W tensors to CPU to prevent GPU memory accumulation
+            if W is not None:
+                W_cpu = tuple(
+                    w.detach().cpu() if isinstance(w, torch.Tensor) else w for w in W
+                )
+                debug_result["W"].append(W_cpu)
+            else:
+                debug_result["W"].append(None)
             debug_result["predicted_acc"].append(pred_acc_.detach().cpu().numpy())
             debug_result["actual_acc"].append(target_acc.detach().cpu().numpy())
 
-        # del pred_pos_
-        # del pred_vel_
-        # del pred_acc_
+        # Clean up temporary tensors to free memory
+        del pred_pos_
+        if pred_vel is not None:
+            del pred_vel_
+        if pred_acc is not None:
+            del pred_acc_
 
-    # del pos
-    # del vel
-    # del acc
-    # del vminushalf
-    # del v_function
-    # gc.collect()
+    # Clean up large tensors after processing all frames
+    del pos
+    del vel
+    del acc
+    del vminushalf
+    if v_function is not None:
+        del v_function
+    gc.collect()
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
 
     return batch_loss, debug_result, model
 
@@ -675,6 +690,9 @@ def train_rules_gnn(
         train_logger.debug("rolling out...")
         full_frames = True
 
+    # Use no_grad context for inference/rollout mode to prevent memory accumulation
+    inference_context = torch.no_grad() if not training else nullcontext()
+
     for ep in range(epochs):
         torch.cuda.empty_cache()
 
@@ -685,35 +703,40 @@ def train_rules_gnn(
 
         train_losses_by_batch = []  # train loss this epoch
         num_batches = len(dataloader)
-        for batch_idx, (position, species_idx) in enumerate(dataloader):
-            # Only log every 10th batch to reduce noise
-            if batch_idx % 10 == 0 or batch_idx == num_batches - 1:
-                train_logger.debug(
-                    f"Epoch {ep + 1}/{epochs} | Processing batch {batch_idx + 1}/{len(dataloader)}"
+        with inference_context:
+            for batch_idx, (position, species_idx) in enumerate(dataloader):
+                # Only log every 10th batch to reduce noise
+                if batch_idx % 10 == 0 or batch_idx == num_batches - 1:
+                    train_logger.debug(
+                        f"Epoch {ep + 1}/{epochs} | Processing batch {batch_idx + 1}/{len(dataloader)}"
+                    )
+
+                S, Frame, N, _ = position.shape
+
+                (loss, debug_result_all[ep][batch_idx], model) = run_gnn(
+                    model,
+                    position,
+                    species_idx,
+                    species_dim,
+                    visual_range=visual_range,
+                    sigma=sigma,
+                    device=device,
+                    training=training,
+                    lr=lr,
+                    full_frames=full_frames,
+                    rollout=rollout,
+                    total_rollout=total_rollout,
+                    rollout_everyother=rollout_everyother,
+                    ablate_boid_interaction=ablate_boid_interaction,
+                    collect_debug=collect_debug,
+                    use_relative_positions=use_relative_positions,
                 )
 
-            S, Frame, N, _ = position.shape
+                train_losses_by_batch.append(loss)
 
-            (loss, debug_result_all[ep][batch_idx], model) = run_gnn(
-                model,
-                position,
-                species_idx,
-                species_dim,
-                visual_range=visual_range,
-                sigma=sigma,
-                device=device,
-                training=training,
-                lr=lr,
-                full_frames=full_frames,
-                rollout=rollout,
-                total_rollout=total_rollout,
-                rollout_everyother=rollout_everyother,
-                ablate_boid_interaction=ablate_boid_interaction,
-                collect_debug=collect_debug,
-                use_relative_positions=use_relative_positions,
-            )
-
-            train_losses_by_batch.append(loss)
+                # Clear CUDA cache after each batch in inference mode to prevent fragmentation
+                if not training and device.type == "cuda":
+                    torch.cuda.empty_cache()
 
         train_losses.append(train_losses_by_batch)
         epoch_train_loss = np.mean(train_losses[-1])

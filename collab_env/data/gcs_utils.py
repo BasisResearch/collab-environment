@@ -275,7 +275,9 @@ class GCSClient:
         local_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
         if local_path_obj.exists() and not overwrite:
-            logger.info(f"File {local_path_obj} already exists and overwrite is False. Skipping download.")
+            logger.info(
+                f"File {local_path_obj} already exists and overwrite is False. Skipping download."
+            )
             return
 
         logger.info(f"Downloading file {gcs_path} to {local_path_obj}")

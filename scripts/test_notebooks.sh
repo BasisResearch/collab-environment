@@ -13,6 +13,13 @@ EXCLUDED_NOTEBOOKS=(
     "docs/tracking/full_pipeline.ipynb"
 )
 
+# Notebooks requiring GCS credentials - excluded when SKIP_GCS_TESTS is set
+if [ -n "${SKIP_GCS_TESTS:-}" ]; then
+    EXCLUDED_NOTEBOOKS+=(
+        "docs/data/gcloud_bucket_manipulation.ipynb"
+    )
+fi
+
 # Build the ignore flags
 IGNORE_FLAGS=""
 for notebook in "${EXCLUDED_NOTEBOOKS[@]}"; do

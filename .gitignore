@@ -92,10 +92,10 @@ docs/source/lightning_logs
 docs/preconvert
 docs/build
 site/
-out
+out/
 *.matrix.gz
 docs/source/.ipynb_checkpoints/
-config-local/
+config-local
 *preview*.htm*
 simulated_data/
 trained_models/
@@ -103,3 +103,4 @@ logs/
 results/
 sim-output/
 good-runs/
+./data/

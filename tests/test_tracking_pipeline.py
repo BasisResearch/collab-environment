@@ -1,6 +1,8 @@
+import os
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 # Import Utility Functions
 from collab_env.data.file_utils import expand_path, get_project_root
@@ -24,6 +26,7 @@ from collab_env.tracking.visualization import (  # overlay_tracks_on_video, # TO
     plot_tracks_at_frame_bbox_from_video,
 )
 
+
 # Import Environment Variables
 
 # %% [markdown]
@@ -36,6 +39,7 @@ skip_thermal_extraction = False
 
 # %% [markdown]
 # ### Setup gcloud
+@pytest.mark.skipif("SKIP_GCS_TESTS" in os.environ, reason="Requires GCS credentials")
 def test_tracking_pipeline():
     # %%
     gcs_client = GCSClient()  # use default connection credentials
