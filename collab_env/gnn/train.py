@@ -374,7 +374,7 @@ def train_single_config(params):
                 save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}_zero_rollout{rollout}{'_selfloops' if self_loops else ''}{'_rp' if use_relative_positions else ''}"
         else:
             save_name = f"{data_name}_{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}{'_selfloops' if self_loops else ''}{'_rp' if use_relative_positions else ''}"
-        
+
         if rollout > 0:
             folder = f"runpod/{data_name}/rollouts/"
             rollout_path = expand_path(
@@ -398,9 +398,11 @@ def train_single_config(params):
                 pickle.dump(debug_result, f)
                 
             save_name = f"{folder}/{save_name}"
-        else: # save model and training spec
+        else:  # save model and training spec
             folder = f"runpod/{data_name}/trained_models/"
-            expand_path(f"trained_models/{folder}", get_project_root()).mkdir(exist_ok=True, parents=True)
+            expand_path(f"trained_models/{folder}", get_project_root()).mkdir(
+                exist_ok=True, parents=True
+            )
             save_name = f"{folder}/{save_name}"
 
         worker_logger.debug(f"Saving model {save_name}...")
