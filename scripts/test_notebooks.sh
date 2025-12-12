@@ -10,7 +10,15 @@ EXCLUDED_NOTEBOOKS=(
     "docs/gnn/ModelSelection-food.ipynb"
     "docs/alignment/align.ipynb"
     "docs/alignment/reprojection.ipynb"
+    "docs/tracking/full_pipeline.ipynb"
 )
+
+# Notebooks requiring GCS credentials - excluded when SKIP_GCS_TESTS is set
+if [ -n "${SKIP_GCS_TESTS:-}" ]; then
+    EXCLUDED_NOTEBOOKS+=(
+        "docs/data/gcloud_bucket_manipulation.ipynb"
+    )
+fi
 
 # Build the ignore flags
 IGNORE_FLAGS=""

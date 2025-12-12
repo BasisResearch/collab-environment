@@ -21,7 +21,9 @@ def test_build_edge_index():
     )  # generate 10 points from a 2D Gaussian
 
     positions = np.vstack((positions1, positions2))
-    edge_index = build_single_graph_edges(torch.tensor(positions), 1)
+    edge_index, relative_positions = build_single_graph_edges(
+        torch.tensor(positions), 1
+    )
 
     for i in range(
         10
@@ -35,7 +37,9 @@ def test_build_edge_index():
     thresholds = [0.05, 0.1, 0.5, 1]
 
     for threshold in thresholds:
-        edge_index = build_single_graph_edges(torch.tensor(positions), threshold)
+        edge_index, relative_positions = build_single_graph_edges(
+            torch.tensor(positions), threshold
+        )
 
         for i in range(
             dist.shape[0]

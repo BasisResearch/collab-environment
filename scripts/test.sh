@@ -1,4 +1,4 @@
 #!/bin/bash
 set -euxo pipefail
 
-pytest tests/ -n auto
+CI=1 pytest tests/ -n auto
