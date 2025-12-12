@@ -1,0 +1,13 @@
+FROM runpod/pytorch:2.8.0-py3.11-cuda12.8.1-cudnn-devel-ubuntu22.04
+
+RUN apt-get update && apt-get install -y  \
+    screen \
+    htop \
+    mc \
+    && rm -rf /var/lib/apt/lists/* && \
+    curl https://rclone.org/install.sh | bash && \
+    rclone config create collab-data "google cloud storage" service_account_file=/workspace/collab-environment/config-local/collab-data-463313-c340ad86b28e.json && \
+    pip install uv nvitop && \
+    git config --global user.email "dima.batenkov@gmail.com" && \
+    git config --global user.name "Dmitry Batenkov" 
+WORKDIR /workspace
