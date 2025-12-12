@@ -9,7 +9,7 @@ collab-environment
 For more details, see the paper
 
 
-***I. Aitsahalia et al., `“Inferring cognitive strategies from groups of animals in natural environments," <https://openreview.net/pdf?id=mUPCoCIxLK>`_ presented at the NeurIPS Workshop on Data on the Brain \& Mind Findings, 2025.***
+**I. Aitsahalia et al., `“Inferring cognitive strategies from groups of animals in natural environments," <https://openreview.net/pdf?id=mUPCoCIxLK>`_ presented at the NeurIPS Workshop on Data on the Brain \& Mind Findings, 2025.**
 
 To reproduce the figures from the paper, see `paper_figures.md <docs/paper_figures.md>`_
 
