@@ -8,7 +8,6 @@ them seem to stop -- not sure why that is happening.
 """
 
 import argparse
-import os
 from importlib.metadata import distributions
 
 from datetime import datetime
@@ -29,9 +28,9 @@ from collab_env.sim.boids.boidsAgents import BoidsWorldAgent, Mesh_Avoidance
 import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
 from collab_env.data.file_utils import get_project_root, expand_path
 from collab_env.sim.boids.sim_utils import (
-    add_obs_to_df,
     function_filter,
     plot_trajectories,
+    add_obs_to_df,
 )
 
 # NUM_AGENTS = 40
@@ -61,7 +60,8 @@ def run_simulator(config_filename):
     new_folder_name = f"{config['simulator']['run_main_folder']}/{config['simulator']['run_sub_folder_prefix']}-started-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
     new_run_folder = expand_path(new_folder_name, get_project_root())
-    os.mkdir(new_run_folder)
+    new_run_folder.mkdir(parents=True, exist_ok=True)
+    # os.mkdir(new_run_folder)
 
     if not config["logging"]["logging"]:
         logger.disable("")
@@ -177,7 +177,18 @@ def run_simulator(config_filename):
         saved_image_path=new_run_folder,
     )
 
+    variant_index_list = []
+    variant_type_list = []
     if "agent_variants" not in config["agent"]:
+        """
+        TOC -- 102825 10:55AM
+        The variant index list keeps track of the indices that start each variant. 
+        In the case of no variants, this will just be 0. 
+        """
+        # variant_num_list.append(config["simulator"]["num_agents"])
+        variant_index_list.append(0)
+        variant_type_list.append("unspecified")
+
         agent = BoidsWorldAgent(
             env=env,
             num_agents=config["simulator"]["num_agents"],
@@ -211,6 +222,15 @@ def run_simulator(config_filename):
         agent_variant_list = []
         num_agents_so_far = 0
         for variant in agent_variants:
+            """
+            TOC -- 102825 10:55AM
+            The variant index list keeps track of the indices that start each variant. 
+            This will be the number of agents we have created prior to this agent type, 
+            which matches the initialize_index argument. 
+            """
+            variant_index_list.append(num_agents_so_far)
+            variant_type_list.append(variant["type"])
+
             agent = BoidsWorldAgent(
                 env=env,
                 num_agents=variant["num_agents_of_type"],
@@ -273,10 +293,31 @@ def run_simulator(config_filename):
     # There should be one seed for each episode
     #
     seed_list = config["simulator"]["seed"]
+    """
+    -- 122325 
+    if we don't have enough seeds, bail out and give the user a list of seeds to add
+    to the config.yaml file. 
+    """
+    if len(seed_list) < config["simulator"]["num_episodes"]:
+        print(
+            f"Number of episodes ({config['simulator']['num_episodes']}) greater than number of seeds ({len(seed_list)}). Aborting."
+        )
+        rng = np.random.default_rng(seed=0)  # recommended Generator API
+        unique_ints = rng.choice(
+            np.arange(1, 1000000),
+            size=config["simulator"]["num_episodes"],
+            replace=False,
+        )
+        print(
+            "Here is a list of random seeds for each episode. Put them in the config file and rerun.\n",
+            unique_ints.tolist(),
+        )
+
+        exit(len(seed_list))
     #
     # Run the episodes
     #
-    for episode in tqdm(range(config["simulator"]["num_episodes"])):
+    for episode in tqdm(range(config["simulator"]["num_episodes"]), leave=True):
         # Start a new episode
 
         logger.debug(f"main(): starting episode {episode}")
@@ -290,7 +331,14 @@ def run_simulator(config_filename):
 
         # -- 080725 10:45PM
         # Add the initial positions to the dataframe
-        df = add_obs_to_df(None, obs, time_step=0)
+        # df = add_obs_to_df(None, obs, time_step=0)
+        df = add_obs_to_df(
+            None,
+            obs,
+            time_step=0,
+            variant_index_list=variant_index_list,
+            variant_type_list=variant_type_list,
+        )
         # done = False
 
         #
@@ -299,7 +347,7 @@ def run_simulator(config_filename):
         for agent in agent_variant_list:
             agent.set_target_weight(0.0, 0)
 
-        for time_step in tqdm(range(config["simulator"]["num_frames"])):
+        for time_step in tqdm(range(config["simulator"]["num_frames"]), leave=False):
             for t in range(num_targets):
                 if time_step == target_creation_time[t]:
                     """
@@ -341,7 +389,14 @@ def run_simulator(config_filename):
 
             # -- 080225 8:58AM
             # Record the observation
-            df = add_obs_to_df(df, next_obs, time_step=(time_step + 1))
+            # df = add_obs_to_df(df, next_obs, time_step=(time_step + 1))
+            df = add_obs_to_df(
+                df,
+                next_obs,
+                time_step=(time_step + 1),
+                variant_index_list=variant_index_list,
+                variant_type_list=variant_type_list,
+            )
 
             # Observe the next state
             obs = next_obs
@@ -355,8 +410,8 @@ def run_simulator(config_filename):
         env.close()
 
         logger.info(f"episode {episode}: df columns = {df.columns}")
-        logger.info(f"positions:\n{df[['x', 'y', 'z']]}")
-        logger.info(f"velocities:\n{df[['v_x', 'v_y', 'v_z']]}")
+        # logger.info(f"positions:\n{df[['x', 'y', 'z']]}")
+        # logger.info(f"velocities:\n{df[['v_x', 'v_y', 'v_z']]}")
         # logger.info(f"distances:\n{df[['distance_target_1']]}")
 
         #

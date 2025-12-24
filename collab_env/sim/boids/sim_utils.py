@@ -1,3 +1,4 @@
+import bisect
 import struct
 
 import numpy as np
@@ -13,7 +14,88 @@ def function_filter(function_list):
     return is_function
 
 
-def add_obs_to_df(df: pd.DataFrame, obs, time_step=0):
+def add_obs_to_df_keep_lists(
+    df: pd.DataFrame,
+    obs,
+    time_step: int = 0,
+    variant_index_list=None,
+    variant_type_list=None,
+):
+    num_agents = len(obs["agent_loc"])
+    num_targets = len(obs["target_loc"])
+    logger.debug(f"time step = {time_step}")
+    # add agent rows
+    agent_rows = []
+    for i, location, velocity in zip(
+        range(num_agents), obs["agent_loc"], obs["agent_vel"]
+    ):
+        row_dict = dict()
+        row_dict["id"] = i + 1
+        row_dict["type"] = "agent"  # type:ignore
+
+        # (f'id = {i}')
+        """
+        Agents of the same variant appear contiguously in the agent list. The variant index list stores the first index 
+        of each variant. bisect.bisect_left() finds the variant index for agent i.  
+        """
+        variant_index = bisect.bisect_left(variant_index_list, i + 1) - 1
+        row_dict["variant"] = variant_type_list[variant_index]
+
+        row_dict["time"] = time_step
+        row_dict["position"] = obs["agent_loc"][i]
+        row_dict["velocity"] = obs["agent_vel"][i]
+        row_dict["distance_target_centers"] = obs["distances_to_target_centers"][i]
+        row_dict["distance_to_target_mesh_closest_points"] = obs[
+            "distances_to_target_mesh_closest_points"
+        ][i]
+        # row_dict["target_mesh_closest_points"] = obs["target_mesh_closest_points"][i]
+        # pyarrow does not support 2D lists, so we need to subscript the columns.
+        for t, closest_point in zip(
+            range(1, num_targets + 1), obs["target_mesh_closest_points"][i - 1]
+        ):
+            row_dict[f"target_mesh_closest_point_{t}"] = closest_point
+
+        row_dict["mesh_scene_distance"] = obs["mesh_scene_distance"][i]
+        row_dict["mesh_scene_closest_point"] = obs["mesh_scene_closest_points"][i]
+
+        agent_rows.append(row_dict)
+
+    # add environment rows
+
+    # currently only one environmental object really -- not sure the scene really counts yet
+    #  -- 080525
+    # added row for each target -- need a sim test for this
+    #
+    """
+    TOC -- 121725
+    These are not the submesh targets. We do not keep track of the submesh target positions because they
+    don't really have a single point. Instead, the dataframe includes the closest point on the submesh 
+    target for each agent. 
+    """
+    env_rows = [
+        {
+            "id": target_index
+            + 1,  # should be the number of the target (fixed 081825 10:52PM)
+            "type": "env",
+            "time": time_step,
+            "position": obs["target_loc"][target_index],
+        }
+        for target_index in range(num_targets)
+    ]
+
+    """
+    Avoid that annoying deprecated warning about concatenating an empty DataFrame.
+    """
+    if df is None:
+        df = pd.DataFrame(agent_rows + env_rows)
+    else:
+        df = pd.concat([df, pd.DataFrame(agent_rows + env_rows)]).reset_index(drop=True)
+    return df
+
+
+def add_obs_to_df(
+    df: pd.DataFrame, obs, time_step=0, variant_index_list=None, variant_type_list=None
+):
     num_agents = len(obs["agent_loc"])
     num_targets = len(obs["target_loc"])
     logger.debug(f"time step = {time_step}")
@@ -24,7 +106,11 @@ def add_obs_to_df(df: pd.DataFrame, obs, time_step=0):
     ):
         row_dict = dict()
         row_dict["id"] = i
+        variant_index = bisect.bisect_left(variant_index_list, i) - 1
+        # print(f'variant index = {variant_index}')
         row_dict["type"] = "agent"  # type:ignore
+        # print(f'species = {variant_type_list[variant_index]}')
+        row_dict["species"] = variant_type_list[variant_index]
         row_dict["time"] = time_step
         row_dict["x"] = location[0]
         row_dict["y"] = location[1]
@@ -195,7 +281,34 @@ def get_submesh_indices_from_ply(file_path):
     return keep_vertices
 
 
-def plot_trajectories(df, env, frame_limit=None):
+def plot_trajectories(df, env, frame_limit=None, convert_positions=False):
+    """
+    Args:
+        df ():
+        env ():
+        frame_limit ():
+
+    Returns:
+
+    """
+
+    """
+    TOC -- 122125 10:41PM 
+    # we switched the format to have position be a list, so we need to split
+    # it up to match the rest of the code. This should be done more systematically.
+    # we need to decide on a format and make it compatible in a intelligent way. 
+    """
+
+    if "position" in df.columns:
+        if convert_positions:
+            df[["x", "y", "z"]] = (
+                pd.DataFrame(df["position"].tolist(), index=df.index) * 1500
+            )
+        else:
+            df[["x", "y", "z"]] = pd.DataFrame(df["position"].tolist(), index=df.index)
+        # print('df pos', df[["x", "y", "z"]])
+        # assert False, 'plot positions '
+        df = df.drop(columns="position")
     # get the
     num_time_steps = df["time"].max()
     if frame_limit is not None:

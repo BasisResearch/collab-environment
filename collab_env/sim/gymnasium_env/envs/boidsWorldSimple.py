@@ -1194,6 +1194,9 @@ class BoidsWorldSimpleEnv(gym.Env):
                         + self._agent_velocity[i][coordinate]
                         > self.box_size
                     ):
+                        """
+                        -- 100125 make these numbers configurable 
+                        """
                         self._agent_velocity[i][coordinate] = (
                             self.np_random.normal(-0.8, 0.1, size=1)
                             * self._agent_velocity[i][coordinate]
@@ -1727,7 +1730,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             """
             if self.agent_shape[i] == "SPHERE":
                 self.mesh_agent[i] = open3d.geometry.TriangleMesh.create_sphere(
-                    radius=0.4
+                    radius=1.0
                 )
 
             elif self.agent_shape[i] == "BUNNY":
