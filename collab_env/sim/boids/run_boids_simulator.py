@@ -371,13 +371,6 @@ def run_simulator(config_filename):
                             t,
                         )
 
-                    """
-                    -- 080425 2:40PM
-                    I can't call this method since the environment is in a wrapper. 
-                    I need to understand wrappers better.
-                    """
-                    # env.create_target()
-
             # Agent chooses action
             action_list = []
             for agent in agent_variant_list:
@@ -426,6 +419,7 @@ def run_simulator(config_filename):
             new_run_folder,
         )
         logger.info(f"writing output to {file_path}")
+        # print(f"writing output to {file_path}")
         pq.write_table(table, file_path)
 
         """
@@ -456,6 +450,7 @@ def run_simulator(config_filename):
             shutil.move(video_file_path, episode_video_file_path)
 
     logger.info("all episodes complete")
+    print(f"output written to {new_run_folder}")
 
 
 if __name__ == "__main__":
@@ -477,3 +472,5 @@ if __name__ == "__main__":
         )
 
     run_simulator(config_filename=config_filename)
+
+    print(f"run simulator completed at {datetime.now().strftime('%Y%m%d-%H%M%S')}")

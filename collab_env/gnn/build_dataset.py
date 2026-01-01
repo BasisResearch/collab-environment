@@ -112,12 +112,10 @@ def compute_positions(agents_df: pd.DataFrame):
     # Reshape the dataframe so the index is time, the column is id and the value
     # is the position vector.
     #
-
-    agents_df["position"] = agents_df[["x", "y", "z"]].values.tolist()
     agents_df["position"] = agents_df[["x", "y", "z"]].values.tolist()
     pivot = agents_df.pivot(index="time", columns="id", values="position")
     # pivot = agents_df.pivot(index="time", columns="id", values=["x", "y", "z"])
-    print("pivot\n", pivot)
+    # print("pivot\n", pivot)
 
     #
     # convert into a np array of shape (num time steps, num agents, dimension of world)
@@ -127,10 +125,10 @@ def compute_positions(agents_df: pd.DataFrame):
     ).float()
 
     #
-    # Compute relative positions for each time step and each agent. If we have a tensor called positions of
-    # shape (num time steps, num agents, 3), we should get a tensor relative_positions of shape
-    # (num time steps, num agents, num agents, 3), where relative_positions[t, i, j] is the position of
-    # agent j relative to agent i at time t.
+    # Compute relative positions for each time step and each agent. If we have a tensor called
+    # positions of shape (num time steps, num agents, 3), we should get a tensor relative_positions
+    # of shape (num time steps, num agents, num agents, 3), where relative_positions[t, i, j] is
+    # the position of agent j relative to agent i at time t.
     #
     relative_positions = positions[:, None, :, :] - positions[:, :, None, :]
 
@@ -239,7 +237,8 @@ class Sim3DInMemoryDataset(InMemoryDataset):
             TODO: Change this to read only the columns we need. 
             """
             df = pq.read_pandas(trajectory_path).to_pandas()
-            agents_df = df[df["type"] == "agent"]
+            # need a copy because we mess with positions in compute_positions().
+            agents_df = df[df["type"] == "agent"].copy()
 
             #
             # Get the positions and relative positions of the agents.

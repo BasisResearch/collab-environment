@@ -14,8 +14,10 @@ class GNN_Attention(torch.nn.Module):
         output_dim: int = 2,
         self_loops: bool = False,
         fill_value: object = None,
+        include_convolutional_layer: bool = True,
         self_loops_layer_2: bool = False,
         dropout_p: float = 0.0,
+        mlp=None,
     ):
         """
 
@@ -39,6 +41,7 @@ class GNN_Attention(torch.nn.Module):
         super().__init__()
 
         self.name = model_name
+        self.include_convolutional_layer = include_convolutional_layer
 
         """
         TOC -- 111225
@@ -73,31 +76,24 @@ class GNN_Attention(torch.nn.Module):
 
         """
         TOC -- 111925 10:08AM 
-        It is unclear how self loops help down here, so leave it off by default
+        It is unclear how self loops help down here, so leave it off by default. 
         """
-        self.convolution_layer = GCNConv(
-            hidden_dim * heads, hidden_dim, add_self_loops=self_loops_layer_2
-        )
+        if include_convolutional_layer:
+            self.convolution_layer = GCNConv(
+                hidden_dim * heads, hidden_dim, add_self_loops=self_loops_layer_2
+            )
 
         self.dropout_p = dropout_p
         if dropout_p > 0:
             self.dropout = torch.nn.Dropout(p=dropout_p)
 
         # Final linear layer to perform prediction
+
+        self.mlp = mlp
+
         self.output_layer = torch.nn.Linear(hidden_dim, output_dim)
 
-    """
-    TOC -- 111225 1:30PM
-    The edge weight here should be the relative position when we want to try that, so 
-    edge_weight is probably not the right name of the parameter. 
-    """
-
     def forward(self, data):
-        """
-        x:          [B*N, in_node_dim] node features (velocities + node position + species)
-        edge_index: [2, num edges]             edge list built from visual neighborhood
-        Returns:    [B*N, 2]           acceleration per boid
-        """
         # the 1st layer is a graph attention network.
         x = data.x.float()
         # if edge_feature is not None:
@@ -116,14 +112,20 @@ class GNN_Attention(torch.nn.Module):
 
         """
         TOC -- 111325 8:38AM
-        The mean here is over the heads -- each head computes a different attention weight and we are 
-        taking the average as the weight in the graph passed to the convolutional layer. 
+        The mean here is over the heads -- each head computes a different attention weight 
+        and we are taking the average as the weight in the graph passed to the convolutional 
+        layer. 
         """
-        h = functional.relu(
-            self.convolution_layer(h, edge_index, torch.mean(edge_weight, 1))
-        )  # + attention_layer_activation # add residual connection just for kicks
+
+        if self.include_convolutional_layer:
+            h = functional.relu(
+                self.convolution_layer(h, edge_index, torch.mean(edge_weight, 1))
+            )  # + attention_layer_activation # add residual connection just for kicks
 
         if self.dropout_p > 0:
             h = self.dropout(h)
+
+        if self.mlp is not None:
+            h = self.mlp(h)
 
         return self.output_layer(h), attention_weights

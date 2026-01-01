@@ -300,15 +300,14 @@ def plot_trajectories(df, env, frame_limit=None, convert_positions=False):
     """
 
     if "position" in df.columns:
-        if convert_positions:
-            df[["x", "y", "z"]] = (
-                pd.DataFrame(df["position"].tolist(), index=df.index) * 1500
-            )
-        else:
-            df[["x", "y", "z"]] = pd.DataFrame(df["position"].tolist(), index=df.index)
+        df[["x", "y", "z"]] = pd.DataFrame(df["position"].tolist(), index=df.index)
+        df = df.drop(columns="position")
+
+    if convert_positions:
+        df[["x", "y", "z"]] = df[["x", "y", "z"]] * 1500
+
         # print('df pos', df[["x", "y", "z"]])
         # assert False, 'plot positions '
-        df = df.drop(columns="position")
     # get the
     num_time_steps = df["time"].max()
     if frame_limit is not None:

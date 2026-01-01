@@ -8,8 +8,133 @@ import matplotlib
 
 matplotlib.use("TkAgg")
 from matplotlib import pyplot as plt, animation
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from collab_env.data.file_utils import get_project_root, expand_path
+
+
+def save_attention(attention_weights_list, filename):
+    """
+    Saves attention weights to a parquet file.
+    Args:
+        attention_weights_list (): this is a list of attention weights for each graph over the
+                            time steps in a single episode.
+        filename ():
+
+    Returns:
+
+    """
+    from_nodes = []
+    to_nodes = []
+    alpha_list = []
+    for attention_weights in attention_weights_list:
+        edge_index, alpha = attention_weights
+
+        alpha_list.append(alpha.view(-1).cpu().numpy())
+
+        # note that the to node is paying attention to the from node.
+        # alpha_{ij} is the weight on the edge (j, i) that is directed from j
+        # toward node i in the GNN.
+        from_nodes.append(edge_index[0].cpu().numpy())
+        to_nodes.append(edge_index[1].cpu().numpy())
+
+    # create the dataframe where the rows correspond to the time steps in the episode
+    df = pd.DataFrame(
+        {
+            "time": np.arange(len(attention_weights_list)),
+            "from": from_nodes,
+            "to": to_nodes,
+            "attention_weight": alpha_list,
+        }
+    )
+
+    #
+    # Dump data to output file
+    #
+    attention_table = pa.Table.from_pandas(df)
+    file_path = expand_path(filename, get_project_root())
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(attention_table, file_path)
+
+
+def save_predictions(predictions, filename):
+    # print("saving predictions\n", predictions)
+    num_time_steps, num_agents, _ = predictions.shape
+
+    time_col = np.repeat(np.arange(0, num_time_steps), num_agents)
+    agent_col = np.tile(np.arange(1, num_agents + 1), num_time_steps)
+    position_col = predictions.reshape((num_time_steps) * num_agents, -1)
+
+    df = pd.DataFrame(
+        {
+            "time": time_col,
+            "id": agent_col,
+            "x": position_col[:, 0],
+            "y": position_col[:, 1],
+            "z": position_col[:, 2],
+            "type": "agent",
+        }
+    )
+    # print('df\n', df)
+
+    #
+    # Dump data to output file
+    #
+    prediction_table = pa.Table.from_pandas(df)
+    file_path = expand_path(filename, get_project_root())
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    pq.write_table(prediction_table, file_path)
+
+
+def process_training_result(training_result, directory):
+    # only doing the last epoch for now.
+    print("processing training result")
+    # print(training_result["val_predictions"])
+    val_predictions = np.array(training_result["val_predictions"][-1])
+    # print("val predictions shape", val_predictions.shape)
+    # print("val predictions", val_predictions)
+    save_predictions(
+        val_predictions, directory + "/training_results/validation_predictions.parquet"
+    )
+    # what is the -1 for? can't i save them all.
+    train_predictions = np.array(training_result["train_predictions"][-1])
+    save_predictions(
+        train_predictions, directory + "/training_results/training_predictions.parquet"
+    )
+
+    train_attention_weights = training_result["train_attention"][-1]
+    save_attention(
+        train_attention_weights,
+        directory + "/training_results/train_attention_weights.parquet",
+    )
+
+    val_attention_weights = training_result["val_attention"][-1]
+    save_attention(
+        val_attention_weights,
+        directory + "/training_results/val_attention_weights.parquet",
+    )
+
+    loss_df = pd.DataFrame(
+        {
+            "training loss": training_result["train_losses"],
+            "validation loss": training_result["val_losses"],
+        }
+    )
+
+    loss_table = pa.Table.from_pandas(loss_df)
+    file_path = expand_path(directory + "/losses.parquet", get_project_root())
+    pq.write_table(loss_table, file_path)
+
+    # plot_attention_weights(val_attention_weights[-40:])
+
+    # plot_losses(training_result["train_losses"], training_result["val_losses"])
+
+
+def plot_losses(train_loss_list, val_loss_list):
+    plt.plot(train_loss_list[1:], label="train loss")
+    plt.plot(val_loss_list, label="val loss")
+    plt.show()
 
 
 def animate_attention_weights(attention_weights_list):
@@ -21,6 +146,16 @@ def animate_attention_weights(attention_weights_list):
         attention_matrices[0], cmap="viridis", vmin=0.0, vmax=1.0, aspect="auto"
     )
     title = ax.set_title("Frame 0", animated=False)
+
+    nrows = len(attention_matrices[0])
+    ncols = len(attention_matrices[0][0])
+    # Place ticks centered on each pixel/index
+    ax.set_xticks(np.arange(ncols))
+    ax.set_yticks(np.arange(nrows))
+
+    # Label ticks with integers 0..n-1
+    ax.set_xticklabels(np.arange(ncols))
+    ax.set_yticklabels(np.arange(nrows))
 
     def init():
         im.set_data(attention_matrices[0])
@@ -55,8 +190,8 @@ def plot_attention_weights(attention_weight_list, num_cols=2):
         figsize=(num_cols * 15, num_rows * 10),
         constrained_layout=True,
     )
-    print("type ", type(axes))
-    axes = axes.ravel()
+
+    axes = np.atleast_1d(axes).ravel()
     for i, axis in enumerate(axes):
         seaborn.heatmap(
             attention_matrices[i],
