@@ -18,6 +18,7 @@ from tqdm.auto import tqdm as auto_tgdm
 
 from contextlib import nullcontext
 
+from collab_env.data.file_utils import expand_path, get_project_root
 from collab_env.gnn.analyze_results import process_training_result
 from collab_env.gnn.build_dataset import Sim3DInMemoryDataset
 from collab_env.gnn.gnn_models import GNN_Attention
@@ -38,6 +39,7 @@ def train_epoch(model, loader, optimizer, train=True):
         attention_weights_list (list): the attention weights for every episode and every time step within the episode
 
     """
+
     if train:
         model.train()
         context = nullcontext()
@@ -60,9 +62,10 @@ def train_epoch(model, loader, optimizer, train=True):
         # create lists for results, there will be one entry for each episode
         prediction_list = []
         attention_weights_list = []
-
+        episode_index_list = []
         total_loss = 0.0
-        for episode in episode_bar:
+        for episode, index in episode_bar:
+            episode_index_list.append(index)
             episode_loss = 0.0
 
             # create lists for all the predictions and attention weights in this episode.
@@ -76,7 +79,6 @@ def train_epoch(model, loader, optimizer, train=True):
                     stored_init_pos = True
                     # print('x shape: ', graph.x.shape)
                     input_position = graph.x[:, :3].detach().numpy()
-                    # print('input\n ', input_position)
                     # print('input shape: ', input_position.shape)
                     prediction_list[-1].append(input_position)
 
@@ -88,7 +90,15 @@ def train_epoch(model, loader, optimizer, train=True):
 
                 # store the predictions and attention weights for this time step
                 prediction_list[-1].append(prediction.detach().cpu().numpy())
-                attention_weights_list[-1].append(attention_weights)
+
+                # need to detach each part of the tuple separately because we can't just detach the tuple
+                attention_weight_edge_index, attention_weight_alpha = attention_weights
+                attention_weights_list[-1].append(
+                    (
+                        attention_weight_edge_index.detach().cpu().numpy(),
+                        attention_weight_alpha.detach().cpu().numpy(),
+                    )
+                )
 
                 loss = F.mse_loss(prediction, graph.y)
 
@@ -105,7 +115,7 @@ def train_epoch(model, loader, optimizer, train=True):
             )  # divide by the number of time steps in episode
             episode_bar.set_postfix(
                 {
-                    "(total loss per step, episode loss) ": f"({total_loss:.4f},{episode_loss:.4f})"
+                    "(total loss per step, episode loss)": f"({total_loss:.6f},{episode_loss:.6f})"
                 }
             )
         # end for episode
@@ -115,6 +125,7 @@ def train_epoch(model, loader, optimizer, train=True):
         / len(loader),  # divide by num episodes to get the loss per time step
         prediction_list,
         attention_weights_list,
+        episode_index_list,
     )
 
 
@@ -129,7 +140,10 @@ def load_dataset(directory: str):
         val_loader (torch.utils.data.DataLoader): the validation dataset loader
     """
     dataset = Sim3DInMemoryDataset(directory)
-    print("dataset length = ", len(dataset))
+    # print("dataset length = ", len(dataset))
+    # print('episode_file_list = ', dataset.episode_file_list)
+    # print('dataset.episodes ', dataset.episodes)
+    # assert False, 'checking episodes'
 
     seed = np.random.randint(low=0, high=2**31)
     torch_generator = torch.manual_seed(seed)
@@ -142,11 +156,19 @@ def load_dataset(directory: str):
     train_dataset, val_dataset = torch.utils.data.random_split(
         dataset, [train_size, len(dataset) - train_size], generator=torch_generator
     )
+    # print("train indices ", train_dataset.indices)
+    # print("val indices ", val_dataset.indices)
 
     train_loader = DataLoader(dataset=train_dataset, batch_size=1, shuffle=True)
     val_loader = DataLoader(dataset=val_dataset, batch_size=1, shuffle=True)
 
-    return train_loader, val_loader
+    return (
+        train_loader,
+        train_dataset.indices,
+        val_loader,
+        val_dataset.indices,
+        dataset.episode_file_list,
+    )
 
 
 def train_3DGNN(
@@ -155,6 +177,7 @@ def train_3DGNN(
     evaluate_only=False,
     include_second_layer=True,
     mlp_layers=None,
+    force_reload=False,
 ):
     """
     Loads training and validation datasets from specified directory, creates the GNN model, and runs the training loop
@@ -170,14 +193,25 @@ def train_3DGNN(
         attention weights for the last epoch.
 
     """
-    train_loader, val_loader = load_dataset(directory)
+
+    (
+        train_loader,
+        training_dataset_indices,
+        val_loader,
+        val_dataset_indices,
+        episode_file_list,
+    ) = load_dataset(directory)
+
+    # print("train_3GDNN(): training indices ", training_dataset_indices)
+    # print("train_3GDNN(): validation indices ", val_dataset_indices)
+
     if mlp_layers is not None:
         mlp = MLP(mlp_layers)
     else:
         mlp = None
 
     model = GNN_Attention(
-        model_name="gnn-Attention-GConv-Linear",
+        model_name="gnn-Attention-Linear",
         in_node_dim=14,
         edge_dim=3,
         output_dim=3,
@@ -195,13 +229,20 @@ def train_3DGNN(
     for epoch in range(num_epochs):
         # print(f"epoch {epoch} ")
         # print("-"*40)
-        val_loss, val_prediction_list, val_attention_weights_list = train_epoch(
-            model=model, loader=val_loader, optimizer=optimizer, train=False
+        val_loss, val_prediction_list, val_attention_weights_list, val_index_list = (
+            train_epoch(
+                model=model, loader=val_loader, optimizer=optimizer, train=False
+            )
         )
         val_loss_list.append(val_loss)
         # print("val loss", val_loss)
 
-        train_loss, train_prediction_list, train_attention_weights_list = train_epoch(
+        (
+            train_loss,
+            train_prediction_list,
+            train_attention_weights_list,
+            train_index_list,
+        ) = train_epoch(
             model=model,
             loader=train_loader,
             optimizer=optimizer,
@@ -210,9 +251,18 @@ def train_3DGNN(
         train_loss_list.append(train_loss)
         # print("training loss", train_loss)
 
+        saved_model_path = expand_path(
+            directory + f"/saved_models/{model.name}_epoch_{epoch}.pt",
+            get_project_root(),
+        )
+        saved_model_path.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(model.state_dict(), saved_model_path)
+
     if not evaluate_only:
-        train_loss, train_prediction_list, train_attention_weights_list = train_epoch(
-            model=model, loader=val_loader, optimizer=optimizer, train=False
+        val_loss, val_prediction_list, val_attention_weights_list, val_index_list = (
+            train_epoch(
+                model=model, loader=val_loader, optimizer=optimizer, train=False
+            )
         )
         # print("final val loss", val_loss)
 
@@ -220,12 +270,17 @@ def train_3DGNN(
         "train_losses": train_loss_list,
         "train_predictions": train_prediction_list,
         "train_attention": train_attention_weights_list,
+        "train_dataset_indices": train_index_list,
         "val_losses": val_loss_list,
         "val_predictions": val_prediction_list,
         "val_attention": val_attention_weights_list,
+        "val_dataset_indices": val_index_list,
+        "trained_model": model,
+        "episode_file_list": episode_file_list,
     }
 
 
+# need this for using lists in command line arguments
 def csv_ints(arg):
     return [int(x) for x in arg.split(",")]
 
@@ -238,21 +293,42 @@ if __name__ == "__main__":
     )
     parser.add_argument("-d", "--directory", type=str, required=True)
     parser.add_argument("-e", "--evaluate-only", action="store_true")
-    parser.add_argument("-l", "--load", type=str)
+    parser.add_argument("-l", "--load_model", type=str)  # not implemented yet
+    parser.add_argument(
+        "-fr", "--force_reload", type=str, help="force the dataset to be reprocessed"
+    )  # not implemented yet
     parser.add_argument("-ne", "--num-epochs", default=1, type=int)
-    parser.add_argument("-ncl", "--no_convolutional_layer", action="store_true")
+    parser.add_argument("-cl", "--convolutional_layer", action="store_true")
     parser.add_argument("-mlp", "--multilayer_perceptron_layers", type=csv_ints)
+    parser.add_argument(
+        "-trd", "--training_result_subdirectory", type=str, default="training_results"
+    )
 
     args = parser.parse_args()
+
+    # create the training result folder right away so we don't waste time training
+    # and then blow up trying to save the results.
+    training_result_path = expand_path(
+        args.directory + "/" + args.training_result_subdirectory
+    )
+
+    assert not training_result_path.exists(), (
+        f"Training result directory already exists. Please move it so I don't overwrite it, which could be sad for you. \n Full path is {training_result_path}."
+    )
+
+    training_result_path.mkdir(parents=True, exist_ok=False)
 
     result = train_3DGNN(
         args.directory,
         num_epochs=args.num_epochs,
         evaluate_only=args.evaluate_only,
-        include_second_layer=not args.no_convolutional_layer,
+        include_second_layer=args.convolutional_layer,
         mlp_layers=args.multilayer_perceptron_layers,
+        force_reload=args.force_reload,
     )
 
-    process_training_result(result, args.directory)
+    process_training_result(
+        result, args.directory + "/" + args.training_result_subdirectory
+    )
 
     print("training complete")

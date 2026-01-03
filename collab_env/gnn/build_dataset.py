@@ -1,4 +1,5 @@
 import argparse
+import re
 from pathlib import Path
 
 # from typing import Tuple
@@ -135,7 +136,9 @@ def compute_positions(agents_df: pd.DataFrame):
     return positions, relative_positions
 
 
-def complete_graph_edge_attributes(relative_position, source, destination, device=None):
+def edge_attributes_for_complete_graph(
+    relative_position, source, destination, device=None
+):
     """
 
     Args:
@@ -169,6 +172,18 @@ def complete_graph_edge_attributes(relative_position, source, destination, devic
     return edge_attr
 
 
+def sort_helper(path):
+    """
+    Creates a list of substrings in the file name that separates out numeric parts so that the filenames can
+    be sorted by episode number.
+    Args:
+        path(Path): the path of the file
+
+    """
+    parts = re.split(r"(\d+.)", path.name)
+    return [int(p) if p.isdigit() else p.lower() for p in parts]
+
+
 class Sim3DInMemoryDataset(InMemoryDataset):
     def __init__(self, root, transform=None, pre_transform=None):
         """
@@ -184,6 +199,7 @@ class Sim3DInMemoryDataset(InMemoryDataset):
 
         super(Sim3DInMemoryDataset, self).__init__(root, transform, pre_transform)
         self.sim_data_folder_name = root
+        self.episode_file_list = None  # this is created in load_episodes()
         self.episodes = self.load_episodes()
         # print('episodes:', self.episodes)
         # print(type(self.raw_dir))
@@ -196,7 +212,7 @@ class Sim3DInMemoryDataset(InMemoryDataset):
 
     @property
     def processed_file_names(self):
-        return ["sim3D_gnn_data"]
+        return ["gnn3D_data"]
 
     def download(self):
         # Download the file specified in self.url and store
@@ -207,8 +223,10 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         # The zip file is removed
         # os.unlink(path)
 
-    def get_filename_for_saved_episode(self, episode_number):
-        filename = f"{self.processed_paths[0]}_episode_{episode_number}.pt"
+    def get_filename_for_saved_episode(self, episode_file_list, episode_number):
+        episode_file_name = episode_file_list[episode_number].name.split(".parquet")[0]
+        # filename = f"{self.processed_paths[0]}_episode_{episode_number}.pt"
+        filename = f"{self.processed_paths[0]}_{episode_file_name}.pt"
         return filename
 
     def process(self):
@@ -227,10 +245,16 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         box_size = config["environment"]["box_size"]
 
         # Process each episode file in the directory.
-        episode_file_list = list(raw_dir_path.glob("../episode*.parquet"))
-        episode_number = 0
-        for episode_file in tqdm(episode_file_list):
-            episode_number += 1
+        # We need these sorted by episode number to match the dataset indices to the episodes. (Maybe
+        # this should be done in a more robust way, by keeping a mapping of indices to file names since
+        # there is nothing that forces the episodes to have the current format.)
+
+        episode_file_list = sorted(
+            list(raw_dir_path.glob("../episode*.parquet")), key=sort_helper
+        )
+        print("len(episode_file_list)", len(episode_file_list))
+        for episode_number, episode_file in enumerate(tqdm(episode_file_list)):
+            # print('processing episode', episode_number, ' episode file', episode_file)
             trajectory_path = expand_path(episode_file, raw_dir_path)
             """
             -- 101325 4:03PM
@@ -250,15 +274,13 @@ class Sim3DInMemoryDataset(InMemoryDataset):
             #
             node_features = convert_pandas_to_node_features(agents_df)
             # print('node features\n', node_features)
+
             #
             # Scale all the coordinates and distances by the size of the box (assumes width = height = depth)
             #
             node_features = node_features / torch.tensor(
                 [box_size], dtype=torch.float32
             )
-            labels = positions / torch.tensor([box_size], dtype=torch.float32)
-            # print('labels\n', labels)
-            # assert False, 'process'
 
             """
             TOC -- 121925 11:21AM
@@ -282,6 +304,11 @@ class Sim3DInMemoryDataset(InMemoryDataset):
                 [from_nodes, to_nodes], dim=0
             )  # shape [2, num_agents**2]
 
+            # the labels will be the positions of the agent at the next time step.
+            labels = positions / torch.tensor([box_size], dtype=torch.float32)
+            # print('labels\n', labels)
+            # assert False, 'process'
+
             #
             # Add relative positions for each time step and each agent as the edge attributes.
             # Create the data object for this episode and add it to the data list.
@@ -292,7 +319,7 @@ class Sim3DInMemoryDataset(InMemoryDataset):
                     x=node_features[t],
                     y=labels[t + 1],  # labels are the position at the next time step
                     edge_index=edge_index,
-                    edge_attr=complete_graph_edge_attributes(
+                    edge_attr=edge_attributes_for_complete_graph(
                         relative_positions[t], from_nodes, to_nodes
                     ),
                 )
@@ -301,28 +328,37 @@ class Sim3DInMemoryDataset(InMemoryDataset):
 
             # Store the processed data
             # data, slices = self.collate(data_list)
-            # print("saving to ", self.get_filename_for_saved_episode(episode_number))
-
+            # print("saving to ", self.get_filename_for_saved_episode(episode_file_list, episode_number))
             torch.save(
                 # (data, slices), self.get_filename_for_saved_episode(episode_number)
                 data_list,
-                self.get_filename_for_saved_episode(episode_number),
+                self.get_filename_for_saved_episode(episode_file_list, episode_number),
             )
 
-        # indicate that processing is complete.
+        # indicate that processing is complete by creating the indicator file
         with open(self.processed_paths[0], "w") as _:
             pass  # create an empty file
 
     def load_episodes(self):
-        episode_file_list = list(self.root_path.glob("processed/*episode*.pt"))
-        num_episodes = len(episode_file_list)
+        self.episode_file_list = sorted(
+            list(self.root_path.glob("processed/*episode*.pt")), key=sort_helper
+        )
+        # episode_file_list = list(self.root_path.glob("processed/*episode*.pt"))
+        num_episodes = len(self.episode_file_list)
         print(f"loading {num_episodes} episodes")
+        # episodes = [
+        #     torch.load(
+        #         f"{self.processed_dir}/{self.processed_file_names[0]}_episode_{episode_number}.pt",
+        #         weights_only=False,
+        #     )
+        #     for episode_number in tqdm(range(1, num_episodes + 1))
+        # ]
         episodes = [
             torch.load(
-                f"{self.processed_dir}/{self.processed_file_names[0]}_episode_{episode_number}.pt",
+                episode_file,
                 weights_only=False,
             )
-            for episode_number in tqdm(range(1, num_episodes + 1))
+            for episode_file in self.episode_file_list
         ]
         return episodes
 
@@ -330,7 +366,12 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         return len(self.episodes)
 
     def __getitem__(self, index):
-        return self.episodes[index]
+        """
+        Return the episode and the index so the training code can figure out what episode it is
+        being trained on. This makes it easier to correctly compare the predicted trajectories
+        and the actual trajectories when analyzing the results.
+        """
+        return self.episodes[index], index
 
 
 if __name__ == "__main__":

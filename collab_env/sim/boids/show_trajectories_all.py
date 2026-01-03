@@ -44,7 +44,7 @@ def show_trajectories(
     trajectory_directory_name=None,
     show_visualizer=None,
     num_frames=None,
-    convert_positions=False,
+    scale_positions=0,
 ):
     config = yaml.safe_load(open(config_filename))
 
@@ -216,7 +216,7 @@ def show_trajectories(
             plot_trajectories(
                 df,
                 env,
-                convert_positions=convert_positions,
+                scale_positions=scale_positions,
                 frame_limit=(None if frame_limit == 0 else frame_limit),
             )
 
@@ -238,7 +238,7 @@ if __name__ == "__main__":
     parser.add_argument("-tf", "--trajectory_file")
     parser.add_argument("-td", "--trajectory_directory")
     parser.add_argument("-v", "--show_visualizer", action="store_true")
-    parser.add_argument("-cp", "--convert_positions", action="store_true")
+    parser.add_argument("-sp", "--scale_positions", type=int, default=0)
 
     args = parser.parse_args()
     if args.config_file:
@@ -253,7 +253,7 @@ if __name__ == "__main__":
         trajectory_file_name=args.trajectory_file,
         trajectory_directory_name=args.trajectory_directory,
         show_visualizer=args.show_visualizer,
-        convert_positions=args.convert_positions,
+        scale_positions=args.scale_positions,
     )
 # """
 # --

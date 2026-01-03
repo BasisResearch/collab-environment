@@ -281,7 +281,7 @@ def get_submesh_indices_from_ply(file_path):
     return keep_vertices
 
 
-def plot_trajectories(df, env, frame_limit=None, convert_positions=False):
+def plot_trajectories(df, env, frame_limit=None, scale_positions=0):
     """
     Args:
         df ():
@@ -303,8 +303,8 @@ def plot_trajectories(df, env, frame_limit=None, convert_positions=False):
         df[["x", "y", "z"]] = pd.DataFrame(df["position"].tolist(), index=df.index)
         df = df.drop(columns="position")
 
-    if convert_positions:
-        df[["x", "y", "z"]] = df[["x", "y", "z"]] * 1500
+    if scale_positions > 0:
+        df[["x", "y", "z"]] = df[["x", "y", "z"]] * scale_positions
 
         # print('df pos', df[["x", "y", "z"]])
         # assert False, 'plot positions '

@@ -1025,7 +1025,7 @@ class BoidsWorldSimpleEnv(gym.Env):
             """
             -- 082525 2:28PM
             Turning store video off doesn't work. This screws up the next episode because video
-            is off when they want it one. 
+            is off when they want it on. 
             """
             self.store_video = False
             self.show_trajectory_lines = True
