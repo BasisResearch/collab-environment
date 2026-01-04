@@ -23,7 +23,6 @@ import pyarrow.parquet as pq
 import pyarrow as pa
 import shutil
 
-from collab_env.sim.boids.boid_agents import BoidAgents
 from collab_env.sim.boids.boidsAgents import BoidsWorldAgent, Mesh_Avoidance
 import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
 from collab_env.data.file_utils import get_project_root, expand_path
@@ -35,13 +34,6 @@ from collab_env.sim.boids.sim_utils import (
 
 # NUM_AGENTS = 40
 # WALKING = False
-
-
-def agent_factory(agent_type: int, config: dict, env: gym.Env):
-    if agent_type == 0:
-        agents = BoidAgents(config, env)
-
-    return agents
 
 
 """
