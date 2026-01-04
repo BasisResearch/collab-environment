@@ -15,7 +15,7 @@ from tqdm import tqdm
 from collab_env.data.file_utils import expand_path, get_project_root
 
 
-def convert_pandas_to_node_features(df: pd.DataFrame):
+def convert_dataframe_to_node_features(df: pd.DataFrame):
     agents_df = df.copy()
     """
     TOC -- 103025 
@@ -29,13 +29,13 @@ def convert_pandas_to_node_features(df: pd.DataFrame):
     # print([i for i, x in enumerate(s) if x is None][:10])  # indices of None
     # print([type(x) for x in s.head(20)])  # sample types
 
-    agents_df[
-        [
-            "x",
-            "y",
-            "z",
-        ]
-    ] = pd.DataFrame(agents_df["position"].to_list(), index=agents_df.index)
+    # agents_df[
+    #     [
+    #         "x",
+    #         "y",
+    #         "z",
+    #     ]
+    # ] = pd.DataFrame(agents_df["position"].to_list(), index=agents_df.index)
 
     # agents_df[
     #     [
@@ -93,6 +93,7 @@ def convert_pandas_to_node_features(df: pd.DataFrame):
         ]
     ]
 
+    # print('agents_df\n', agents_df[["x", "y", "z"]])
     #
     # Convert everything to torch tensors
     #
@@ -113,7 +114,8 @@ def compute_positions(agents_df: pd.DataFrame):
     # Reshape the dataframe so the index is time, the column is id and the value
     # is the position vector.
     #
-    agents_df["position"] = agents_df[["x", "y", "z"]].values.tolist()
+    agents_df = agents_df.copy()
+    agents_df.loc[:, "position"] = agents_df[["x", "y", "z"]].values.tolist()
     pivot = agents_df.pivot(index="time", columns="id", values="position")
     # pivot = agents_df.pivot(index="time", columns="id", values=["x", "y", "z"])
     # print("pivot\n", pivot)
@@ -170,6 +172,74 @@ def edge_attributes_for_complete_graph(
     ]  # (E, D) via advanced indexing
 
     return edge_attr
+
+
+def compute_data_list_from_dataframe(
+    agents_df: pd.DataFrame,
+    num_time_steps: int,
+    num_agents: int,
+    box_size: float,
+    label_offset: int = 1,
+):
+    #
+    # Get the positions and relative positions of the agents.
+    #
+    positions, relative_positions = compute_positions(agents_df)
+
+    #
+    # Convert data frame to nodes features for this episode
+    # (must be called after compute positions because that function
+    # sets up the position column -- I don't like this)
+    #
+    node_features = convert_dataframe_to_node_features(agents_df)
+    # print('node features\n', node_features)
+
+    #
+    # Scale all the coordinates and distances by the size of the box (assumes width = height = depth)
+    #
+    node_features = node_features / torch.tensor([box_size], dtype=torch.float32)
+
+    """
+    TOC -- 121925 11:21AM
+    For the first pass, create a homogeneous graph where there are only agent nodes and all of the 
+    node features are included in the agent. (Debatable as to whether the positions of the target and
+    mesh scene should be relative.)
+    """
+
+    """
+    TOC -- 121925 10:18PM
+    edge index is now computed with edge attributes in function
+    """
+    #
+    # Create edge indices for a complete graph with self loops.
+    #
+    from_nodes = torch.arange(num_agents).repeat_interleave(num_agents)  # sources
+    to_nodes = torch.arange(num_agents).repeat(num_agents)  # targets
+    edge_index = torch.stack([from_nodes, to_nodes], dim=0)  # shape [2, num_agents**2]
+
+    # the labels will be the positions of the agent at the next time step.
+    labels = positions / torch.tensor([box_size], dtype=torch.float32)
+    # print('labels\n', labels)
+    # assert False, 'process'
+
+    #
+    # Add relative positions for each time step and each agent as the edge attributes.
+    # Create the data object for this episode and add it to the data list.
+    # We loop to num_time_steps - 1 because the last graph in the sequence has nothing to predict.
+    #
+    data_list = [
+        Data(
+            x=node_features[t],
+            y=labels[t + label_offset],  # labels are the position at the next time step
+            edge_index=edge_index,
+            edge_attr=edge_attributes_for_complete_graph(
+                relative_positions[t], from_nodes, to_nodes
+            ),
+        )
+        for t in range(num_time_steps - 1)
+    ]
+
+    return data_list
 
 
 def sort_helper(path):
@@ -240,9 +310,6 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         # Load the config file for the simulator run that generated the data
         # The name is fixed as config.yaml in the output directory for the simulator.
         config = yaml.safe_load(open(expand_path("../config.yaml", raw_dir_path)))
-        num_agents = config["simulator"]["num_agents"]
-        num_time_steps = config["simulator"]["num_frames"] + 1  # add 1 for time step 0
-        box_size = config["environment"]["box_size"]
 
         # Process each episode file in the directory.
         # We need these sorted by episode number to match the dataset indices to the episodes. (Maybe
@@ -264,70 +331,15 @@ class Sim3DInMemoryDataset(InMemoryDataset):
             # need a copy because we mess with positions in compute_positions().
             agents_df = df[df["type"] == "agent"].copy()
 
-            #
-            # Get the positions and relative positions of the agents.
-            #
-            positions, relative_positions = compute_positions(agents_df)
-
-            #
-            # Convert data frame to nodes features for this episode
-            #
-            node_features = convert_pandas_to_node_features(agents_df)
-            # print('node features\n', node_features)
-
-            #
-            # Scale all the coordinates and distances by the size of the box (assumes width = height = depth)
-            #
-            node_features = node_features / torch.tensor(
-                [box_size], dtype=torch.float32
+            data_list = compute_data_list_from_dataframe(
+                agents_df,
+                num_agents=config["simulator"]["num_agents"],
+                num_time_steps=config["simulator"]["num_frames"]
+                + 1,  # add 1 for time step 0
+                box_size=config["environment"]["box_size"],
             )
 
-            """
-            TOC -- 121925 11:21AM
-            For the first pass, create a homogeneous graph where there are only agent nodes and all of the 
-            node features are included in the agent. (Debatable as to whether the positions of the target and
-            mesh scene should be relative.)
-            """
-
-            """
-            TOC -- 121925 10:18PM
-            edge index is now computed with edge attributes in function
-            """
-            #
-            # Create edge indices for a complete graph with self loops.
-            #
-            from_nodes = torch.arange(num_agents).repeat_interleave(
-                num_agents
-            )  # sources
-            to_nodes = torch.arange(num_agents).repeat(num_agents)  # targets
-            edge_index = torch.stack(
-                [from_nodes, to_nodes], dim=0
-            )  # shape [2, num_agents**2]
-
-            # the labels will be the positions of the agent at the next time step.
-            labels = positions / torch.tensor([box_size], dtype=torch.float32)
-            # print('labels\n', labels)
-            # assert False, 'process'
-
-            #
-            # Add relative positions for each time step and each agent as the edge attributes.
-            # Create the data object for this episode and add it to the data list.
-            # We loop to num_time_steps - 1 because the last graph in the sequence has nothing to predict.
-            #
-            data_list = [
-                Data(
-                    x=node_features[t],
-                    y=labels[t + 1],  # labels are the position at the next time step
-                    edge_index=edge_index,
-                    edge_attr=edge_attributes_for_complete_graph(
-                        relative_positions[t], from_nodes, to_nodes
-                    ),
-                )
-                for t in range(num_time_steps - 1)
-            ]
-
             # Store the processed data
-            # data, slices = self.collate(data_list)
             # print("saving to ", self.get_filename_for_saved_episode(episode_file_list, episode_number))
             torch.save(
                 # (data, slices), self.get_filename_for_saved_episode(episode_number)

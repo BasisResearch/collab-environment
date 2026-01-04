@@ -119,7 +119,6 @@ class BoidsWorldSimpleEnv(gym.Env):
             self.agent_color = [agent_color] * num_agents
 
         self.target_scale = target_scale
-        self.action_scale = agent_scale
         self.agent_mean_init_velocity = agent_mean_init_velocity
         self.agent_variance_init_velocity = agent_variance_init_velocity
         self.agent_init_range_low = agent_init_range_low
@@ -221,6 +220,10 @@ class BoidsWorldSimpleEnv(gym.Env):
 
             # self.submesh_vertex_indices[1] = list(range(121350, 121550))
 
+        """
+        TOC -- 010226 8:52PM
+        Why are these torch.inf instead of np.inf?
+        """
         self.observation_space = spaces.Dict(
             {
                 "agent_loc": spaces.Tuple(
@@ -1027,20 +1030,17 @@ class BoidsWorldSimpleEnv(gym.Env):
             Turning store video off doesn't work. This screws up the next episode because video
             is off when they want it on. 
             """
-            self.store_video = False
-            self.show_trajectory_lines = True
-            self.agent_trajectories = options
+            if "show_trajectories" in options:
+                self.store_video = False
+                self.show_trajectory_lines = True
+                self.agent_trajectories = options["agent_trajectories"]
+            elif "run_trajectories" in options:
+                # init_agents() will use these trajectories to initialize
+                # the agent locations.
+                self.agent_trajectories = options["agent_trajectories"]
+                print("agent_trajectories\n", self.agent_trajectories)
 
-        """
-        -- 080525 
-        replace with function 
-        """
         self.init_agents()
-
-        """
-        -- 080525 
-        replace with function 
-        """
         self.init_targets()
 
         """
@@ -1146,6 +1146,8 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         elif self.run_trajectories:
             terminated = False
+            # the action parameter in this case is agent's new position
+            self._agent_location = action
 
         else:
             for t in range(self.num_targets):

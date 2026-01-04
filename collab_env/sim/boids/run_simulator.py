@@ -11,6 +11,7 @@ import argparse
 from importlib.metadata import distributions
 
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 
@@ -23,8 +24,8 @@ import pyarrow.parquet as pq
 import pyarrow as pa
 import shutil
 
+from collab_env.gnn.gnn_agent import GNN_Agents
 from collab_env.sim.boids.boid_agents import BoidAgents
-from collab_env.sim.boids.boidsAgents import BoidsWorldAgent, Mesh_Avoidance
 import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
 from collab_env.data.file_utils import get_project_root, expand_path
 from collab_env.sim.boids.sim_utils import (
@@ -33,43 +34,8 @@ from collab_env.sim.boids.sim_utils import (
     add_obs_to_df,
 )
 
-# NUM_AGENTS = 40
-# WALKING = False
 
-
-def agent_factory(agent_type: int, config: dict, env: gym.Env):
-    if agent_type == 0:
-        agents = BoidAgents(config, env)
-
-    return agents
-
-
-"""
--- 080825 10:10AM
-This needs to be done much more efficiently.  
-"""
-
-
-def run_simulator(config_filename):
-    config = yaml.safe_load(open(config_filename))
-    if config["visuals"]["show_visualizer"]:
-        render_mode = "human"
-    else:
-        render_mode = ""
-
-    # -- 080225 9:15AM
-    # Create the output folder
-    """
-    # -- 080425 1:49PM
-    # Using the time in the folder name seems to be causing a problem for the pytest runs. Furthermore, we could have
-    # multiple runs happening at the same time, so let's try using the process and thread ids to distinguish.  
-    """
-    new_folder_name = f"{config['simulator']['run_main_folder']}/{config['simulator']['run_sub_folder_prefix']}-started-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-
-    new_run_folder = expand_path(new_folder_name, get_project_root())
-    new_run_folder.mkdir(parents=True, exist_ok=True)
-    # os.mkdir(new_run_folder)
-
+def setup_logging(config: dict, new_run_folder: Path):
     if not config["logging"]["logging"]:
         logger.disable("")
     else:
@@ -96,14 +62,8 @@ def run_simulator(config_filename):
                 level=config["logging"]["log_level"],
             )
 
-    # -- 080225 9:54AM
-    # Copy the config file into the run folder to record configuration for the run.
-    # There may be a better way to do this to make sure we get all parameters stored
-    # in case there are still hardcoded values in the code -- which should be removed
-    # at some point.
-    copied_config_file_path = expand_path("config.yaml", new_run_folder)
-    shutil.copy(config_filename, copied_config_file_path)
 
+def write_package_list(new_run_folder: Path):
     package_list_file_path = expand_path("package_list.txt", new_run_folder)
     with open(package_list_file_path, "w") as f:
         pairs = sorted(
@@ -117,6 +77,93 @@ def run_simulator(config_filename):
         for _, line in pairs:
             result += line + "\n"
         f.write(result)
+
+
+def setup_seed_list(config):
+    #
+    # There should be one seed for each episode
+    #
+    seed_list = config["simulator"]["seed"]
+    """
+    -- 122325 
+    if we don't have enough seeds, bail out and give the user a list of seeds to add
+    to the config.yaml file. 
+    """
+    if len(seed_list) < config["simulator"]["num_episodes"]:
+        print(
+            f"Number of episodes ({config['simulator']['num_episodes']}) greater than number of seeds ({len(seed_list)}). Aborting."
+        )
+        rng = np.random.default_rng(seed=0)
+        unique_ints = rng.choice(
+            np.arange(1, 1000000),
+            size=config["simulator"]["num_episodes"],
+            replace=False,
+        )
+        print(
+            "Here is a list of random seeds for each episode. Put them in the config file and rerun.\n",
+            unique_ints.tolist(),
+        )
+        assert False, (
+            f"Not enough random seeds ({len(seed_list)}) in config file. See message above."
+        )
+
+    return seed_list
+
+
+def agent_factory(agent_type: int, config: dict, env: gym.Env):
+    if agent_type == 0:
+        agents = BoidAgents(config, env)
+    elif agent_type == 1:
+        agents = GNN_Agents(config, env)
+    else:
+        agents = None
+    return agents
+
+
+"""
+-- 080825 10:10AM
+This needs to be done much more efficiently.  
+"""
+
+
+def run_simulator(config_filename):
+    config = yaml.safe_load(open(config_filename))
+    if config["visuals"]["show_visualizer"]:
+        render_mode = "human"
+    else:
+        render_mode = ""
+
+    #
+    # Set up the random seeds for each episode. ** This will abort if there aren't enough seeds in the config file. **
+    #
+    seed_list = setup_seed_list(config)
+
+    # -- 080225 9:15AM
+    # Create the output folder
+    """
+    # -- 080425 1:49PM
+    # Using the time in the folder name seems to be causing a problem for the pytest runs. Furthermore, we could have
+    # multiple runs happening at the same time, so let's try using the process and thread ids to distinguish.  
+    """
+    new_folder_name = f"{config['simulator']['run_main_folder']}/{config['simulator']['run_sub_folder_prefix']}-started-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+
+    new_run_folder = expand_path(new_folder_name, get_project_root())
+    new_run_folder.mkdir(parents=True, exist_ok=True)
+    # os.mkdir(new_run_folder)
+
+    setup_logging(config, new_run_folder)
+
+    # -- 080225 9:54AM
+    # Copy the config file into the run folder to record configuration for the run.
+    # There may be a better way to do this to make sure we get all parameters stored
+    # in case there are still hardcoded values in the code -- which should be removed
+    # at some point.
+    copied_config_file_path = expand_path("config.yaml", new_run_folder)
+    shutil.copy(config_filename, copied_config_file_path)
+
+    # write out the package list to help with reproducibility (this seems to be especially important
+    # for random number generators, which change based on package level.
+    write_package_list(new_run_folder)
 
     # -- 080225
     # Find the path for the video in the run folder.
@@ -139,6 +186,9 @@ def run_simulator(config_filename):
     env = gym.make(
         "gymnasium_env/BoidsWorldSimple-v0",
         render_mode=render_mode,
+        run_trajectories=config["simulator"]["run_trajectories"]
+        if "run_trajectories" in config["simulator"]
+        else None,
         num_agents=config["simulator"]["num_agents"],
         num_targets=config["simulator"]["num_targets"],
         num_ground_targets=config["simulator"]["num_ground_targets"],
@@ -184,143 +234,8 @@ def run_simulator(config_filename):
         saved_image_path=new_run_folder,
     )
 
-    variant_index_list = []
-    variant_type_list = []
-    if "agent_variants" not in config["agent"]:
-        """
-        TOC -- 102825 10:55AM
-        The variant index list keeps track of the indices that start each variant. 
-        In the case of no variants, this will just be 0. 
-        """
-        # variant_num_list.append(config["simulator"]["num_agents"])
-        variant_index_list.append(0)
-        variant_type_list.append("unspecified")
+    agents = agent_factory(agent_type=1, config=config, env=env)
 
-        agent = BoidsWorldAgent(
-            env=env,
-            num_agents=config["simulator"]["num_agents"],
-            num_targets=config["simulator"]["num_targets"],
-            walking=config["simulator"]["walking"],
-            has_mesh_scene=(config["meshes"]["mesh_scene"] != ""),
-            min_ground_separation=config["agent"]["min_ground_separation"],
-            min_separation=config["agent"]["min_separation"],
-            neighborhood_dist=config["agent"]["neighborhood_dist"],
-            random_weight=config["agent"]["random_weight"],
-            ground_weight=config["agent"]["ground_weight"],
-            separation_weight=config["agent"]["separation_weight"],
-            alignment_weight=config["agent"]["alignment_weight"],
-            cohesion_weight=config["agent"]["cohesion_weight"],
-            target_weight=[0.0]
-            * config["simulator"][
-                "num_targets"
-            ],  # start at all 0's and add weights when created -- not a great design.
-            max_speed=config["agent"]["max_speed"],
-            min_speed=config["agent"]["min_speed"],
-            max_force=config["agent"]["max_force"],
-            random_walk=config["agent"]["random_walk"],
-            mesh_avoidance_type=Mesh_Avoidance[
-                config["agent"]["mesh_avoidance"].upper()
-            ],
-        )
-        agent_variant_list = [agent]
-        agent_variants = []
-    else:
-        agent_variants = config.get("agent", {}).get("agent_variants", [])
-        agent_variant_list = []
-        num_agents_so_far = 0
-        for variant in agent_variants:
-            """
-            TOC -- 102825 10:55AM
-            The variant index list keeps track of the indices that start each variant. 
-            This will be the number of agents we have created prior to this agent type, 
-            which matches the initialize_index argument. 
-            """
-            variant_index_list.append(num_agents_so_far)
-            variant_type_list.append(variant["type"])
-
-            agent = BoidsWorldAgent(
-                env=env,
-                num_agents=variant["num_agents_of_type"],
-                initialize_index=num_agents_so_far,
-                num_targets=config["simulator"]["num_targets"],
-                walking=config["simulator"]["walking"],
-                has_mesh_scene=(config["meshes"]["mesh_scene"] != ""),
-                min_ground_separation=config["agent"]["min_ground_separation"]
-                if "min_ground_separation"
-                else variant["min_ground_separation"],
-                min_separation=config["agent"]["min_separation"]
-                if "min_separation" not in variant
-                else variant["min_separation"],
-                neighborhood_dist=config["agent"]["neighborhood_dist"]
-                if "neighborhood_dist" not in variant
-                else variant["neighborhood_dist"],
-                random_weight=config["agent"]["random_weight"]
-                if "random_weight" not in variant
-                else variant["random_weight"],
-                ground_weight=config["agent"]["ground_weight"]
-                if "ground_weight" not in variant
-                else variant["ground_weight"],
-                separation_weight=config["agent"]["separation_weight"]
-                if "separation_weight" not in variant
-                else variant["separation_weight"],
-                alignment_weight=config["agent"]["alignment_weight"]
-                if "alignment_weight" not in variant
-                else variant["alignment_weight"],
-                cohesion_weight=config["agent"]["cohesion_weight"]
-                if "cohesion_weight" not in variant
-                else variant["cohesion_weight"],
-                target_weight=[0.0]
-                * config["simulator"][
-                    "num_targets"
-                ],  # start at all 0's and add weights when created -- not a great design.
-                max_speed=config["agent"]["max_speed"]
-                if "max_speed" not in variant
-                else variant["max_speed"],
-                min_speed=config["agent"]["min_speed"]
-                if "min_speed" not in variant
-                else variant["min_speed"],
-                max_force=config["agent"]["max_force"]
-                if "max_force" not in variant
-                else variant["max_force"],
-                random_walk=config["agent"]["random_walk"]
-                if "random_walk" not in variant
-                else variant["random_walk"],
-                mesh_avoidance_type=Mesh_Avoidance[
-                    config["agent"]["mesh_avoidance"].upper()
-                ]
-                if "mesh_avoidance" not in variant
-                else variant["mesh_avoidance"],
-            )
-            num_agents_so_far += variant["num_agents_of_type"]
-            agent_variant_list.append(agent)
-
-    num_targets = config["simulator"]["num_targets"]
-
-    #
-    # There should be one seed for each episode
-    #
-    seed_list = config["simulator"]["seed"]
-    """
-    -- 122325 
-    if we don't have enough seeds, bail out and give the user a list of seeds to add
-    to the config.yaml file. 
-    """
-    if len(seed_list) < config["simulator"]["num_episodes"]:
-        print(
-            f"Number of episodes ({config['simulator']['num_episodes']}) greater than number of seeds ({len(seed_list)}). Aborting."
-        )
-        rng = np.random.default_rng(seed=0)
-        unique_ints = rng.choice(
-            np.arange(1, 1000000),
-            size=config["simulator"]["num_episodes"],
-            replace=False,
-        )
-        print(
-            "Here is a list of random seeds for each episode. Put them in the config file and rerun.\n",
-            unique_ints.tolist(),
-        )
-
-        exit(len(seed_list))
     #
     # Run the episodes
     #
@@ -330,7 +245,9 @@ def run_simulator(config_filename):
         logger.debug(f"main(): starting episode {episode}")
 
         # Reset the environment
-        obs, info = env.reset(seed=seed_list[episode])
+        obs, info = env.reset(
+            seed=seed_list[episode], options=agents.get_reset_options()
+        )
 
         # -- 080225 8:58AM
         # create the dataframe for the simulation output
@@ -339,6 +256,7 @@ def run_simulator(config_filename):
         # -- 080725 10:45PM
         # Add the initial positions to the dataframe
         # df = add_obs_to_df(None, obs, time_step=0)
+        variant_index_list, variant_type_list = agents.get_variant_types()
         df = add_obs_to_df(
             None,
             obs,
@@ -351,45 +269,19 @@ def run_simulator(config_filename):
         #
         # MAIN LOOP
         #
-        for agent in agent_variant_list:
-            agent.set_target_weight(0.0, 0)
 
         for time_step in tqdm(range(config["simulator"]["num_frames"]), leave=False):
-            for t in range(num_targets):
-                if time_step == target_creation_time[t]:
-                    """
-                    -- 082325 11:02PM
-                    I am only setting the first target weight here. That is a problem that
-                    needs to be fixed with multiple targets. 
-                    
-                    -- 082525 2:03PM 
-                    This was fixed.
-                    
-                    -- 091825 4:50PM
-                    Need to differentiate between variants. It would make sense to move this into the Agent class. 
-                    The original design of having it here was always bad.  
-                    """
-                    for v in range(len(agent_variant_list)):
-                        agent_variant_list[v].set_target_weight(
-                            config["agent"]["target_weight"][t]
-                            if len(agent_variants) == 0
-                            or "target_weight" not in agent_variants[v]
-                            else agent_variants[v]["target_weight"],
-                            t,
-                        )
-
-            # Agent chooses action
-            action_list = []
-            for agent in agent_variant_list:
-                action_list.append(agent.get_action(obs))
-            action = np.concatenate([np.asarray(a) for a in action_list])
+            agents.update(time_step=time_step)
+            action = agents.get_action_list(obs)
 
             # Take the action in the environment and observe the result
+            print("action\n", action)
             next_obs, reward, terminated, truncated, info = env.step(action)
 
             # -- 080225 8:58AM
             # Record the observation
             # df = add_obs_to_df(df, next_obs, time_step=(time_step + 1))
+            variant_index_list, variant_type_list = agents.get_variant_types()
             df = add_obs_to_df(
                 df,
                 next_obs,
@@ -465,8 +357,8 @@ if __name__ == "__main__":
     # Get the config file name if specified on the command line
     #
     parser = argparse.ArgumentParser(
-        prog="run_boids_simulator",
-        description="Simulates boids in a 3D environment",
+        prog="run_simulator",
+        description="Simulates agents in a 3D environment",
         epilog="---",
     )
     parser.add_argument("-cf", "--config_file")

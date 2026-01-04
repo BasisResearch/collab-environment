@@ -106,11 +106,15 @@ def add_obs_to_df(
     ):
         row_dict = dict()
         row_dict["id"] = i
-        variant_index = bisect.bisect_left(variant_index_list, i) - 1
-        # print(f'variant index = {variant_index}')
         row_dict["type"] = "agent"  # type:ignore
-        # print(f'species = {variant_type_list[variant_index]}')
-        row_dict["species"] = variant_type_list[variant_index]
+        if variant_index_list is not None:
+            variant_index = bisect.bisect_left(variant_index_list, i) - 1
+            # print(f'variant index = {variant_index}')
+            # print(f'species = {variant_type_list[variant_index]}')
+            row_dict["species"] = variant_type_list[variant_index]
+        else:
+            row_dict["species"] = "unspecified"
+
         row_dict["time"] = time_step
         row_dict["x"] = location[0]
         row_dict["y"] = location[1]
@@ -342,7 +346,9 @@ def plot_trajectories(df, env, frame_limit=None, scale_positions=0):
     # environment is in a wrapper -- need to understand wrappers better.
     #
 
-    _, _ = env.reset(options=agent_trajectories)
+    _, _ = env.reset(
+        options={"show_trajectories": True, "agent_trajectories": agent_trajectories}
+    )
     count = 0
     terminated = False
     truncated = False

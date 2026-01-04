@@ -177,6 +177,7 @@ def train_3DGNN(
     evaluate_only=False,
     include_second_layer=True,
     mlp_layers=None,
+    load_model=None,
     force_reload=False,
 ):
     """
@@ -220,6 +221,13 @@ def train_3DGNN(
         include_convolutional_layer=include_second_layer,
         mlp=mlp,
     )
+
+    if load_model is not None:
+        # model_state = torch.load(load_model)
+        # model.load_state_dict(model_state)
+        # full model was saved for now -- change this later to be more portable
+        model = torch.load(load_model)
+
     summary(model)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
@@ -256,7 +264,8 @@ def train_3DGNN(
             get_project_root(),
         )
         saved_model_path.parent.mkdir(parents=True, exist_ok=True)
-        torch.save(model.state_dict(), saved_model_path)
+        # saving full model -- not portable or particularly secure but easier for now
+        torch.save(model, saved_model_path)
 
     if not evaluate_only:
         val_loss, val_prediction_list, val_attention_weights_list, val_index_list = (
@@ -293,10 +302,12 @@ if __name__ == "__main__":
     )
     parser.add_argument("-d", "--directory", type=str, required=True)
     parser.add_argument("-e", "--evaluate-only", action="store_true")
-    parser.add_argument("-l", "--load_model", type=str)  # not implemented yet
     parser.add_argument(
-        "-fr", "--force_reload", type=str, help="force the dataset to be reprocessed"
+        "-l", "--load_model", type=str, default=None
     )  # not implemented yet
+    # parser.add_argument(
+    #     "-fr", "--force_reload", type=str, help="force the dataset to be reprocessed"
+    # )  # not implemented yet
     parser.add_argument("-ne", "--num-epochs", default=1, type=int)
     parser.add_argument("-cl", "--convolutional_layer", action="store_true")
     parser.add_argument("-mlp", "--multilayer_perceptron_layers", type=csv_ints)
@@ -324,7 +335,8 @@ if __name__ == "__main__":
         evaluate_only=args.evaluate_only,
         include_second_layer=args.convolutional_layer,
         mlp_layers=args.multilayer_perceptron_layers,
-        force_reload=args.force_reload,
+        # force_reload=args.force_reload,
+        load_model=args.load_model,
     )
 
     process_training_result(
