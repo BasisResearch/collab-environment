@@ -24,7 +24,7 @@ import pyarrow.parquet as pq
 import pyarrow as pa
 import shutil
 
-from collab_env.gnn.gnn_agent import GNN_Agents
+from collab_env.gnn.gnn_3D.gnn_agent import GNN_Agents
 from collab_env.sim.boids.boid_agents import BoidAgents
 import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
 from collab_env.data.file_utils import get_project_root, expand_path
@@ -110,11 +110,11 @@ def setup_seed_list(config):
     return seed_list
 
 
-def agent_factory(agent_type: int, config: dict, env: gym.Env):
+def agent_factory(agent_type: int, simulation_config: dict, agent_config: dict, env: gym.Env):
     if agent_type == 0:
-        agents = BoidAgents(config, env)
+        agents = BoidAgents(simulator_config=simulation_config, agent_config=None, env=env)
     elif agent_type == 1:
-        agents = GNN_Agents(config, env)
+        agents = GNN_Agents(simulator_config=simulation_config, agent_config=agent_config, env=env)
     else:
         agents = None
     return agents
@@ -125,54 +125,12 @@ def agent_factory(agent_type: int, config: dict, env: gym.Env):
 This needs to be done much more efficiently.  
 """
 
-
-def run_simulator(config_filename):
-    config = yaml.safe_load(open(config_filename))
+def create_environment(config: dict, run_folder: Path, env_id:str="gymnasium_env/BoidsWorldSimple-v0"):
     if config["visuals"]["show_visualizer"]:
         render_mode = "human"
     else:
-        render_mode = ""
+        render_mode = "rgb_array" # I don't think this actually matters because we ignore this but it saves a warning.
 
-    #
-    # Set up the random seeds for each episode. ** This will abort if there aren't enough seeds in the config file. **
-    #
-    seed_list = setup_seed_list(config)
-
-    # -- 080225 9:15AM
-    # Create the output folder
-    """
-    # -- 080425 1:49PM
-    # Using the time in the folder name seems to be causing a problem for the pytest runs. Furthermore, we could have
-    # multiple runs happening at the same time, so let's try using the process and thread ids to distinguish.  
-    """
-    new_folder_name = f"{config['simulator']['run_main_folder']}/{config['simulator']['run_sub_folder_prefix']}-started-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-
-    new_run_folder = expand_path(new_folder_name, get_project_root())
-    new_run_folder.mkdir(parents=True, exist_ok=True)
-    # os.mkdir(new_run_folder)
-
-    setup_logging(config, new_run_folder)
-
-    # -- 080225 9:54AM
-    # Copy the config file into the run folder to record configuration for the run.
-    # There may be a better way to do this to make sure we get all parameters stored
-    # in case there are still hardcoded values in the code -- which should be removed
-    # at some point.
-    copied_config_file_path = expand_path("config.yaml", new_run_folder)
-    shutil.copy(config_filename, copied_config_file_path)
-
-    # write out the package list to help with reproducibility (this seems to be especially important
-    # for random number generators, which change based on package level.
-    write_package_list(new_run_folder)
-
-    # -- 080225
-    # Find the path for the video in the run folder.
-    video_file_path = expand_path(
-        f"video.{config['visuals']['video_file_extension']}", new_run_folder
-    )
-    logger.debug(f"video path {video_file_path}")
-
-    target_creation_time = config["simulator"]["target_creation_time"]
     """ 
     -- 080825 7:15PM
     If no fixed target positions were specified, we should pass None to the environment
@@ -180,11 +138,22 @@ def run_simulator(config_filename):
     fixed_target_position = config["environment"]["target_position"]
     if len(fixed_target_position) == 0:
         fixed_target_position = None
+
+    # Find the path for the video in the run folder.
+    video_file_path = expand_path(
+        f"video.{config['visuals']['video_file_extension']}", run_folder
+    )
+    config["visuals"]["video_file_path"] = video_file_path
+    config["visuals"]["saved_image_path"] = run_folder
+
     #
-    # Create environment and agent
+    # Create environment
     #
+    if env_id in config["simulator"]:
+        env_id = config["simulator"]["env_id"]
+
     env = gym.make(
-        "gymnasium_env/BoidsWorldSimple-v0",
+        id=env_id,
         render_mode=render_mode,
         run_trajectories=config["simulator"]["run_trajectories"]
         if "run_trajectories" in config["simulator"]
@@ -198,7 +167,7 @@ def run_simulator(config_filename):
         show_visualizer=config["visuals"]["show_visualizer"],
         vis_width=config["visuals"]["width"],
         vis_height=config["visuals"]["height"],
-        video_file_path=video_file_path,
+        video_file_path=config["visuals"]["video_file_path"],
         video_codec=config["visuals"]["video_codec"],
         video_fps=config["visuals"]["video_fps"],
         agent_shape=config["visuals"]["agent_shape"],
@@ -226,37 +195,65 @@ def run_simulator(config_filename):
         scene_filename=config["meshes"]["mesh_scene"],
         scene_position=config["environment"]["scene_position"],
         scene_angle=np.pi * np.array(config["meshes"]["scene_angle"]) / 180.0,
-        target_creation_time=target_creation_time,
+        target_creation_time=config["simulator"]["target_creation_time"],
         target_positions=fixed_target_position,
         color_tracks_by_time=config["tracks"]["color_by_time"],
         number_track_color_groups=config["tracks"]["number_of_color_groups"],
         track_color_rate=config["tracks"]["track_color_rate"],
-        saved_image_path=new_run_folder,
+        saved_image_path=config["visuals"]["saved_image_path"],
     )
 
-    agents = agent_factory(agent_type=1, config=config, env=env)
+    return env
+
+def run_simulator(config: dict, env, agents=None, run_folder=None):
+    print('run_simulator(): run folder is ', run_folder)
+    #
+    # Set up the random seeds for each episode. ** This will abort if there aren't enough seeds in the config file. **
+    #
+    seed_list = setup_seed_list(config)
+
+
+    setup_logging(config, run_folder)
+
+    # -- 080225 9:54AM
+    # Copy the config file into the run folder to record configuration for the run.
+    # There may be a better way to do this to make sure we get all parameters stored
+    # in case there are still hardcoded values in the code -- which should be removed
+    # at some point.
+    print('run folder ', run_folder)
+
+    # write out the package list to help with reproducibility (this seems to be especially important
+    # for random number generators, which change based on package level.
+    write_package_list(run_folder)
+
+
+
+    # -- 080225
+    # Find the path for the video in the run folder.
+    video_file_path = expand_path(
+        f"video.{config['visuals']['video_file_extension']}", run_folder
+    )
+    logger.debug(f"video path {video_file_path}")
+
+
+    variant_index_list, variant_type_list = agents.get_variant_types()
 
     #
     # Run the episodes
     #
     for episode in tqdm(range(config["simulator"]["num_episodes"]), leave=True):
         # Start a new episode
+        logger.debug(f"run_simulator(): starting episode {episode}")
 
-        logger.debug(f"main(): starting episode {episode}")
+        # Reset the agents
+        agents.reset()
 
         # Reset the environment
         obs, info = env.reset(
             seed=seed_list[episode], options=agents.get_reset_options()
         )
 
-        # -- 080225 8:58AM
-        # create the dataframe for the simulation output
-        # df = pd.DataFrame(columns=pandas_columns)
-
-        # -- 080725 10:45PM
         # Add the initial positions to the dataframe
-        # df = add_obs_to_df(None, obs, time_step=0)
-        variant_index_list, variant_type_list = agents.get_variant_types()
         df = add_obs_to_df(
             None,
             obs,
@@ -264,24 +261,18 @@ def run_simulator(config_filename):
             variant_index_list=variant_index_list,
             variant_type_list=variant_type_list,
         )
-        # done = False
 
-        #
+        # ----------------
         # MAIN LOOP
-        #
-
+        # ----------------
         for time_step in tqdm(range(config["simulator"]["num_frames"]), leave=False):
             agents.update(time_step=time_step)
             action = agents.get_action_list(obs)
 
             # Take the action in the environment and observe the result
-            print("action\n", action)
             next_obs, reward, terminated, truncated, info = env.step(action)
 
-            # -- 080225 8:58AM
             # Record the observation
-            # df = add_obs_to_df(df, next_obs, time_step=(time_step + 1))
-            variant_index_list, variant_type_list = agents.get_variant_types()
             df = add_obs_to_df(
                 df,
                 next_obs,
@@ -294,17 +285,10 @@ def run_simulator(config_filename):
             obs = next_obs
 
             # ignore terminated for now since we are just running for a specified number of frames
-            # done = terminated or truncated
-            # done = True
             if terminated or truncated:
                 break  # I hate breaks, why does Python make me do it?
 
         env.close()
-
-        logger.info(f"episode {episode}: df columns = {df.columns}")
-        # logger.info(f"positions:\n{df[['x', 'y', 'z']]}")
-        # logger.info(f"velocities:\n{df[['v_x', 'v_y', 'v_z']]}")
-        # logger.info(f"distances:\n{df[['distance_target_1']]}")
 
         #
         # Dump data to output file
@@ -315,41 +299,28 @@ def run_simulator(config_filename):
         file_path = expand_path(
             f"episode-{episode}-completed-{datetime.now().strftime('%Y%m%d-%H%M%S')}.parquet",
             # f"episode-{episode}.parquet",
-            new_run_folder,
+            run_folder,
         )
-        logger.info(f"writing output to {file_path}")
-        # print(f"writing output to {file_path}")
+        logger.info(f"episode {episode} writing output to {file_path}")
         pq.write_table(table, file_path)
 
-        """
-        -- 080825
-        plot the trajectories for the paper figures. This need to be redesigned
-        so that plotting trajectories is in a separate program that is run on 
-        the parquet file rather than with the main simulator. Needs to be able
-        to display the agents in the visualizer without storing video and with the 
-        ability to snap pictures based on keyboard presses so that users can 
-        adjust the camera view and zoom on the visualizer to get the figures they 
-        want.  
-        """
+        # plot trajectories if specified
         if config["simulator"]["show_trajectories"]:
             plot_trajectories(df, env)
 
-        """
-        -- 081125 3:37PM
-        How is this working? It looks like I am moving the file while the rendering is 
-        still writing to it. 
-        """
+
+        # move the video to prevent overwriting in the next episode
         if config["visuals"]["store_video"]:
             # change the name of the video file to include the episode
             episode_video_file_path = expand_path(
                 f"episode-{episode}-video.{config['visuals']['video_file_extension']}",
-                new_run_folder,
+                run_folder,
             )
             logger.debug(f"episode video path {episode_video_file_path}")
             shutil.move(video_file_path, episode_video_file_path)
 
     logger.info("all episodes complete")
-    print(f"output written to {new_run_folder}")
+    print(f"output written to {run_folder}")
 
 
 if __name__ == "__main__":
@@ -370,6 +341,22 @@ if __name__ == "__main__":
             "collab_env/sim/boids/config.yaml", get_project_root()
         )
 
-    run_simulator(config_filename=config_filename)
+
+    config = yaml.safe_load(open(config_filename))
+
+    # -- 080225 9:15AM
+    # Create the output folder
+    new_folder_name = f"{config['simulator']['run_main_folder']}/{config['simulator']['run_sub_folder_prefix']}-started-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    new_run_folder = expand_path(new_folder_name, get_project_root())
+    new_run_folder.mkdir(parents=True, exist_ok=True)
+    # os.mkdir(new_run_folder)
+    print('run folder is ', new_run_folder)
+    copied_config_file_path = expand_path("config.yaml", new_run_folder)
+    print('copiedfile path ', copied_config_file_path)
+    shutil.copy(config_filename, copied_config_file_path)
+
+    env = create_environment(config=config, run_folder=new_run_folder)
+    agents = BoidAgents(simulator_config=config, agent_config=None, env=env)
+    run_simulator(config=config, env=env, agents=agents, run_folder=new_run_folder)
 
     print(f"run simulator completed at {datetime.now().strftime('%Y%m%d-%H%M%S')}")

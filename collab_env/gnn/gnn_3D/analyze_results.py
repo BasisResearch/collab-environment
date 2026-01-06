@@ -1,10 +1,17 @@
 import argparse
+import shutil
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import seaborn
 import torch
 import matplotlib
+import yaml
+from datetime import datetime
+
+from collab_env.gnn.gnn_3D.gnn_agent import GNN_Agents
+from collab_env.sim.boids.run_simulator import create_environment, run_simulator
 
 matplotlib.use("TkAgg")
 from matplotlib import pyplot as plt, animation
@@ -265,13 +272,33 @@ def load_attention_weights(directory, filename):
 
     """
 
-    path = expand_path(directory + "/training_results/" + filename, get_project_root())
+    path = expand_path(directory + "/" + filename, get_project_root())
     df = pd.read_parquet(path)
     attention_weights_list = [
         (torch.tensor([f, t]), torch.tensor(w))
         for f, t, w in zip(df["from"], df["to"], df["attention_weight"])
     ]
     return attention_weights_list
+
+
+def rollout(simulator_config: dict, agent_config: dict, rollout_path: Path):
+    """
+    Args:
+        args (): arguments parsed from the command line
+        config (dict): configuration dictionary
+
+    This function displays the predicted trajectories of the agents. It needs to be given the simulator config and the
+    agent config so that the environment and agents can be constructed and the simulator can be run.
+    """
+
+
+    print('run folder is ', rollout_path)
+
+    env = create_environment(config=simulator_config, run_folder=rollout_path)
+    agents = GNN_Agents(simulator_config=simulator_config, agent_config=agent_config, env=env)
+    run_simulator(config=simulator_config, env=env, agents=agents, run_folder=rollout_path)
+
+    print(f"rollout completed at {datetime.now().strftime('%Y%m%d-%H%M%S')}")
 
 
 if __name__ == "__main__":
@@ -287,6 +314,13 @@ if __name__ == "__main__":
     parser.add_argument("-st", "--start_time", default=0, type=int)
     parser.add_argument("-ft", "--finish_time", default=0, type=int)
 
+    parser.add_argument("-r", "--rollout", action="store_true")
+    parser.add_argument("-acf", "--agent_config_file", type=str)
+    parser.add_argument("-scf", "--simulator_config_file", type=str)
+    parser.add_argument("-rsd", "--rollout_subdirectory", type=str)
+    parser.add_argument("-v", "--show_visualizer", action="store_true")
+
+
     args = parser.parse_args()
 
     if args.plot_attention:
@@ -298,3 +332,20 @@ if __name__ == "__main__":
     if args.animate_attention:
         attention_weights_list = load_attention_weights(args.directory, args.filename)
         animate_attention_weights(attention_weights_list)
+
+    if args.rollout:
+        simulator_config_path = expand_path(args.directory + "/" + args.simulator_config_file, get_project_root())
+        simulator_config = yaml.safe_load(open(simulator_config_path, "r"))
+        agent_config_path = expand_path(args.directory + "/" + args.agent_config_file, get_project_root())
+        agent_config = yaml.safe_load(open(agent_config_path, "r"))
+        rollout_path = expand_path(args.directory + "/" + args.rollout_subdirectory, get_project_root())
+        rollout_path.mkdir(parents=True, exist_ok=True)
+        shutil.copy(simulator_config_path, expand_path("sim_config.yaml", rollout_path))
+        shutil.copy(agent_config_path, expand_path("agent_config.yaml", rollout_path))
+        if args.show_visualizer:
+            simulator_config['visuals']['show_visualizer'] = True
+        rollout(simulator_config, agent_config, rollout_path)
+
+    print('analyze results completed')
+
+

@@ -19,9 +19,9 @@ from tqdm.auto import tqdm as auto_tgdm
 from contextlib import nullcontext
 
 from collab_env.data.file_utils import expand_path, get_project_root
-from collab_env.gnn.analyze_results import process_training_result
-from collab_env.gnn.build_dataset import Sim3DInMemoryDataset
-from collab_env.gnn.gnn_models import GNN_Attention
+from collab_env.gnn.gnn_3D.analyze_results import process_training_result
+from collab_env.gnn.gnn_3D.build_dataset import Sim3DInMemoryDataset
+from collab_env.gnn.gnn_3D.gnn_models import GNN_Attention
 
 
 def train_epoch(model, loader, optimizer, train=True):
@@ -78,9 +78,17 @@ def train_epoch(model, loader, optimizer, train=True):
                 if not stored_init_pos:
                     stored_init_pos = True
                     # print('x shape: ', graph.x.shape)
-                    input_position = graph.x[:, :3].detach().numpy()
-                    # print('input shape: ', input_position.shape)
-                    prediction_list[-1].append(input_position)
+                    """
+                    TOC -- 010426 8:04PM
+                    This is making an assumption about the structure of the data that 
+                    we don't want to make. This code should be completely independent of
+                    the data. So let's take this out and let the results analysis code figure
+                    out what the starting position is. The training code should only store the 
+                    predictions that the model made. This will require changes to the rollout code.
+                    """
+                    # input_position = graph.x[:, :3].detach().numpy()
+                    # # print('input shape: ', input_position.shape)
+                    # prediction_list[-1].append(input_position)
 
                 prediction, attention_weights = model(graph)
 
@@ -168,6 +176,9 @@ def load_dataset(directory: str):
         val_loader,
         val_dataset.indices,
         dataset.episode_file_list,
+        dataset.input_node_dim,
+        dataset.edge_attr_dim,
+        dataset.label_dim,
     )
 
 
@@ -201,6 +212,9 @@ def train_3DGNN(
         val_loader,
         val_dataset_indices,
         episode_file_list,
+        input_node_dim,
+        edge_attr_dim,
+        label_dim,
     ) = load_dataset(directory)
 
     # print("train_3GDNN(): training indices ", training_dataset_indices)
@@ -212,12 +226,12 @@ def train_3DGNN(
         mlp = None
 
     model = GNN_Attention(
-        model_name="gnn-Attention-Linear",
-        in_node_dim=14,
-        edge_dim=3,
-        output_dim=3,
+        model_name="GNN-Attention-Linear",
+        in_node_dim=input_node_dim,
+        edge_dim=edge_attr_dim, # get this from dataset
+        output_dim=label_dim, # get this from dataset
         self_loops=True,
-        fill_value=torch.zeros(3).float(),
+        fill_value=torch.zeros(edge_attr_dim).float(), # get dimension from dataset same as edge_dim
         include_convolutional_layer=include_second_layer,
         mlp=mlp,
     )

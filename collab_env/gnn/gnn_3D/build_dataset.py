@@ -76,9 +76,9 @@ def convert_dataframe_to_node_features(df: pd.DataFrame):
     # print('mesh dist:', df[['time', 'id', 'mesh_scene_distance', 'mesh_scene_closest_point_x', 'mesh_scene_closest_point_y','mesh_scene_closest_point_z']])
     groups = agents_df.groupby("time")[
         [
-            "x",
-            "y",
-            "z",
+            # "x",
+            # "y",
+            # "z",
             "v_x",
             "v_y",
             "v_z",
@@ -192,7 +192,6 @@ def compute_data_list_from_dataframe(
     # sets up the position column -- I don't like this)
     #
     node_features = convert_dataframe_to_node_features(agents_df)
-    # print('node features\n', node_features)
 
     #
     # Scale all the coordinates and distances by the size of the box (assumes width = height = depth)
@@ -236,7 +235,7 @@ def compute_data_list_from_dataframe(
                 relative_positions[t], from_nodes, to_nodes
             ),
         )
-        for t in range(num_time_steps - 1)
+        for t in range(num_time_steps - label_offset) # don't go beyond the labels.
     ]
 
     return data_list
@@ -267,10 +266,15 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         self.root_path = expand_path(root, get_project_root())
         root = str(self.root_path)
 
+
         super(Sim3DInMemoryDataset, self).__init__(root, transform, pre_transform)
         self.sim_data_folder_name = root
         self.episode_file_list = None  # this is created in load_episodes()
+        self._input_node_dim = None
         self.episodes = self.load_episodes()
+        self._input_node_dim = self.episodes[0][0].x.shape[1]
+        self._edge_attr_dim = self.episodes[0][0].edge_attr.shape[1]
+        self._label_dim = self.episodes[0][0].y.shape[1]
         # print('episodes:', self.episodes)
         # print(type(self.raw_dir))
 
@@ -372,6 +376,7 @@ class Sim3DInMemoryDataset(InMemoryDataset):
             )
             for episode_file in self.episode_file_list
         ]
+
         return episodes
 
     def __len__(self):
@@ -385,6 +390,17 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         """
         return self.episodes[index], index
 
+    @property
+    def input_node_dim(self):
+        return self._input_node_dim
+
+    @property
+    def label_dim(self):
+        return self._label_dim
+
+    @property
+    def edge_attr_dim(self):
+        return self._edge_attr_dim
 
 if __name__ == "__main__":
     #
@@ -406,11 +422,11 @@ if __name__ == "__main__":
 
     loader = DataLoader(dataset=dataset, batch_size=1, shuffle=True)
 
-    print("checking data from loader")
-    for episode_number, episode in enumerate(loader):
-        print(f"episode {episode_number} length {len(episode)}")
-        for graph in episode:
-            print("first graph: \n", graph)
-            break
-            # print('graph.x: \n', graph.x)
-            # print('-' * a10)
+    # print("checking data from loader")
+    # for episode_number, episode in enumerate(loader):
+    #     print(f"episode {episode_number} length {len(episode)}")
+    #     for graph in episode:
+    #         print("first graph: \n", graph)
+    #         break
+    #         # print('graph.x: \n', graph.x)
+    #         # print('-' * a10)
