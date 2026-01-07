@@ -62,6 +62,7 @@ packages = [
     "collab_env.alignment",
     "collab_env.dashboard", 
     "collab_env.data",
+    "collab_env.data.db",
     "collab_env.gnn",
     "collab_env.sim",
     "collab_env.sim.boids",
