@@ -55,7 +55,7 @@ dependencies = [
   "pyarrow",
   "starbars",
   "importlib-metadata",
-  "aiosql",
+  "aiosql<14",
   "sqlalchemy",
   "psycopg2"
 ]
