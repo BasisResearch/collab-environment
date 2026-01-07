@@ -1,6 +1,5 @@
 import argparse
 import re
-from pathlib import Path
 
 # from typing import Tuple
 import numpy as np
@@ -265,6 +264,7 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         pre_transform=None,
         node_feature_columns=None,
         load_only=False,
+        data_directory_name=None,
     ):
         """
 
@@ -287,8 +287,22 @@ class Sim3DInMemoryDataset(InMemoryDataset):
                     f"Dataset constructor called in load only mode but path {process_indicator_path} doesn't exists."
                 )
 
+        if data_directory_name is not None:
+            self.sim_data_folder_path = expand_path(
+                data_directory_name, get_project_root()
+            )
+            if self.root_path.exists():
+                raise FileExistsError(
+                    f"Output directory {self.root_path.name} already exists. I don't want to overwrite it, so do something about that."
+                )
+            self.root_path.mkdir(parents=True, exist_ok=False)
+            self.link_to_data = True
+        else:
+            self.sim_data_folder_path = self.root_path
+            self.link_to_data = False
+
         super(Sim3DInMemoryDataset, self).__init__(root, transform, pre_transform)
-        self.sim_data_folder_name = root
+
         self.episode_file_list = None  # this is created in load_episodes()
         self._input_node_dim = None
         self.episodes = self.load_episodes()
@@ -302,20 +316,21 @@ class Sim3DInMemoryDataset(InMemoryDataset):
     def raw_file_names(self):
         # List of the raw files
         # there is no download necessary since we are working with local files.
-        return ["test"]
+        return ["link_to_raw_data"]
 
     @property
     def processed_file_names(self):
         return ["gnn3D_data"]
 
     def download(self):
-        # Download the file specified in self.url and store
-        # it in self.raw_dir
-        pass
-        # path = download_url(self.url, self.raw_dir)
-        # extract_zip(path, self.raw_dir)
-        # The zip file is removed
-        # os.unlink(path)
+        """
+        Gets called if raw_file_names do not exist in raw directory. If the link to data flag is set in the
+        constructor, we will create a symbolic link in the raw directory to point to the data directory. This
+        may not work in Windows -- silly Windows.
+        """
+        if self.link_to_data:
+            data_link = expand_path("raw/" + self.raw_file_names[0], self.root_path)
+            data_link.symlink_to(self.sim_data_folder_path, target_is_directory=True)
 
     def get_filename_for_saved_episode(self, episode_file_list, episode_number):
         episode_file_name = episode_file_list[episode_number].name.split(".parquet")[0]
@@ -328,12 +343,11 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         # are based on the file row-index, we adjust the DataFrames indices
         # by starting from 1 instead of 0.
 
-        # Get the raw data directory as a Path object
-        raw_dir_path = Path(self.raw_dir)
-
         # Load the config file for the simulator run that generated the data
         # The name is fixed as config.yaml in the output directory for the simulator.
-        config = yaml.safe_load(open(expand_path("../config.yaml", raw_dir_path)))
+        config = yaml.safe_load(
+            open(expand_path("config.yaml", self.sim_data_folder_path))
+        )
 
         # Process each episode file in the directory.
         # We need these sorted by episode number to match the dataset indices to the episodes. (Maybe
@@ -341,12 +355,12 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         # there is nothing that forces the episodes to have the current format.)
 
         episode_file_list = sorted(
-            list(raw_dir_path.glob("../episode*.parquet")), key=sort_helper
+            list(self.sim_data_folder_path.glob("episode*.parquet")), key=sort_helper
         )
         print("len(episode_file_list)", len(episode_file_list))
         for episode_number, episode_file in enumerate(tqdm(episode_file_list)):
             # print('processing episode', episode_number, ' episode file', episode_file)
-            trajectory_path = expand_path(episode_file, raw_dir_path)
+            trajectory_path = expand_path(episode_file, self.sim_data_folder_path)
             """
             -- 101325 4:03PM
             TODO: Change this to read only the columns we need. 
@@ -380,7 +394,8 @@ class Sim3DInMemoryDataset(InMemoryDataset):
 
     def load_episodes(self):
         self.episode_file_list = sorted(
-            list(self.root_path.glob("processed/*episode*.pt")), key=sort_helper
+            list(self.sim_data_folder_path.glob("processed/*episode*.pt")),
+            key=sort_helper,
         )
         # episode_file_list = list(self.root_path.glob("processed/*episode*.pt"))
         num_episodes = len(self.episode_file_list)
@@ -429,9 +444,15 @@ if __name__ == "__main__":
         epilog="---",
     )
     parser.add_argument("-d", "--directory", type=str, required=True)
+    parser.add_argument("-dd", "--data_directory", type=str, default=None)
     args = parser.parse_args()
 
-    dataset = Sim3DInMemoryDataset(args.directory)
+    print(args.directory)
+    print(args.data_directory)
+
+    dataset = Sim3DInMemoryDataset(
+        args.directory, data_directory_name=args.data_directory
+    )
     print("dataset length = ", len(dataset))
 
     loader = DataLoader(dataset=dataset, batch_size=1, shuffle=True)

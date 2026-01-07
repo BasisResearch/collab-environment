@@ -66,7 +66,10 @@ class GNN_Agents:
         TOC -- 010626 12:32PM
         There is probably an optimization to be used here with parquet to read only the rows and columns we need.
         """
-        self.position_df = pq.read_pandas(agent_config["position_file"]).to_pandas()
+        position_file_path = expand_path(
+            agent_config["position_file"], get_project_root()
+        )
+        self.position_df = pq.read_pandas(position_file_path).to_pandas()
         start_time = agent_config["start_time"]
 
         self.init_position = self.position_df.loc[
