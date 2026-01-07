@@ -54,13 +54,16 @@ dependencies = [
   "rich",
   "pyarrow",
   "starbars",
-  "importlib-metadata"
+  "importlib-metadata",
+  "aiosql",
+  "sqlalchemy",
+  "psycopg2"
 ]
 
-[tool.setuptools]                         # NEW
+[tool.setuptools]
 packages = [
     "collab_env.alignment",
-    "collab_env.dashboard", 
+    "collab_env.dashboard",
     "collab_env.data",
     "collab_env.data.db",
     "collab_env.gnn",
@@ -72,6 +75,13 @@ packages = [
     "collab_env.tracking",
     "collab_env.tracking.model",
     "collab_env.utils"
+]
+
+[tool.setuptools.package-data]
+"collab_env.data.db" = ["queries/*.sql"]
+"collab_env.dashboard" = [
+    "templates/*.html",
+    "static/js/**/*.js",
 ]  
 
 [project.optional-dependencies]
