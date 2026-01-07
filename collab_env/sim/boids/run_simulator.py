@@ -110,11 +110,17 @@ def setup_seed_list(config):
     return seed_list
 
 
-def agent_factory(agent_type: int, simulation_config: dict, agent_config: dict, env: gym.Env):
+def agent_factory(
+    agent_type: int, simulation_config: dict, agent_config: dict, env: gym.Env
+):
     if agent_type == 0:
-        agents = BoidAgents(simulator_config=simulation_config, agent_config=None, env=env)
+        agents = BoidAgents(
+            simulator_config=simulation_config, agent_config=None, env=env
+        )
     elif agent_type == 1:
-        agents = GNN_Agents(simulator_config=simulation_config, agent_config=agent_config, env=env)
+        agents = GNN_Agents(
+            simulator_config=simulation_config, agent_config=agent_config, env=env
+        )
     else:
         agents = None
     return agents
@@ -125,11 +131,14 @@ def agent_factory(agent_type: int, simulation_config: dict, agent_config: dict, 
 This needs to be done much more efficiently.  
 """
 
-def create_environment(config: dict, run_folder: Path, env_id:str="gymnasium_env/BoidsWorldSimple-v0"):
+
+def create_environment(
+    config: dict, run_folder: Path, env_id: str = "gymnasium_env/BoidsWorldSimple-v0"
+):
     if config["visuals"]["show_visualizer"]:
         render_mode = "human"
     else:
-        render_mode = "rgb_array" # I don't think this actually matters because we ignore this but it saves a warning.
+        render_mode = "rgb_array"  # I don't think this actually matters because we ignore this but it saves a warning.
 
     """ 
     -- 080825 7:15PM
@@ -205,13 +214,13 @@ def create_environment(config: dict, run_folder: Path, env_id:str="gymnasium_env
 
     return env
 
+
 def run_simulator(config: dict, env, agents=None, run_folder=None):
-    print('run_simulator(): run folder is ', run_folder)
+    print("run_simulator(): run folder is ", run_folder)
     #
     # Set up the random seeds for each episode. ** This will abort if there aren't enough seeds in the config file. **
     #
     seed_list = setup_seed_list(config)
-
 
     setup_logging(config, run_folder)
 
@@ -220,13 +229,11 @@ def run_simulator(config: dict, env, agents=None, run_folder=None):
     # There may be a better way to do this to make sure we get all parameters stored
     # in case there are still hardcoded values in the code -- which should be removed
     # at some point.
-    print('run folder ', run_folder)
+    print("run folder ", run_folder)
 
     # write out the package list to help with reproducibility (this seems to be especially important
     # for random number generators, which change based on package level.
     write_package_list(run_folder)
-
-
 
     # -- 080225
     # Find the path for the video in the run folder.
@@ -234,7 +241,6 @@ def run_simulator(config: dict, env, agents=None, run_folder=None):
         f"video.{config['visuals']['video_file_extension']}", run_folder
     )
     logger.debug(f"video path {video_file_path}")
-
 
     variant_index_list, variant_type_list = agents.get_variant_types()
 
@@ -308,7 +314,6 @@ def run_simulator(config: dict, env, agents=None, run_folder=None):
         if config["simulator"]["show_trajectories"]:
             plot_trajectories(df, env)
 
-
         # move the video to prevent overwriting in the next episode
         if config["visuals"]["store_video"]:
             # change the name of the video file to include the episode
@@ -341,7 +346,6 @@ if __name__ == "__main__":
             "collab_env/sim/boids/config.yaml", get_project_root()
         )
 
-
     config = yaml.safe_load(open(config_filename))
 
     # -- 080225 9:15AM
@@ -350,9 +354,9 @@ if __name__ == "__main__":
     new_run_folder = expand_path(new_folder_name, get_project_root())
     new_run_folder.mkdir(parents=True, exist_ok=True)
     # os.mkdir(new_run_folder)
-    print('run folder is ', new_run_folder)
+    print("run folder is ", new_run_folder)
     copied_config_file_path = expand_path("config.yaml", new_run_folder)
-    print('copiedfile path ', copied_config_file_path)
+    print("copiedfile path ", copied_config_file_path)
     shutil.copy(config_filename, copied_config_file_path)
 
     env = create_environment(config=config, run_folder=new_run_folder)

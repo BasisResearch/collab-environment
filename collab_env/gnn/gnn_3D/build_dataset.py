@@ -15,7 +15,7 @@ from tqdm import tqdm
 from collab_env.data.file_utils import expand_path, get_project_root
 
 
-def convert_dataframe_to_node_features(df: pd.DataFrame):
+def convert_dataframe_to_node_features(df: pd.DataFrame, columns=None):
     agents_df = df.copy()
     """
     TOC -- 103025 
@@ -74,24 +74,27 @@ def convert_dataframe_to_node_features(df: pd.DataFrame):
     #     index=agents_df.index,
     # )
     # print('mesh dist:', df[['time', 'id', 'mesh_scene_distance', 'mesh_scene_closest_point_x', 'mesh_scene_closest_point_y','mesh_scene_closest_point_z']])
-    groups = agents_df.groupby("time")[
-        [
-            # "x",
-            # "y",
-            # "z",
-            "v_x",
-            "v_y",
-            "v_z",
-            "distance_to_target_mesh_closest_point_1",
-            "target_mesh_closest_point_x",
-            "target_mesh_closest_point_y",
-            "target_mesh_closest_point_z",
-            "mesh_scene_distance",
-            "mesh_scene_closest_point_x",
-            "mesh_scene_closest_point_y",
-            "mesh_scene_closest_point_z",
+    if columns is None:
+        groups = agents_df.groupby("time")[
+            [
+                # "x",
+                # "y",
+                # "z",
+                "v_x",
+                "v_y",
+                "v_z",
+                "distance_to_target_mesh_closest_point_1",
+                "target_mesh_closest_point_x",
+                "target_mesh_closest_point_y",
+                "target_mesh_closest_point_z",
+                "mesh_scene_distance",
+                "mesh_scene_closest_point_x",
+                "mesh_scene_closest_point_y",
+                "mesh_scene_closest_point_z",
+            ]
         ]
-    ]
+    else:
+        groups = agents_df.groupby("time")[columns]
 
     # print('agents_df\n', agents_df[["x", "y", "z"]])
     #
@@ -180,6 +183,7 @@ def compute_data_list_from_dataframe(
     num_agents: int,
     box_size: float,
     label_offset: int = 1,
+    node_feature_columns=None,
 ):
     #
     # Get the positions and relative positions of the agents.
@@ -191,7 +195,7 @@ def compute_data_list_from_dataframe(
     # (must be called after compute positions because that function
     # sets up the position column -- I don't like this)
     #
-    node_features = convert_dataframe_to_node_features(agents_df)
+    node_features = convert_dataframe_to_node_features(agents_df, node_feature_columns)
 
     #
     # Scale all the coordinates and distances by the size of the box (assumes width = height = depth)
@@ -235,7 +239,7 @@ def compute_data_list_from_dataframe(
                 relative_positions[t], from_nodes, to_nodes
             ),
         )
-        for t in range(num_time_steps - label_offset) # don't go beyond the labels.
+        for t in range(num_time_steps - label_offset)  # don't go beyond the labels.
     ]
 
     return data_list
@@ -254,7 +258,14 @@ def sort_helper(path):
 
 
 class Sim3DInMemoryDataset(InMemoryDataset):
-    def __init__(self, root, transform=None, pre_transform=None):
+    def __init__(
+        self,
+        root,
+        transform=None,
+        pre_transform=None,
+        node_feature_columns=None,
+        load_only=False,
+    ):
         """
 
         Args:
@@ -265,7 +276,16 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         """
         self.root_path = expand_path(root, get_project_root())
         root = str(self.root_path)
+        self.node_feature_columns = node_feature_columns
 
+        if load_only:
+            process_indicator_path = expand_path(
+                "processed/" + self.processed_file_names[0], self.root_path
+            )
+            if not process_indicator_path.exists():
+                raise FileNotFoundError(
+                    f"Dataset constructor called in load only mode but path {process_indicator_path} doesn't exists."
+                )
 
         super(Sim3DInMemoryDataset, self).__init__(root, transform, pre_transform)
         self.sim_data_folder_name = root
@@ -338,22 +358,25 @@ class Sim3DInMemoryDataset(InMemoryDataset):
             data_list = compute_data_list_from_dataframe(
                 agents_df,
                 num_agents=config["simulator"]["num_agents"],
-                num_time_steps=config["simulator"]["num_frames"]
-                + 1,  # add 1 for time step 0
+                # add 1 to num_frames for time step 0
+                num_time_steps=config["simulator"]["num_frames"] + 1,
                 box_size=config["environment"]["box_size"],
+                node_feature_columns=self.node_feature_columns,
             )
 
             # Store the processed data
             # print("saving to ", self.get_filename_for_saved_episode(episode_file_list, episode_number))
             torch.save(
-                # (data, slices), self.get_filename_for_saved_episode(episode_number)
                 data_list,
                 self.get_filename_for_saved_episode(episode_file_list, episode_number),
             )
 
         # indicate that processing is complete by creating the indicator file
-        with open(self.processed_paths[0], "w") as _:
-            pass  # create an empty file
+        dataset_metadata = {"node_feature_columns": self.node_feature_columns}
+        torch.save(dataset_metadata, self.processed_paths[0])
+        print("saved to ", self.processed_paths[0])
+        # with open(self.processed_paths[0], "w") as f:
+        #     f.write(dataset_data)
 
     def load_episodes(self):
         self.episode_file_list = sorted(
@@ -362,13 +385,6 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         # episode_file_list = list(self.root_path.glob("processed/*episode*.pt"))
         num_episodes = len(self.episode_file_list)
         print(f"loading {num_episodes} episodes")
-        # episodes = [
-        #     torch.load(
-        #         f"{self.processed_dir}/{self.processed_file_names[0]}_episode_{episode_number}.pt",
-        #         weights_only=False,
-        #     )
-        #     for episode_number in tqdm(range(1, num_episodes + 1))
-        # ]
         episodes = [
             torch.load(
                 episode_file,
@@ -402,6 +418,7 @@ class Sim3DInMemoryDataset(InMemoryDataset):
     def edge_attr_dim(self):
         return self._edge_attr_dim
 
+
 if __name__ == "__main__":
     #
     # Get the config file name if specified on the command line
@@ -411,16 +428,16 @@ if __name__ == "__main__":
         description="Builds a graph dataset from 3D simulation data.",
         epilog="---",
     )
-    parser.add_argument("-d", "--directory", type=str)
+    parser.add_argument("-d", "--directory", type=str, required=True)
     args = parser.parse_args()
-    if not args.directory:
-        print("Specify directory as command-line argument -d.")
-        exit("1")
 
     dataset = Sim3DInMemoryDataset(args.directory)
     print("dataset length = ", len(dataset))
 
     loader = DataLoader(dataset=dataset, batch_size=1, shuffle=True)
+
+    dataset_metadata = torch.load(dataset.processed_paths[0])
+    print(dataset_metadata)
 
     # print("checking data from loader")
     # for episode_number, episode in enumerate(loader):

@@ -10,7 +10,9 @@ class BoidAgents:
         self.config = simulator_config
         self.env = env
 
-        self.target_creation_time = simulator_config["simulator"]["target_creation_time"]
+        self.target_creation_time = simulator_config["simulator"][
+            "target_creation_time"
+        ]
         self.target_weights = self.config["agent"]["target_weight"]
         self.num_targets = simulator_config["simulator"]["num_targets"]
         self.variant_index_list = []
@@ -31,7 +33,9 @@ class BoidAgents:
                 num_targets=simulator_config["simulator"]["num_targets"],
                 walking=simulator_config["simulator"]["walking"],
                 has_mesh_scene=(simulator_config["meshes"]["mesh_scene"] != ""),
-                min_ground_separation=simulator_config["agent"]["min_ground_separation"],
+                min_ground_separation=simulator_config["agent"][
+                    "min_ground_separation"
+                ],
                 min_separation=simulator_config["agent"]["min_separation"],
                 neighborhood_dist=simulator_config["agent"]["neighborhood_dist"],
                 random_weight=simulator_config["agent"]["random_weight"],
@@ -40,7 +44,7 @@ class BoidAgents:
                 alignment_weight=simulator_config["agent"]["alignment_weight"],
                 cohesion_weight=simulator_config["agent"]["cohesion_weight"],
                 target_weight=[0.0]
-                              * simulator_config["simulator"][
+                * simulator_config["simulator"][
                     "num_targets"
                 ],  # start at all 0's and add weights when created -- not a great design.
                 max_speed=simulator_config["agent"]["max_speed"],
@@ -54,7 +58,9 @@ class BoidAgents:
             self.agent_variant_list = [agent]
             self.agent_variants = []
         else:
-            self.agent_variants = simulator_config.get("agent", {}).get("agent_variants", [])
+            self.agent_variants = simulator_config.get("agent", {}).get(
+                "agent_variants", []
+            )
             self.agent_variant_list = []
             num_agents_so_far = 0
             for variant in self.agent_variants:
@@ -74,7 +80,9 @@ class BoidAgents:
                     num_targets=simulator_config["simulator"]["num_targets"],
                     walking=simulator_config["simulator"]["walking"],
                     has_mesh_scene=(simulator_config["meshes"]["mesh_scene"] != ""),
-                    min_ground_separation=simulator_config["agent"]["min_ground_separation"]
+                    min_ground_separation=simulator_config["agent"][
+                        "min_ground_separation"
+                    ]
                     if "min_ground_separation"
                     else variant["min_ground_separation"],
                     min_separation=simulator_config["agent"]["min_separation"]
@@ -99,7 +107,7 @@ class BoidAgents:
                     if "cohesion_weight" not in variant
                     else variant["cohesion_weight"],
                     target_weight=[0.0]
-                                  * simulator_config["simulator"][
+                    * simulator_config["simulator"][
                         "num_targets"
                     ],  # start at all 0's and add weights when created -- not a great design.
                     max_speed=simulator_config["agent"]["max_speed"]
@@ -143,7 +151,7 @@ class BoidAgents:
         """
         for t in range(self.num_targets):
             if time_step == self.target_creation_time[t]:
-                print('updating target weights, time is ', time_step)
+                print("updating target weights, time is ", time_step)
                 """
                 -- 082325 11:02PM
                 I am only setting the first target weight here. That is a problem that

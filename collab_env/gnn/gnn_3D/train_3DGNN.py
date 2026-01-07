@@ -18,7 +18,7 @@ from tqdm.auto import tqdm as auto_tgdm
 
 from contextlib import nullcontext
 
-from collab_env.data.file_utils import expand_path, get_project_root
+from collab_env.data.file_utils import expand_path
 from collab_env.gnn.gnn_3D.analyze_results import process_training_result
 from collab_env.gnn.gnn_3D.build_dataset import Sim3DInMemoryDataset
 from collab_env.gnn.gnn_3D.gnn_models import GNN_Attention
@@ -142,16 +142,13 @@ def load_dataset(directory: str):
     Loads training and validation datasets from specified directory.
     Args:
         directory (string): the path to the directory containing sim3d dataset
+        node_feature_columns (list): the list of columns from the dataframe to include as input features
 
     Returns:
         train_loader (torch.utils.data.DataLoader): the training dataset loader
         val_loader (torch.utils.data.DataLoader): the validation dataset loader
     """
-    dataset = Sim3DInMemoryDataset(directory)
-    # print("dataset length = ", len(dataset))
-    # print('episode_file_list = ', dataset.episode_file_list)
-    # print('dataset.episodes ', dataset.episodes)
-    # assert False, 'checking episodes'
+    dataset = Sim3DInMemoryDataset(directory, load_only=True)
 
     seed = np.random.randint(low=0, high=2**31)
     torch_generator = torch.manual_seed(seed)
@@ -164,8 +161,6 @@ def load_dataset(directory: str):
     train_dataset, val_dataset = torch.utils.data.random_split(
         dataset, [train_size, len(dataset) - train_size], generator=torch_generator
     )
-    # print("train indices ", train_dataset.indices)
-    # print("val indices ", val_dataset.indices)
 
     train_loader = DataLoader(dataset=train_dataset, batch_size=1, shuffle=True)
     val_loader = DataLoader(dataset=val_dataset, batch_size=1, shuffle=True)
@@ -179,17 +174,18 @@ def load_dataset(directory: str):
         dataset.input_node_dim,
         dataset.edge_attr_dim,
         dataset.label_dim,
+        dataset.node_feature_columns,
     )
 
 
 def train_3DGNN(
     directory,
+    training_result_path,
     num_epochs=1,
     evaluate_only=False,
     include_second_layer=True,
     mlp_layers=None,
     load_model=None,
-    force_reload=False,
 ):
     """
     Loads training and validation datasets from specified directory, creates the GNN model, and runs the training loop
@@ -206,6 +202,7 @@ def train_3DGNN(
 
     """
 
+    print("training result path: ", training_result_path)
     (
         train_loader,
         training_dataset_indices,
@@ -215,6 +212,7 @@ def train_3DGNN(
         input_node_dim,
         edge_attr_dim,
         label_dim,
+        node_feature_columns,
     ) = load_dataset(directory)
 
     # print("train_3GDNN(): training indices ", training_dataset_indices)
@@ -228,10 +226,12 @@ def train_3DGNN(
     model = GNN_Attention(
         model_name="GNN-Attention-Linear",
         in_node_dim=input_node_dim,
-        edge_dim=edge_attr_dim, # get this from dataset
-        output_dim=label_dim, # get this from dataset
+        edge_dim=edge_attr_dim,  # get this from dataset
+        output_dim=label_dim,  # get this from dataset
         self_loops=True,
-        fill_value=torch.zeros(edge_attr_dim).float(), # get dimension from dataset same as edge_dim
+        fill_value=torch.zeros(
+            edge_attr_dim
+        ).float(),  # get dimension from dataset same as edge_dim
         include_convolutional_layer=include_second_layer,
         mlp=mlp,
     )
@@ -274,13 +274,14 @@ def train_3DGNN(
         # print("training loss", train_loss)
 
         saved_model_path = expand_path(
-            directory + f"/saved_models/{model.name}_epoch_{epoch}.pt",
-            get_project_root(),
+            f"saved_models/{model.name}_epoch_{epoch}.pt",
+            training_result_path,
         )
         saved_model_path.parent.mkdir(parents=True, exist_ok=True)
         # saving full model -- not portable or particularly secure but easier for now
         torch.save(model, saved_model_path)
 
+    # if we are training, we need to run validation for the final epoch.
     if not evaluate_only:
         val_loss, val_prediction_list, val_attention_weights_list, val_index_list = (
             train_epoch(
@@ -314,19 +315,51 @@ if __name__ == "__main__":
         description="Builds a graph dataset from 3D simulation data.",
         epilog="---",
     )
-    parser.add_argument("-d", "--directory", type=str, required=True)
-    parser.add_argument("-e", "--evaluate-only", action="store_true")
     parser.add_argument(
-        "-l", "--load_model", type=str, default=None
+        "-d",
+        "--directory",
+        type=str,
+        required=True,
+        help="path to the directory containing simulation data",
+    )
+    parser.add_argument(
+        "-e", "--evaluate-only", action="store_true", help="do not train, only evaluate"
+    )
+    parser.add_argument(
+        "-l",
+        "--load_model",
+        type=str,
+        default=None,
+        help="specifies the path to the file containing the model we should load",
     )  # not implemented yet
     # parser.add_argument(
     #     "-fr", "--force_reload", type=str, help="force the dataset to be reprocessed"
     # )  # not implemented yet
-    parser.add_argument("-ne", "--num-epochs", default=1, type=int)
-    parser.add_argument("-cl", "--convolutional_layer", action="store_true")
-    parser.add_argument("-mlp", "--multilayer_perceptron_layers", type=csv_ints)
     parser.add_argument(
-        "-trd", "--training_result_subdirectory", type=str, default="training_results"
+        "-ne",
+        "--num-epochs",
+        default=1,
+        type=int,
+        help="the number of epochs for training",
+    )
+    parser.add_argument(
+        "-cl",
+        "--convolutional_layer",
+        action="store_true",
+        help="include a convolutional layer after the attention layer",
+    )
+    parser.add_argument(
+        "-mlp",
+        "--multilayer_perceptron_layers",
+        type=csv_ints,
+        help="include a multilayer perceptron with dimensions specified as a list of integers",
+    )
+    parser.add_argument(
+        "-trd",
+        "--training_result_subdirectory",
+        type=str,
+        default="training_results",
+        help="subdirectory with the directory to store the results",
     )
 
     args = parser.parse_args()
@@ -337,14 +370,16 @@ if __name__ == "__main__":
         args.directory + "/" + args.training_result_subdirectory
     )
 
-    assert not training_result_path.exists(), (
-        f"Training result directory already exists. Please move it so I don't overwrite it, which could be sad for you. \n Full path is {training_result_path}."
-    )
+    if training_result_path.exists():
+        raise FileExistsError(
+            f"Training result directory already exists. Please move it so I don't overwrite it, which could be sad for you. \n Full path is {training_result_path}."
+        )
 
     training_result_path.mkdir(parents=True, exist_ok=False)
 
     result = train_3DGNN(
         args.directory,
+        training_result_path=training_result_path,
         num_epochs=args.num_epochs,
         evaluate_only=args.evaluate_only,
         include_second_layer=args.convolutional_layer,

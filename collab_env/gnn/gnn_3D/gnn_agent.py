@@ -9,8 +9,10 @@ from collab_env.sim.boids.sim_utils import add_obs_to_df
 """
 This is the GNN agent for computing rollouts with the simulator.
 """
+
+
 class GNN_Agents:
-    def __init__(self, simulator_config: dict, agent_config:dict, env):
+    def __init__(self, simulator_config: dict, agent_config: dict, env):
         """
         :param simulator_config: the configuration dictionary for the simulator
         :param agent_config: the configuration dictionary specific to the agent.
@@ -22,17 +24,17 @@ class GNN_Agents:
         predicts agents to go from different initial positions.
         :param env: the environment, this is ignored for now and should probably be removed but boids_agents would also
         have to change if we remove it.
-
-
         """
+
         self.simulator_config = simulator_config
 
         # need these for building the data to pass to the model
         self.num_agents = simulator_config["simulator"]["num_agents"]
         self.num_time_steps = (
-                simulator_config["simulator"]["num_frames"] + 1
+            simulator_config["simulator"]["num_frames"] + 1
         )  # add 1 for time step 0
         self.box_size = simulator_config["environment"]["box_size"]
+
         """
         TOC -- 010426 1:18AM
         
@@ -51,18 +53,32 @@ class GNN_Agents:
         self.model.eval()
 
         """
+        TOC -- 010626 10:02PM
+        TODO: Get the node features from the dataset metadata  
+        """
+        dataset_metadata_file = agent_config["dataset_metadata_file"]
+        dataset_metadata = torch.load(
+            expand_path(dataset_metadata_file, get_project_root())
+        )
+        self.node_feature_columns = dataset_metadata["node_feature_columns"]
+
+        """
         TOC -- 010626 12:32PM
         There is probably an optimization to be used here with parquet to read only the rows and columns we need.
         """
-        self.position_df = pq.read_pandas(
-            agent_config["position_file"]
-        ).to_pandas()
+        self.position_df = pq.read_pandas(agent_config["position_file"]).to_pandas()
         start_time = agent_config["start_time"]
 
         self.init_position = self.position_df.loc[
-            (self.position_df["time"] == start_time) & (self.position_df["type"] == "agent"),
+            (self.position_df["time"] == start_time)
+            & (self.position_df["type"] == "agent"),
             ["x", "y", "z"],
         ].to_numpy()
+
+        # if "node_feature_columns" in agent_config:
+        #     self.node_feature_columns = agent_config["node_feature_columns"]
+        # else:
+        #     self.node_feature_columns = None
 
     def get_action_list(self, obs):
         df = add_obs_to_df(df=None, obs=obs)
@@ -73,6 +89,7 @@ class GNN_Agents:
             num_agents=self.num_agents,
             box_size=self.box_size,
             label_offset=0,  # needs to be 0 so that we don't go beyond the end, label is ignored in rollout
+            node_feature_columns=self.node_feature_columns,
         )
 
         with torch.no_grad():
@@ -80,7 +97,6 @@ class GNN_Agents:
             prediction, _ = self.model(data_list[0])
 
         return prediction.detach().cpu().numpy()
-
 
     def reset(self):
         # nothing to do

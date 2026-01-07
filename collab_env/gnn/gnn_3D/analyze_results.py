@@ -291,12 +291,15 @@ def rollout(simulator_config: dict, agent_config: dict, rollout_path: Path):
     agent config so that the environment and agents can be constructed and the simulator can be run.
     """
 
-
-    print('run folder is ', rollout_path)
+    print("run folder is ", rollout_path)
 
     env = create_environment(config=simulator_config, run_folder=rollout_path)
-    agents = GNN_Agents(simulator_config=simulator_config, agent_config=agent_config, env=env)
-    run_simulator(config=simulator_config, env=env, agents=agents, run_folder=rollout_path)
+    agents = GNN_Agents(
+        simulator_config=simulator_config, agent_config=agent_config, env=env
+    )
+    run_simulator(
+        config=simulator_config, env=env, agents=agents, run_folder=rollout_path
+    )
 
     print(f"rollout completed at {datetime.now().strftime('%Y%m%d-%H%M%S')}")
 
@@ -320,7 +323,6 @@ if __name__ == "__main__":
     parser.add_argument("-rsd", "--rollout_subdirectory", type=str)
     parser.add_argument("-v", "--show_visualizer", action="store_true")
 
-
     args = parser.parse_args()
 
     if args.plot_attention:
@@ -334,18 +336,22 @@ if __name__ == "__main__":
         animate_attention_weights(attention_weights_list)
 
     if args.rollout:
-        simulator_config_path = expand_path(args.directory + "/" + args.simulator_config_file, get_project_root())
+        simulator_config_path = expand_path(
+            args.directory + "/" + args.simulator_config_file, get_project_root()
+        )
         simulator_config = yaml.safe_load(open(simulator_config_path, "r"))
-        agent_config_path = expand_path(args.directory + "/" + args.agent_config_file, get_project_root())
+        agent_config_path = expand_path(
+            args.directory + "/" + args.agent_config_file, get_project_root()
+        )
         agent_config = yaml.safe_load(open(agent_config_path, "r"))
-        rollout_path = expand_path(args.directory + "/" + args.rollout_subdirectory, get_project_root())
+        rollout_path = expand_path(
+            args.directory + "/" + args.rollout_subdirectory, get_project_root()
+        )
         rollout_path.mkdir(parents=True, exist_ok=True)
         shutil.copy(simulator_config_path, expand_path("sim_config.yaml", rollout_path))
         shutil.copy(agent_config_path, expand_path("agent_config.yaml", rollout_path))
         if args.show_visualizer:
-            simulator_config['visuals']['show_visualizer'] = True
+            simulator_config["visuals"]["show_visualizer"] = True
         rollout(simulator_config, agent_config, rollout_path)
 
-    print('analyze results completed')
-
-
+    print("analyze results completed")
