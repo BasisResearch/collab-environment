@@ -54,10 +54,7 @@ dependencies = [
   "rich",
   "pyarrow",
   "starbars",
-  "importlib-metadata",
-  "aiosql<14",
-  "sqlalchemy",
-  "psycopg2"
+  "importlib-metadata"
 ]
 
 [tool.setuptools]
@@ -85,6 +82,11 @@ packages = [
 ]  
 
 [project.optional-dependencies]
+db = [
+  "aiosql<14",
+  "sqlalchemy",
+  "psycopg2"
+]
 docs = [
   "setuptools",
   "sphinx",
@@ -94,6 +96,9 @@ docs = [
   "nbsphinx",
 ]
 dev = [
+  "aiosql<14",
+  "sqlalchemy",
+  "psycopg2",
   "setuptools",
   "sphinx",
   "sphinxcontrib-bibtex",
