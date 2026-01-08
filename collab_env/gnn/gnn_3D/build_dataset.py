@@ -1,5 +1,6 @@
 import argparse
 import re
+from typing import Optional
 
 # from typing import Tuple
 import numpy as np
@@ -118,7 +119,9 @@ def compute_positions(agents_df: pd.DataFrame):
     #
     agents_df = agents_df.copy()
     agents_df.loc[:, "position"] = agents_df[["x", "y", "z"]].values.tolist()
-    pivot = agents_df.pivot(index="time", columns="id", values="position")
+    agents_df.loc[:, "velocity"] = agents_df[["v_x", "v_y", "v_z"]].values.tolist()
+
+    pivot = agents_df.pivot(index="time", columns="id", values=["position", "velocity"])
     # pivot = agents_df.pivot(index="time", columns="id", values=["x", "y", "z"])
     # print("pivot\n", pivot)
 
@@ -126,9 +129,18 @@ def compute_positions(agents_df: pd.DataFrame):
     # convert into a np array of shape (num time steps, num agents, dimension of world)
     #
     positions = torch.from_numpy(
-        np.stack(pivot.values.flatten()).reshape(pivot.shape + (-1,))
+        np.stack(pivot["position"].values.flatten()).reshape(
+            pivot["position"].shape + (-1,)
+        )
     ).float()
 
+    velocities = torch.from_numpy(
+        np.stack(pivot["velocity"].values.flatten()).reshape(
+            pivot["velocity"].shape + (-1,)
+        )
+    ).float()
+
+    #
     #
     # Compute relative positions for each time step and each agent. If we have a tensor called
     # positions of shape (num time steps, num agents, 3), we should get a tensor relative_positions
@@ -137,7 +149,7 @@ def compute_positions(agents_df: pd.DataFrame):
     #
     relative_positions = positions[:, None, :, :] - positions[:, :, None, :]
 
-    return positions, relative_positions
+    return positions, relative_positions, velocities
 
 
 def edge_attributes_for_complete_graph(
@@ -183,11 +195,12 @@ def compute_data_list_from_dataframe(
     box_size: float,
     label_offset: int = 1,
     node_feature_columns=None,
+    label_type: Optional[str] = None,
 ):
     #
     # Get the positions and relative positions of the agents.
     #
-    positions, relative_positions = compute_positions(agents_df)
+    positions, relative_positions, velocities = compute_positions(agents_df)
 
     #
     # Convert data frame to nodes features for this episode
@@ -220,7 +233,10 @@ def compute_data_list_from_dataframe(
     edge_index = torch.stack([from_nodes, to_nodes], dim=0)  # shape [2, num_agents**2]
 
     # the labels will be the positions of the agent at the next time step.
-    labels = positions / torch.tensor([box_size], dtype=torch.float32)
+    if label_type is not None and label_type.lower() == "velocities":
+        labels = velocities / torch.tensor([box_size], dtype=torch.float32)
+    else:
+        labels = positions / torch.tensor([box_size], dtype=torch.float32)
     # print('labels\n', labels)
     # assert False, 'process'
 
@@ -265,6 +281,7 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         node_feature_columns=None,
         load_only=False,
         data_directory_name=None,
+        labels: Optional[str] = None,
     ):
         """
 
@@ -301,11 +318,14 @@ class Sim3DInMemoryDataset(InMemoryDataset):
             self.sim_data_folder_path = self.root_path
             self.link_to_data = False
 
+        self.label_type = labels
+
         super(Sim3DInMemoryDataset, self).__init__(root, transform, pre_transform)
 
         self.episode_file_list = None  # this is created in load_episodes()
         self._input_node_dim = None
         self.episodes = self.load_episodes()
+        # print('self.episodes', self.episodes)
         self._input_node_dim = self.episodes[0][0].x.shape[1]
         self._edge_attr_dim = self.episodes[0][0].edge_attr.shape[1]
         self._label_dim = self.episodes[0][0].y.shape[1]
@@ -376,6 +396,7 @@ class Sim3DInMemoryDataset(InMemoryDataset):
                 num_time_steps=config["simulator"]["num_frames"] + 1,
                 box_size=config["environment"]["box_size"],
                 node_feature_columns=self.node_feature_columns,
+                label_type=self.label_type,
             )
 
             # Store the processed data
@@ -388,13 +409,13 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         # indicate that processing is complete by creating the indicator file
         dataset_metadata = {"node_feature_columns": self.node_feature_columns}
         torch.save(dataset_metadata, self.processed_paths[0])
-        print("saved to ", self.processed_paths[0])
+        # print("saved to ", self.processed_paths[0])
         # with open(self.processed_paths[0], "w") as f:
         #     f.write(dataset_data)
 
     def load_episodes(self):
         self.episode_file_list = sorted(
-            list(self.sim_data_folder_path.glob("processed/*episode*.pt")),
+            list(self.root_path.glob("processed/*episode*.pt")),
             key=sort_helper,
         )
         # episode_file_list = list(self.root_path.glob("processed/*episode*.pt"))
@@ -444,14 +465,16 @@ if __name__ == "__main__":
         epilog="---",
     )
     parser.add_argument("-d", "--directory", type=str, required=True)
-    parser.add_argument("-dd", "--data_directory", type=str, default=None)
+    parser.add_argument("-id", "--input_data_directory", type=str, default=None)
+    parser.add_argument(
+        "-lv", "--use_velocities_as_labels", action="store_true", default=False
+    )
     args = parser.parse_args()
 
-    print(args.directory)
-    print(args.data_directory)
-
     dataset = Sim3DInMemoryDataset(
-        args.directory, data_directory_name=args.data_directory
+        args.directory,
+        data_directory_name=args.input_data_directory,
+        labels="velocities" if args.use_velocities_as_labels else "positions",
     )
     print("dataset length = ", len(dataset))
 
@@ -459,6 +482,13 @@ if __name__ == "__main__":
 
     dataset_metadata = torch.load(dataset.processed_paths[0])
     print(dataset_metadata)
+
+    # for episode_index, episode_data in enumerate(dataset):
+    #     for graph in episode_data:
+    #         print("x", graph[0].x)
+    #         print("y", graph[0].y)
+    #         break
+    #     break
 
     # print("checking data from loader")
     # for episode_number, episode in enumerate(loader):

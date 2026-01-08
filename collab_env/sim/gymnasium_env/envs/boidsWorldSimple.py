@@ -325,7 +325,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                 ),
             }
         )
-        logger.debug("obs space: " + str(self.observation_space))
+        # logger.debug("obs space: " + str(self.observation_space))
 
         # actions are velocities
         self.action_space = spaces.Tuple(
@@ -706,8 +706,6 @@ class BoidsWorldSimpleEnv(gym.Env):
                         for _ in range(self.num_targets)
                     ]
                 )
-            # print(self._target_location.shape)
-            # assert(False)
 
             #
             # -- 080525 3:54PM
@@ -731,11 +729,27 @@ class BoidsWorldSimpleEnv(gym.Env):
             )
 
     def init_agents(self):
-        if self.show_trajectory_lines or self.run_trajectories:
+        if self.show_trajectory_lines:
             # use the first time step in the trajectory to
             # initialize the agent positions.
+            """
+            TOC -- 010726 7:01PM
+            The agent trajectories are now the initial predictions and are now just (num_agents, dim of space)
+            """
             self._agent_location = self.agent_trajectories[:, 0]
             self._agent_velocity = np.zeros((self.num_agents, 3))
+
+        elif self.run_trajectories:
+            """
+            TOC -- 010726 7:01PM
+            The agent trajectories are now the initial predictions and are now just (num_agents, dim of space)
+            
+            TOC -- 010726 7:16PM
+            We needed to separate this out from show_trajectory_lines because the input is different shape. 
+            """
+            self._agent_location = self.agent_trajectories  # [:, 0]
+            self._agent_velocity = np.zeros((self.num_agents, 3))
+
         else:
             if self.walking:
                 self._agent_location = [
@@ -816,8 +830,6 @@ class BoidsWorldSimpleEnv(gym.Env):
             logger.debug("agent vel:" + str(self._agent_velocity))
 
     def create_trajectory_line_group(self, agent_index, points, time_range, color):
-        # print(points[time_range[-1]])
-        # assert(False)
         """
         Args:
             agent_index:
@@ -1037,8 +1049,8 @@ class BoidsWorldSimpleEnv(gym.Env):
             elif "run_trajectories" in options:
                 # init_agents() will use these trajectories to initialize
                 # the agent locations.
+                self.run_trajectories = True
                 self.agent_trajectories = options["agent_trajectories"]
-                print("agent_trajectories\n", self.agent_trajectories)
 
         self.init_agents()
         self.init_targets()
@@ -1133,7 +1145,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         Returns:
 
         """
-
+        terminated = False
         self.time_step += 1
 
         """
@@ -1147,7 +1159,8 @@ class BoidsWorldSimpleEnv(gym.Env):
         elif self.run_trajectories:
             terminated = False
             # the action parameter in this case is agent's new position
-            self._agent_location = action
+            # clip the values to be inside the box, so the rollouts don't blow up.
+            self._agent_location = np.clip(action, 0.0, self.box_size)
 
         else:
             for t in range(self.num_targets):
@@ -1227,80 +1240,8 @@ class BoidsWorldSimpleEnv(gym.Env):
             if self.moving_targets:
                 self.update_target_locations()
 
-            """
-            -- 071625
-            needs distances to be a list 
-            
-            -- 072825 
-            not sure I am using distances anymore. Ah, I was treating the world to be constrained within a sphere but went 
-            with the cube when the sphere calculations didn't work so well. Perhaps I should go back to the sphere approach
-            since Matt suggested that is what he likes to do with dynamical systems involving particles running out to 
-            infinity. Also, Reynolds indicated that having a target point to go to created unnatural behavior in boids.
-            
-            -- 073125 2:51PM
-            Looks like I am using this to determine whether anyone hit the target. Not sure this is necessary. I think
-            we have this computed in the observation, but not sure we have that in time for checking the hit if we need
-            to do that to determine whether the agent ate the food.  
-            """
-            # distance = np.linalg.norm(self._agent_location - self._target_location, ord=1)
-            distance = np.array(self.compute_target_center_distances())
-
-            # logger.debug('new distance:' + str(distance))
-            """
-            -- 072125 12:41PM -- reverse direction if too far from the center -- maybe change this to add the target as a 
-            part of the velocity calculation at some point.
-            
-            Skipping the distance approach and going with the box idea to see if that is better. 
-            """
-            # norms = np.apply_along_axis(np.linalg.norm, 1, self._agent_location)
-            # indices = np.where(norms > self.max_dist_from_center)
-            # print('step(): indices: ' + str(indices))
-            # print('step(): norms: ' + str(norms))
-            # print('step(): velocities : ' + str(self._agent_velocity))
-            # reversed = False
-            # for i in indices[0]:
-            #     reversed = True
-            #     # reverse direction
-            #     print("step(): i = " + str(i))
-            #     self._agent_velocity[i] = -self._agent_velocity[i]
-            #     # added this to try to avoid going past the end point and bouncing back and forth -- didn't work
-            #     self._agent_location[i] = self._agent_location[i] + self._agent_velocity[i]
-            # print('step(): after reverse velocities : ' + str(self._agent_velocity))
-
-            """
-            -- 072125 -- Check norms 
-            """
-            # if reversed:
-            #     norms = np.apply_along_axis(np.linalg.norm, 1, self._agent_location)
-            #     indices = np.where(norms > self.max_dist_from_center)
-            #     logger.debug('step() indices ' + str(indices))
-            #     logger.debug('step(): norms: ' + str(norms))
-            #     logger.debug('step(): velocities : ' + str(self._agent_velocity))
-
-            # logger.debug('distance condition thingy ' + str(distance[distance < HIT_DISTANCE]))
-            """
-            -- 072925 
-            I am setting terminated to be when an agent hits the goal. Somewhere, I must have set this to false. I should 
-            set this to false here if that is what I want. Terminated should be controlled here and nowhere else. 
-            runboids() is just ignoring terminated -- Never mind.  
-            """
-            """
-            -- 080325
-            Hit distance should be configurable
-            
-            -- 081425 8:49AM
-            Need some sort of systematic way to say a run is terminated. This one doesn't make
-            much sense, 
-            """
-            terminated = (
-                len(distance[distance < HIT_DISTANCE]) > 0
-            )  # np.array_equal(self._agent_location, self._target_location)
-
-        # logger.debug('terminated ' + str(terminated))
         reward = 0
 
-        # reward = prev_distance - distance # rewarded for gaining ground
-        # reward = 1 if terminated else 0  # Binary sparse rewards
         observation = self._get_obs()
         logger.debug(f"observation:\n{observation}")
 
@@ -1312,7 +1253,6 @@ class BoidsWorldSimpleEnv(gym.Env):
 
         # -- 080225 4:41PM
         # always want to call _render_frame because we rely on the meshes for the simulation
-        # if self.render_mode == "human":
         self._render_frame()
 
         # logger.debug('step(): observation: ' + str(observation), level=1)
@@ -1323,6 +1263,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         return self.truncated so that user can quit out of visualizer to 
         quit the run instead of having to Ctrl-C. 
         """
+
         return observation, reward, terminated, self.truncated, info
 
     """
@@ -1542,9 +1483,13 @@ class BoidsWorldSimpleEnv(gym.Env):
             #
             # # Apply the rotation
             # self.mesh_arrow_agent[i].rotate(R, center=self.mesh_arrow_agent[i].get_center())
+            """
+            TOC -- 010726 7:14PM
+            I don't think this should be relative = True, because these are absolute positions now. 
+            """
             if self.run_trajectories:
                 self.mesh_agent[i].translate(
-                    np.array(self._agent_location[i]), relative=True
+                    np.array(self._agent_location[i]), relative=False
                 )
             else:
                 self.mesh_agent[i].translate(np.array(self._agent_velocity[i]))

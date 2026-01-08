@@ -311,8 +311,8 @@ def csv_ints(arg):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        prog="build_dataset.py",
-        description="Builds a graph dataset from 3D simulation data.",
+        prog="train_3DGNN.py",
+        description="Trains a GNN on the graph dataset generated from 3D simulation data.",
         epilog="---",
     )
     parser.add_argument(

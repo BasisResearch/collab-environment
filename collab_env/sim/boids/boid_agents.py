@@ -1,12 +1,17 @@
+from typing import Optional
+
 import numpy as np
 
 import gymnasium as gym
 
+from collab_env.gnn.gnn_3D.simulator_agents_abstract import SimulatorAgents
 from collab_env.sim.boids.boidsAgents import BoidsWorldAgent, Mesh_Avoidance
 
 
-class BoidAgents:
-    def __init__(self, simulator_config: dict, agent_config: dict, env: gym.Env):
+class BoidAgents(SimulatorAgents):
+    def __init__(
+        self, simulator_config: dict, env: gym.Env, agent_config: Optional[dict] = None
+    ):
         self.config = simulator_config
         self.env = env
 
@@ -151,7 +156,6 @@ class BoidAgents:
         """
         for t in range(self.num_targets):
             if time_step == self.target_creation_time[t]:
-                print("updating target weights, time is ", time_step)
                 """
                 -- 082325 11:02PM
                 I am only setting the first target weight here. That is a problem that

@@ -113,7 +113,7 @@ def add_obs_to_df(
             # print(f'species = {variant_type_list[variant_index]}')
             row_dict["species"] = variant_type_list[variant_index]
         else:
-            row_dict["species"] = "unspecified"
+            row_dict["species"] = "unspecified"  # type: ignore[assignment]
 
         row_dict["time"] = time_step
         row_dict["x"] = location[0]

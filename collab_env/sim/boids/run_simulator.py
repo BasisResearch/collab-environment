@@ -15,6 +15,7 @@ from pathlib import Path
 
 import numpy as np
 
+
 from tqdm import tqdm  # Progress bar
 import gymnasium as gym
 import yaml
@@ -24,7 +25,7 @@ import pyarrow.parquet as pq
 import pyarrow as pa
 import shutil
 
-from collab_env.gnn.gnn_3D.gnn_agent import GNN_Agents
+from collab_env.gnn.gnn_3D.simulator_agents_abstract import SimulatorAgents
 from collab_env.sim.boids.boid_agents import BoidAgents
 import collab_env.sim.gymnasium_env as gymnasium_env  # noqa: F401
 from collab_env.data.file_utils import get_project_root, expand_path
@@ -68,8 +69,8 @@ def write_package_list(new_run_folder: Path):
     with open(package_list_file_path, "w") as f:
         pairs = sorted(
             (
-                (dist.metadata.get("Name") or dist.name).lower(),
-                f"{dist.metadata.get('Name') or dist.name}=={dist.version}",
+                (dist.metadata.get("Name") or dist.name).lower(),  # type: ignore[attr-defined]
+                f"{dist.metadata.get('Name') or dist.name}=={dist.version}",  # type: ignore[attr-defined]
             )
             for dist in distributions()
         )
@@ -90,46 +91,17 @@ def setup_seed_list(config):
     to the config.yaml file. 
     """
     if len(seed_list) < config["simulator"]["num_episodes"]:
-        print(
-            f"Number of episodes ({config['simulator']['num_episodes']}) greater than number of seeds ({len(seed_list)}). Aborting."
-        )
         rng = np.random.default_rng(seed=0)
         unique_ints = rng.choice(
             np.arange(1, 1000000),
             size=config["simulator"]["num_episodes"],
             replace=False,
         )
-        print(
-            "Here is a list of random seeds for each episode. Put them in the config file and rerun.\n",
-            unique_ints.tolist(),
-        )
-        assert False, (
-            f"Not enough random seeds ({len(seed_list)}) in config file. See message above."
+        raise ValueError(
+            f"Number of episodes ({config['simulator']['num_episodes']}) greater than number of seeds ({len(seed_list)}). Aborting. Here is a list of random seeds for each episode. Put them in the config file and rerun.\n{unique_ints.tolist()}"
         )
 
     return seed_list
-
-
-def agent_factory(
-    agent_type: int, simulation_config: dict, agent_config: dict, env: gym.Env
-):
-    if agent_type == 0:
-        agents = BoidAgents(
-            simulator_config=simulation_config, agent_config=None, env=env
-        )
-    elif agent_type == 1:
-        agents = GNN_Agents(
-            simulator_config=simulation_config, agent_config=agent_config, env=env
-        )
-    else:
-        agents = None
-    return agents
-
-
-"""
--- 080825 10:10AM
-This needs to be done much more efficiently.  
-"""
 
 
 def create_environment(
@@ -215,8 +187,7 @@ def create_environment(
     return env
 
 
-def run_simulator(config: dict, env, agents=None, run_folder=None):
-    print("run_simulator(): run folder is ", run_folder)
+def run_simulator(config: dict, env, agents: SimulatorAgents, run_folder=None):
     #
     # Set up the random seeds for each episode. ** This will abort if there aren't enough seeds in the config file. **
     #
@@ -229,9 +200,8 @@ def run_simulator(config: dict, env, agents=None, run_folder=None):
     # There may be a better way to do this to make sure we get all parameters stored
     # in case there are still hardcoded values in the code -- which should be removed
     # at some point.
-    print("run folder ", run_folder)
 
-    # write out the package list to help with reproducibility (this seems to be especially important
+    # write out the package list to help with reproducibility. This seems to be especially important
     # for random number generators, which change based on package level.
     write_package_list(run_folder)
 
@@ -274,6 +244,8 @@ def run_simulator(config: dict, env, agents=None, run_folder=None):
         for time_step in tqdm(range(config["simulator"]["num_frames"]), leave=False):
             agents.update(time_step=time_step)
             action = agents.get_action_list(obs)
+            if np.isnan(action).any() or np.isinf(action).any():
+                raise ValueError(f"action contains infinity or nan\n{action}")
 
             # Take the action in the environment and observe the result
             next_obs, reward, terminated, truncated, info = env.step(action)
@@ -325,7 +297,34 @@ def run_simulator(config: dict, env, agents=None, run_folder=None):
             shutil.move(video_file_path, episode_video_file_path)
 
     logger.info("all episodes complete")
-    print(f"output written to {run_folder}")
+    logger.info(f"output written to {run_folder}")
+
+    return run_folder
+
+
+def run_simulator_main(config_filename):
+    config = yaml.safe_load(open(config_filename))
+
+    # -- 080225 9:15AM
+    # Create the output folder
+    new_folder_name = f"{config['simulator']['run_main_folder']}/{config['simulator']['run_sub_folder_prefix']}-started-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    new_run_folder = expand_path(new_folder_name, get_project_root())
+    new_run_folder.mkdir(parents=True, exist_ok=True)
+    # os.mkdir(new_run_folder)
+    copied_config_file_path = expand_path("config.yaml", new_run_folder)
+    shutil.copy(config_filename, copied_config_file_path)
+
+    env = create_environment(config=config, run_folder=new_run_folder)
+    agents = BoidAgents(simulator_config=config, agent_config=None, env=env)
+    run_folder = run_simulator(
+        config=config, env=env, agents=agents, run_folder=new_run_folder
+    )
+
+    logger.info(
+        f"run simulator completed at {datetime.now().strftime('%Y%m%d-%H%M%S')}"
+    )
+
+    return run_folder
 
 
 if __name__ == "__main__":
@@ -339,6 +338,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("-cf", "--config_file")
     args = parser.parse_args()
+
     if args.config_file:
         config_filename = expand_path(args.config_file, get_project_root())
     else:
@@ -346,21 +346,4 @@ if __name__ == "__main__":
             "collab_env/sim/boids/config.yaml", get_project_root()
         )
 
-    config = yaml.safe_load(open(config_filename))
-
-    # -- 080225 9:15AM
-    # Create the output folder
-    new_folder_name = f"{config['simulator']['run_main_folder']}/{config['simulator']['run_sub_folder_prefix']}-started-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
-    new_run_folder = expand_path(new_folder_name, get_project_root())
-    new_run_folder.mkdir(parents=True, exist_ok=True)
-    # os.mkdir(new_run_folder)
-    print("run folder is ", new_run_folder)
-    copied_config_file_path = expand_path("config.yaml", new_run_folder)
-    print("copiedfile path ", copied_config_file_path)
-    shutil.copy(config_filename, copied_config_file_path)
-
-    env = create_environment(config=config, run_folder=new_run_folder)
-    agents = BoidAgents(simulator_config=config, agent_config=None, env=env)
-    run_simulator(config=config, env=env, agents=agents, run_folder=new_run_folder)
-
-    print(f"run simulator completed at {datetime.now().strftime('%Y%m%d-%H%M%S')}")
+    run_simulator_main(config_filename)

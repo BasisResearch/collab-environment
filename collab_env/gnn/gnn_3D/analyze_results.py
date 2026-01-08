@@ -135,8 +135,8 @@ def process_training_result(training_result, directory):
         )
 
     train_indices = training_result["train_dataset_indices"]
-    print("train_indices", train_indices)
-    print("number of train_predictions", len(training_result["train_predictions"]))
+    # print("train_indices", train_indices)
+    # print("number of train_predictions", len(training_result["train_predictions"]))
     for episode in range(len(training_result["train_predictions"])):
         episode_file_name = episode_file_list[train_indices[episode]].name.split(".pt")[
             0
@@ -211,7 +211,7 @@ def plot_attention_weights(attention_weight_list, num_cols=2):
         convert_attention_weights_to_adj_matrix(w) for w in attention_weight_list
     ]
     num_rows = int(np.ceil(len(attention_weight_list) / num_cols))
-    print("num_rows", num_rows)
+    # print("num_rows", num_rows)
     fig, axes = plt.subplots(
         num_rows,
         num_cols,
@@ -281,22 +281,36 @@ def load_attention_weights(directory, filename):
     return attention_weights_list
 
 
-def rollout(simulator_config: dict, agent_config: dict, rollout_path: Path):
+def rollout(
+    simulator_config: dict,
+    agent_config: dict,
+    rollout_path: Path,
+    positions_are_velocities: bool = False,
+):
     """
     Args:
-        args (): arguments parsed from the command line
-        config (dict): configuration dictionary
-
+        simulator_config (dict): configuration dictionary for the simulator
+        agent_config (dict): configuration dictionary for the rollout agent
+        rollout_path (Path): path to the rollout output folder
+        positions_are_velocities (bool): if True, the agent positions are velocities
     This function displays the predicted trajectories of the agents. It needs to be given the simulator config and the
     agent config so that the environment and agents can be constructed and the simulator can be run.
     """
 
     print("run folder is ", rollout_path)
 
+    # create the environment for the simulator based on the simulator config file specified
     env = create_environment(config=simulator_config, run_folder=rollout_path)
+
+    # create the agents to choose the actions in the simulator based on the agent config file specified
     agents = GNN_Agents(
-        simulator_config=simulator_config, agent_config=agent_config, env=env
+        simulator_config=simulator_config,
+        agent_config=agent_config,
+        env=env,
+        predictions_are_velocities=positions_are_velocities,
     )
+
+    # Run the simulator with the environment and agents created. The output of the simulator will go in the rollout path.
     run_simulator(
         config=simulator_config, env=env, agents=agents, run_folder=rollout_path
     )
@@ -304,27 +318,7 @@ def rollout(simulator_config: dict, agent_config: dict, rollout_path: Path):
     print(f"rollout completed at {datetime.now().strftime('%Y%m%d-%H%M%S')}")
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
-        prog="analyze_results.py",
-        description="Analyze result of training on 3D simulation data.",
-        epilog="---",
-    )
-    parser.add_argument("-d", "--directory", type=str, required=True)
-    parser.add_argument("-pa", "--plot_attention", action="store_true")
-    parser.add_argument("-aa", "--animate_attention", action="store_true")
-    parser.add_argument("-f", "--filename", type=str)
-    parser.add_argument("-st", "--start_time", default=0, type=int)
-    parser.add_argument("-ft", "--finish_time", default=0, type=int)
-
-    parser.add_argument("-r", "--rollout", action="store_true")
-    parser.add_argument("-acf", "--agent_config_file", type=str)
-    parser.add_argument("-scf", "--simulator_config_file", type=str)
-    parser.add_argument("-rsd", "--rollout_subdirectory", type=str)
-    parser.add_argument("-v", "--show_visualizer", action="store_true")
-
-    args = parser.parse_args()
-
+def analyze_results(args):
     if args.plot_attention:
         attention_weights_list = load_attention_weights(args.directory, args.filename)
         plot_attention_weights(
@@ -352,6 +346,39 @@ if __name__ == "__main__":
         shutil.copy(agent_config_path, expand_path("agent_config.yaml", rollout_path))
         if args.show_visualizer:
             simulator_config["visuals"]["show_visualizer"] = True
-        rollout(simulator_config, agent_config, rollout_path)
+
+        # set the number of episodes to 1, so we don't see the same thing over and over.
+        simulator_config["simulator"]["num_episodes"] = 1
+        rollout(
+            simulator_config,
+            agent_config,
+            rollout_path,
+            args.predictions_are_velocities,
+        )
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        prog="analyze_results.py",
+        description="Analyze result of training on 3D simulation data.",
+        epilog="---",
+    )
+    parser.add_argument("-d", "--directory", type=str, required=True)
+    parser.add_argument("-pa", "--plot_attention", action="store_true")
+    parser.add_argument("-aa", "--animate_attention", action="store_true")
+    parser.add_argument("-f", "--filename", type=str)
+    parser.add_argument("-st", "--start_time", default=0, type=int)
+    parser.add_argument("-ft", "--finish_time", default=0, type=int)
+
+    parser.add_argument("-r", "--rollout", action="store_true")
+    parser.add_argument("-acf", "--agent_config_file", type=str)
+    parser.add_argument("-scf", "--simulator_config_file", type=str)
+    parser.add_argument("-rsd", "--rollout_subdirectory", type=str)
+    parser.add_argument("-v", "--show_visualizer", action="store_true")
+    parser.add_argument("-pv", "--predictions_are_velocities", action="store_true")
+
+    args = parser.parse_args()
+
+    analyze_results(args)
 
     print("analyze results completed")

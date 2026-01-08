@@ -1,0 +1,128 @@
+
+simulator:
+  # one seed required for each episode
+  seed: [1250, 439, 642, 316, 202, 409, 627, 834, 977, 189, 401, 719, 810, 738, 655, 367, 36, 653, 753, 977, 716, 311, 112, 417, 599, 666, 721, 128, 456, 564, 178, 97, 764, 242, 257, 253, 4, 217, 171, 536, 122, 716, 933, 850, 271, 410, 195, 172, 958, 274]
+  # [692005, 942005, 135072, 230612, 91276, 874994, 954493, 409782, 89268, 623091, 705249, 357735, 889333, 620154, 503508, 299649, 195734, 422599, 422884, 562231, 394061, 615262, 124258, 570021, 889889, 198488, 930985, 58560, 573569, 497380, 511010, 623096, 541345, 672626, 80383, 232362, 543499, 298660, 132351, 721357, 606493, 84003, 764721, 912538, 796217, 414623, 766909, 647059, 310212, 316420, 8283, 66690, 336070, 379450, 927360, 614356, 479965, 632123, 898689, 931990, 525511, 139650, 927376, 480960, 657070, 516836, 150259, 149337, 945221, 822332, 785721, 758155, 485750, 948856, 307754, 375350, 729495, 760537, 199493, 857212, 890133, 229568, 425187, 5352, 494867, 16524, 321816, 239335, 28365, 834880, 749236, 995002, 832519, 148754, 388849, 946406, 141055, 531253, 175618, 48540, 650336, 966058, 957154, 933882, 407455, 685410, 850412, 349577, 703869, 269721, 671168, 949918, 981136, 22098, 761498, 580262, 688317, 263886, 871207, 420206, 801845, 504336, 650165, 367203, 450278, 15992, 148756, 105484, 923491, 79289, 227122, 967862, 391556, 929089, 934857, 440331, 862992, 365069, 734426, 337857, 512749, 48592, 49828, 183268, 636442, 719202, 377082, 499846, 814280, 403154, 281839, 28314, 33579, 813075, 257248, 894872, 603701, 328123, 804832, 786982, 254564, 554191, 927056, 757936, 763905, 501659, 670487, 529268, 970932, 383812, 344307, 863586, 841307, 924399, 728964, 873287, 114925, 72935, 258865, 426410, 649260, 718696, 16331, 75222, 2738, 474162, 184636, 52015, 890292, 66082, 460831, 400788, 90742, 40510, 729326, 815667, 310187, 277284, 636804, 670724, 230229, 538914, 719392, 757662, 77703, 996517, 266120, 972576, 267925, 175225, 594202, 711089, 226213, 326831, 668196, 40964, 898836, 763903, 404500, 559788, 571434, 629040, 442737, 460004, 624647, 119230, 14706, 859923, 714062, 791574, 578797, 876358, 901967, 970514, 827326, 970256, 671915, 892646, 510008, 360302, 525260, 82354, 430296, 846389, 980645, 997014, 731984, 383602, 840152, 845327]
+  env_id: "gymnasium_env/BoidsWorldSimple-v0"
+  walking: False
+  num_agents: 20
+  num_targets: 1 # for now this must be at least 1. This needs to be fixed.
+  num_ground_targets: 0
+  submesh_target: True
+  submesh_show_points: False # put spheres on at least some of the submesh vertices
+  moving_targets: False
+  num_episodes: 10
+  num_frames: 200
+  target_creation_time: [100] # min is 1, which creates the target at the beginning of the episode.
+  show_box: False
+  # run_main_folder: "collab_env/sim/runs"
+  run_main_folder: "tests"
+  run_sub_folder_prefix: "sim_run_for_gnn_tests"
+  show_trajectories: False
+  trajectory_frame_limit: 2000
+
+
+visuals:
+  store_video: False
+  show_visualizer: True
+  width: 1080     # sometimes too high a resolution fails, so may need to go smaller
+  height: 720
+  video_codec: '*mpv4' # only mp4 has been tested
+  video_fps: 30
+  video_file_extension: 'mp4'
+  agent_shape: [[20, 'sphere']] # make this a list of pairs (number of agents, shape), so the environment can correctly draw variants.
+  agent_color: [] # [0.18995, 0.07176, 0.23217]
+  agent_scale: 5.0
+  target_scale: 10.0
+  target_mesh_init_color: [[1,0,1], [0,0,1]] # now this is a list, one for each submesh
+  target_mesh_color: [[0,1,0], [0,1,1]] # now this is a list, one for each submesh
+
+tracks:
+  color_by_time: True
+  number_of_color_groups: 1000 # this should divide the number of frames evenly to get full colors
+  track_color_rate: 1 # this is ignored now I think.
+
+
+environment:
+  max_dist_from_center: 3
+  box_size: 1500
+  scene_scale: 300.0
+  scene_position: [750, 20, 750]
+  target_speed: 0.0
+  init_range_low: 0.4
+  init_range_high: 0.6
+  height_init_max: 450
+  target_position: [[750, 20, 750], [500, 100, 100], [300, 100, 750], [800,800,200]]
+
+agent:
+  min_ground_separation: 7.5
+  ground_avoidance_mean: 1.0
+  ground_avoidance_variance: 0.01
+  ground_avoidance_max_speed: 0.1
+  min_separation: 30.0
+  neighborhood_dist: 80.0
+  random_weight: 1.0
+  separation_weight: 150.0
+  alignment_weight: 1.0
+  cohesion_weight: 0.5
+  ground_weight: 0.0
+  target_weight: [0.02, -1.0, 0.0, 0.0] #[0.002]
+  max_speed: 1.0
+  min_speed: 0.1
+  max_force: 0.1
+  mean_init_velocity: 0.0
+  variance_init_velocity: 0.5
+  init_range_low: 0.4
+  init_range_high: 0.6
+  height_range_low: 0.0
+  height_range_high: 1.0
+  height_init_min: 100
+  height_init_max: 200
+  random_walk: False
+  mesh_avoidance: 'up' # one of: 'up', 'flat', 'opposite', 'down', 'no_down', 'no_up', 'land'
+  # agent variants override base agent configuration
+  agent_variants:
+#    - type: independent
+#      num_agents_of_type: 0
+#      random_weight: 1.0
+#      separation_weight: 150.0 # 15.0
+#      alignment_weight: 0.0 # 1.0
+#      cohesion_weight: 0.0 # 0.5
+#      ground_weight: 0.0
+#      random_walk: False
+    - type: boid
+      num_agents_of_type: 20
+      random_weight: 1.0
+      separation_weight: 150.0 # 15.0
+      alignment_weight: 1.0 # 1.0
+      cohesion_weight: 0.5 # 0.5
+      ground_weight: 0.0
+      random_walk: False
+
+meshes:
+    # mesh_scene: ''
+    # scene_angle: [0.0, 0.0, 0.0]
+    mesh_scene: 'meshes/Open3dTSDFfusion_mesh.ply'
+    scene_angle: [-90.0, 0.0, 0.0]
+    #mesh_scene: 'meshes/labeled_meshes/mesh.ply'
+    # mesh_scene: 'meshes/labeled_meshes/query-tree_top-cluster.ply'
+    #scene_angle: [0.0, 0.0, 0.0]
+    # mesh_scene: 'meshes/query-tree.ply'
+    # scene_angle: [-90.0, 0.0, 0.0]
+    #scene_angle: [0.0, 0.0, 0.0]
+    #mesh_scene: 'meshes/example_mesh.ply'
+    #scene_angle: [-10.0, 0.0, -115.0]
+    sub_mesh_target: ['meshes/labeled_meshes/query-tree_top-cluster.ply']  # 'meshes/labeled_meshes/query-tree_top-cluster.ply'] # list, one for each submesh
+    # sub_mesh_target: ['meshes/C0043/query-feeder_top-cluster.ply']# 'meshes/labeled_meshes/query-tree_top-cluster.ply'] # list, one for each submesh
+    # sub_mesh_angle: [0.0, 0.0, 0.0]
+
+files:
+    output_folder_prefix: 'boid_sim_runs' # which of these am I using?
+    trajectory_file: 'episode-0-completed-20250822-203226.parquet'
+    trajectory_folder: 'good-runs/sim_independent_tree_target_started_20250822_202708'
+
+logging:
+  logfile_prefix: 'logfile'
+  log_level: 'INFO'
+  logging: False
+  log_functions: [] #['__main__', 'plot_trajectories', 'save_image_to_file', '_render_frame', 'reset']

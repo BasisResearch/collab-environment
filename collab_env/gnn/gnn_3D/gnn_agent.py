@@ -4,6 +4,7 @@ import pyarrow.parquet as pq
 
 from collab_env.data.file_utils import get_project_root, expand_path
 from collab_env.gnn.gnn_3D.build_dataset import compute_data_list_from_dataframe
+from collab_env.gnn.gnn_3D.simulator_agents_abstract import SimulatorAgents
 from collab_env.sim.boids.sim_utils import add_obs_to_df
 
 """
@@ -11,8 +12,14 @@ This is the GNN agent for computing rollouts with the simulator.
 """
 
 
-class GNN_Agents:
-    def __init__(self, simulator_config: dict, agent_config: dict, env):
+class GNN_Agents(SimulatorAgents):
+    def __init__(
+        self,
+        simulator_config: dict,
+        agent_config: dict,
+        env,
+        predictions_are_velocities: bool = False,
+    ):
         """
         :param simulator_config: the configuration dictionary for the simulator
         :param agent_config: the configuration dictionary specific to the agent.
@@ -27,6 +34,7 @@ class GNN_Agents:
         """
 
         self.simulator_config = simulator_config
+        self.predictions_are_velocities = predictions_are_velocities
 
         # need these for building the data to pass to the model
         self.num_agents = simulator_config["simulator"]["num_agents"]
@@ -78,6 +86,8 @@ class GNN_Agents:
             ["x", "y", "z"],
         ].to_numpy()
 
+        self.last_position = self.init_position
+
         # if "node_feature_columns" in agent_config:
         #     self.node_feature_columns = agent_config["node_feature_columns"]
         # else:
@@ -99,11 +109,21 @@ class GNN_Agents:
             # we only created one graph, the one for the current observation.
             prediction, _ = self.model(data_list[0])
 
-        return prediction.detach().cpu().numpy()
+            """
+            TOC -- 010726 7:23PM
+            Need to multiply this by the box size to rescale everything back to original simulator coordinates
+            """
+            result = prediction.detach().cpu().numpy() * self.box_size
+
+            # if we are predicting velocities, we need to add the velocity to the last position
+            if self.predictions_are_velocities:
+                result += self.last_position
+                self.last_position = result
+
+        return result
 
     def reset(self):
-        # nothing to do
-        pass
+        self.last_position = self.init_position
 
     def update(self, time_step: int):
         # nothing to do
