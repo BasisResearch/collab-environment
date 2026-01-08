@@ -731,11 +731,7 @@ class BoidsWorldSimpleEnv(gym.Env):
     def init_agents(self):
         if self.show_trajectory_lines:
             # use the first time step in the trajectory to
-            # initialize the agent positions.
-            """
-            TOC -- 010726 7:01PM
-            The agent trajectories are now the initial predictions and are now just (num_agents, dim of space)
-            """
+            # initialize the agent positions as the first position in the entire trajectory
             self._agent_location = self.agent_trajectories[:, 0]
             self._agent_velocity = np.zeros((self.num_agents, 3))
 

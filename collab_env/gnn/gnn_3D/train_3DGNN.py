@@ -155,7 +155,7 @@ def load_dataset(directory: str):
     np.random.seed(seed)
 
     train_size = int(len(dataset) * 0.8)
-    print("train size: ", train_size)
+
     train_dataset: Subset
     val_dataset: Subset
     train_dataset, val_dataset = torch.utils.data.random_split(
@@ -202,7 +202,6 @@ def train_3DGNN(
 
     """
 
-    print("training result path: ", training_result_path)
     (
         train_loader,
         training_dataset_indices,
