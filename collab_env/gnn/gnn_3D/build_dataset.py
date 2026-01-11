@@ -1,4 +1,5 @@
 import argparse
+import json
 import re
 from typing import Optional
 
@@ -15,7 +16,9 @@ from tqdm import tqdm
 from collab_env.data.file_utils import expand_path, get_project_root
 
 
-def convert_dataframe_to_node_features(df: pd.DataFrame, columns=None):
+def convert_dataframe_to_node_features_old(
+    df: pd.DataFrame, columns=None, time_window_length=1
+):
     agents_df = df.copy()
     """
     TOC -- 103025 
@@ -76,23 +79,23 @@ def convert_dataframe_to_node_features(df: pd.DataFrame, columns=None):
     # print('mesh dist:', df[['time', 'id', 'mesh_scene_distance', 'mesh_scene_closest_point_x', 'mesh_scene_closest_point_y','mesh_scene_closest_point_z']])
     if columns is None:
         groups = agents_df.groupby("time")[
-            [
-                # "x",
-                # "y",
-                # "z",
-                "v_x",
-                "v_y",
-                "v_z",
-                "distance_to_target_mesh_closest_point_1",
-                "target_mesh_closest_point_x",
-                "target_mesh_closest_point_y",
-                "target_mesh_closest_point_z",
-                "mesh_scene_distance",
-                "mesh_scene_closest_point_x",
-                "mesh_scene_closest_point_y",
-                "mesh_scene_closest_point_z",
-            ]
+            # columns = [
+            # "x",
+            # "y",
+            # "z",
+            "v_x",
+            "v_y",
+            "v_z",
+            "distance_to_target_mesh_closest_point_1",
+            "target_mesh_closest_point_x",
+            "target_mesh_closest_point_y",
+            "target_mesh_closest_point_z",
+            "mesh_scene_distance",
+            "mesh_scene_closest_point_x",
+            "mesh_scene_closest_point_y",
+            "mesh_scene_closest_point_z",
         ]
+
     else:
         groups = agents_df.groupby("time")[columns]
 
@@ -100,19 +103,179 @@ def convert_dataframe_to_node_features(df: pd.DataFrame, columns=None):
     #
     # Convert everything to torch tensors
     #
+
+    # print('groups head  ', groups.head())
+    #
     node_feature_groups = groups.apply(
         lambda g: torch.tensor(g.to_numpy(), dtype=torch.float32)
     )
+    #
+    # print("node feature group shape ", node_feature_groups.shape)
+    # print("node feature group [0] ", node_feature_groups[0])
 
     #
     # Stack everything into a tensor with shape (num frames, num agents, num input parameters)
     #
     node_features = torch.stack(node_feature_groups.to_list())
+    # print("node features shape ", node_features.shape)
 
     return node_features
 
 
+def convert_dataframe_to_node_features(
+    df: pd.DataFrame, columns=None, time_window_length=1
+):
+    """
+    Args:
+     df (pd.DataFrame): the dataframe containing a description of the agents in the environment
+     columns (): the columns in the dataframe to include in the node features
+     time_window_length (int): the time window we want to include in the node features.
+    """
+
+    """
+    TOC -- 011026
+    This should be changed to take a full dataframe rather than just the agent rows. We may want to create graphs that
+    include information about the targets and mesh directly rather than only using those for the relative positions in
+    the agent node features.   
+    """
+    agents_df = df.copy()
+    """
+    TOC -- 103025 
+    Only dealing with the first target mesh right now. Need to fix this when there are more meshes -- though
+    we may want to change the format of the dataframe for multiple targets, not sure. (Update the simulator to
+    output as a list rather than subscripting _1, not sure why I did that.)
+    
+    TOC -- 011026 
+    I did that because parquet can handle 2-dimensional lists in a dataframe. 
+    """
+
+    agents_df[
+        [
+            "target_mesh_closest_point_x",
+            "target_mesh_closest_point_y",
+            "target_mesh_closest_point_z",
+        ]
+    ] = pd.DataFrame(
+        agents_df["target_mesh_closest_point_1"].to_list(), index=agents_df.index
+    )
+    # print('target mesh closest point 1 \n', agents_df["target_mesh_closest_point_1"].to_list())
+    agents_df[
+        [
+            "mesh_scene_closest_point_x",
+            "mesh_scene_closest_point_y",
+            "mesh_scene_closest_point_z",
+        ]
+    ] = pd.DataFrame(
+        agents_df["mesh_scene_closest_point"].to_list(), index=agents_df.index
+    )
+
+    if columns is None:
+        # groups = agents_df.groupby("time")[
+        columns = [
+            "x",
+            "y",
+            "z",
+            "v_x",
+            "v_y",
+            "v_z",
+            "distance_to_target_mesh_closest_point_1",
+            "target_mesh_closest_point_x",
+            "target_mesh_closest_point_y",
+            "target_mesh_closest_point_z",
+            "mesh_scene_distance",
+            "mesh_scene_closest_point_x",
+            "mesh_scene_closest_point_y",
+            "mesh_scene_closest_point_z",
+        ]
+
+    #
+    # Create a pivot tabel indexed by time. The agent id will be the columns, and the values in each column will
+    # be the columns for that agent id. For example, with time 0 and 1, agents 1 and 2, and columns x and y, the
+    # pivot table will look something like this:
+    #        agent 1             agent 2
+    #       x       y           x      y
+    # 0    0.4     0.7         0.5    0.6
+    # 1    0.3     0.1         0.2    0.9
+    #
+    pivot = agents_df.pivot(index="time", columns="id", values=columns)
+    num_time_steps = pivot.index.size
+    num_agents = len(pivot.columns.levels[1])
+
+    # Convert the pivot table to a numpy array with shape (num time steps, num agents, num columns). For
+    # the example above, this will give us:
+    #        agent 1             agent 2
+    #       x       y           x      y
+    # 0    0.1     0.2         0.3    0.4
+    # 1    1.1     1.2         1.3    1.4
+    # 2    2.1     2.2         2.3    2.4
+    #
+    # [ [  [0.1, 0.2], [0.3, 0.4] ], [ [1.1, 1.2], [1.3, 1.4] ] , [ [2.1, 2.2], [2.3, 2.4] ] ]
+    feature_array = pivot.to_numpy().reshape(num_time_steps, num_agents, len(columns))
+    # print("feature array shape: ", feature_array.shape)
+
+    # Stack the features into time windows. The resulting shape will be:
+    # (time steps - window length, agents, window length, columns).
+    # For the example above with a time window of length 2, this should be:
+    # [
+    # t = 0: [
+    #         agent 0: [
+    #                   window 0: [0.1, 0.2]
+    #                   window 1: [1.1, 1.2]
+    #                  ],
+    #         agent 1: [
+    #                   window 0: [0.3, 0.4],
+    #                   window 1: [1.3, 1.4],
+    #                  ],
+    #       ]
+    # t = 1: [
+    #         agent 0: [
+    #                   window 0: [1.1, 1.2],
+    #                   window 1: [2.1, 2.2],
+    #                  ],
+    #         agent 1: [
+    #                   window 0: [1.3, 1.4],
+    #                   window 1: [2.3, 2.4],
+    #                  ],
+    #       ]
+    # ]
+    stacked_features = np.stack(
+        [  # make sure we have at least one time step in the stack.
+            feature_array[t : t + 1 + num_time_steps - time_window_length, :, :]
+            for t in range(time_window_length)
+        ],
+        axis=2,
+    )
+    # print(
+    #     "new convert(): before reshape stacked features shape = ",
+    #     stacked_features.shape,
+    # )
+
+    # Reshape the stacked features to flatten the time windows by columns into a single dimension of node features
+    # for each agent in each time step. For the example above, this should be:
+    # [
+    # t = 0: [
+    #         agent 0: [0.1, 0.2, 1.1, 1.2],
+    #         agent 1: [0.3, 0.4, 1.3, 1.4],
+    #        ]
+    # t = 1: [
+    #         agent 0: [1.1, 1.2, 2.1, 2.2],
+    #         agent 1: [1.3, 1.4, 2.3, 2.4],
+    #        ]
+    # ]
+    node_features = stacked_features.reshape(
+        num_time_steps - time_window_length + 1,
+        num_agents,
+        time_window_length
+        * len(columns),  # one column for each time step in the window
+    )
+    # print("new convert(): after reshape node features shape = ", node_features.shape)
+    return torch.from_numpy(node_features)
+
+
 def compute_positions(agents_df: pd.DataFrame):
+    """
+    Args:
+    """
     #
     # Reshape the dataframe so the index is time, the column is id and the value
     # is the position vector.
@@ -121,6 +284,7 @@ def compute_positions(agents_df: pd.DataFrame):
     agents_df.loc[:, "position"] = agents_df[["x", "y", "z"]].values.tolist()
     agents_df.loc[:, "velocity"] = agents_df[["v_x", "v_y", "v_z"]].values.tolist()
 
+    # print('compute_positions(): agents_df\n', agents_df)
     pivot = agents_df.pivot(index="time", columns="id", values=["position", "velocity"])
     # pivot = agents_df.pivot(index="time", columns="id", values=["x", "y", "z"])
     # print("pivot\n", pivot)
@@ -190,12 +354,13 @@ def edge_attributes_for_complete_graph(
 
 def compute_data_list_from_dataframe(
     agents_df: pd.DataFrame,
-    num_time_steps: int,
+    num_time_steps: int,  # do we need this or should we compute it from DataFrame?
     num_agents: int,
     box_size: float,
     label_offset: int = 1,
     node_feature_columns=None,
     label_type: Optional[str] = None,
+    time_window_length: int = 1,
 ):
     #
     # Get the positions and relative positions of the agents.
@@ -207,13 +372,20 @@ def compute_data_list_from_dataframe(
     # (must be called after compute positions because that function
     # sets up the position column -- I don't like this)
     #
-    node_features = convert_dataframe_to_node_features(agents_df, node_feature_columns)
+    node_features = convert_dataframe_to_node_features(
+        agents_df, node_feature_columns, time_window_length=time_window_length
+    )
+    # print(
+    #     "compute data list from dataframe(): node feature shape: ", node_features.shape
+    # )
+    # print("compute data list from dataframe(): num_time_steps: ", num_time_steps)
 
     #
     # Scale all the coordinates and distances by the size of the box (assumes width = height = depth)
     #
     node_features = node_features / torch.tensor([box_size], dtype=torch.float32)
 
+    # print("node features after division\n", node_features)
     """
     TOC -- 121925 11:21AM
     For the first pass, create a homogeneous graph where there are only agent nodes and all of the 
@@ -245,22 +417,41 @@ def compute_data_list_from_dataframe(
     # Create the data object for this episode and add it to the data list.
     # We loop to num_time_steps - 1 because the last graph in the sequence has nothing to predict.
     #
+    # print("compute data list(): node features shape ", node_features.shape)
+    # print("compute data list(): node feature[0] shape ", node_features[0].shape)
+    # print('compute data list(): num_time_steps: ', num_time_steps)
+    # print('compute data list(): upper range: ', num_time_steps - label_offset - (time_window_length - 1))
+    # The number of time windows will be num_time_steps - label_offset - time_window_length + 1
+    # proof:
+    # for notational convenience let n = num_time_steps, k = label_offset, w = time_window_length
+    # Since we have to predict k steps out, the last time step that can end a window is the (n-k)th time step. That
+    # window has to start w-1 time steps before that, which is the (n-k-w+1)-th time step. If you prefer pictures with
+    # indices:
+    # |      first window     |     |        last window            |           | label |
+    # | 0 | 1 | 2 | ... | w-1 | ... | n-k-w | n-k-w+1 | ... | n-k-1 | n-k | ... | n-1   |
+    # since the first window starts at 0 and the last window starts at n-k-w, there are n-k-w+1 windows.
+    #
     data_list = [
         Data(
             x=node_features[t],
-            y=labels[t + label_offset],  # labels are the position at the next time step
+            y=labels[
+                t + label_offset
+            ],  # labels are whatever we are predicting label_offset time steps into the future
             edge_index=edge_index,
             edge_attr=edge_attributes_for_complete_graph(
                 relative_positions[t], from_nodes, to_nodes
             ),
         )
-        for t in range(num_time_steps - label_offset)  # don't go beyond the labels.
+        for t in range(
+            #    time_window_length - 1,
+            num_time_steps - label_offset - (time_window_length - 1),
+        )  # don't go beyond the labels.
     ]
-
+    # print('compute datalist from dataframw(): len data list ', len(data_list))
     return data_list
 
 
-def sort_helper(path):
+def sort_using_numbers(path):
     """
     Creates a list of substrings in the file name that separates out numeric parts so that the filenames can
     be sorted by episode number.
@@ -282,6 +473,7 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         load_only=False,
         data_directory_name=None,
         labels: Optional[str] = None,
+        time_window_length: int = 1,
     ):
         """
 
@@ -319,6 +511,7 @@ class Sim3DInMemoryDataset(InMemoryDataset):
             self.link_to_data = False
 
         self.label_type = labels
+        self.time_window_length = time_window_length
 
         super(Sim3DInMemoryDataset, self).__init__(root, transform, pre_transform)
 
@@ -375,9 +568,10 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         # there is nothing that forces the episodes to have the current format.)
 
         episode_file_list = sorted(
-            list(self.sim_data_folder_path.glob("episode*.parquet")), key=sort_helper
+            list(self.sim_data_folder_path.glob("episode*.parquet")),
+            key=sort_using_numbers,
         )
-        print("len(episode_file_list)", len(episode_file_list))
+        # print("len(episode_file_list)", len(episode_file_list))
         for episode_number, episode_file in enumerate(tqdm(episode_file_list)):
             # print('processing episode', episode_number, ' episode file', episode_file)
             trajectory_path = expand_path(episode_file, self.sim_data_folder_path)
@@ -397,6 +591,7 @@ class Sim3DInMemoryDataset(InMemoryDataset):
                 box_size=config["environment"]["box_size"],
                 node_feature_columns=self.node_feature_columns,
                 label_type=self.label_type,
+                time_window_length=self.time_window_length,
             )
 
             # Store the processed data
@@ -407,8 +602,15 @@ class Sim3DInMemoryDataset(InMemoryDataset):
             )
 
         # indicate that processing is complete by creating the indicator file
-        dataset_metadata = {"node_feature_columns": self.node_feature_columns}
-        torch.save(dataset_metadata, self.processed_paths[0])
+        dataset_metadata = {
+            "node_feature_columns": self.node_feature_columns,
+            "time_window_length": self.time_window_length,
+        }
+
+        with open(self.processed_paths[0], "w", encoding="utf-8") as f:
+            f.write(json.dumps(dataset_metadata, ensure_ascii=False))
+
+        # torch.save(dataset_metadata, self.processed_paths[0])
         # print("saved to ", self.processed_paths[0])
         # with open(self.processed_paths[0], "w") as f:
         #     f.write(dataset_data)
@@ -416,7 +618,7 @@ class Sim3DInMemoryDataset(InMemoryDataset):
     def load_episodes(self):
         self.episode_file_list = sorted(
             list(self.root_path.glob("processed/*episode*.pt")),
-            key=sort_helper,
+            key=sort_using_numbers,
         )
         # episode_file_list = list(self.root_path.glob("processed/*episode*.pt"))
         num_episodes = len(self.episode_file_list)
@@ -426,9 +628,8 @@ class Sim3DInMemoryDataset(InMemoryDataset):
                 episode_file,
                 weights_only=False,
             )
-            for episode_file in self.episode_file_list
+            for episode_file in tqdm(self.episode_file_list, leave=True)
         ]
-
         return episodes
 
     def __len__(self):
@@ -455,6 +656,10 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         return self._edge_attr_dim
 
 
+def csv_strings(arg):
+    return [x for x in arg.split(",")]
+
+
 if __name__ == "__main__":
     #
     # Get the config file name if specified on the command line
@@ -469,18 +674,27 @@ if __name__ == "__main__":
     parser.add_argument(
         "-lv", "--use_velocities_as_labels", action="store_true", default=False
     )
+    parser.add_argument(
+        "-nfc", "--node_feature_columns", type=csv_strings, default=None
+    )
+    parser.add_argument("-twl", "--time_window_length", type=int, default=1)
+
     args = parser.parse_args()
 
     dataset = Sim3DInMemoryDataset(
         args.directory,
         data_directory_name=args.input_data_directory,
         labels="velocities" if args.use_velocities_as_labels else "positions",
+        node_feature_columns=args.node_feature_columns,
+        time_window_length=args.time_window_length,
     )
     print("dataset length = ", len(dataset))
 
     loader = DataLoader(dataset=dataset, batch_size=1, shuffle=True)
 
-    dataset_metadata = torch.load(dataset.processed_paths[0])
+    # dataset_metadata = torch.load(dataset.processed_paths[0])
+    with open(dataset.processed_paths[0], "r") as f:
+        dataset_metadata = json.load(f)
     print(dataset_metadata)
 
     # for episode_index, episode_data in enumerate(dataset):

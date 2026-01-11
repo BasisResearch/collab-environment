@@ -75,6 +75,9 @@ def train_epoch(model, loader, optimizer, train=True):
             # there is a graph for every time step.
             stored_init_pos = False
             for graph in episode:
+                # print("graph.x ", graph.x)
+                # print("graph.x.shape ", graph.x.shape)
+
                 if not stored_init_pos:
                     stored_init_pos = True
                     # print('x shape: ', graph.x.shape)
@@ -369,7 +372,11 @@ if __name__ == "__main__":
         args.directory + "/" + args.training_result_subdirectory
     )
 
-    if training_result_path.exists():
+    # if the training result directory exists and is not empty, raise an exception.
+    if (
+        training_result_path.exists()
+        and next(training_result_path.iterdir(), None) is not None
+    ):
         raise FileExistsError(
             f"Training result directory already exists. Please move it so I don't overwrite it, which could be sad for you. \n Full path is {training_result_path}."
         )

@@ -1158,6 +1158,9 @@ class BoidsWorldSimpleEnv(gym.Env):
             # clip the values to be inside the box, so the rollouts don't blow up.
             self._agent_location = np.clip(action, 0.0, self.box_size)
 
+            for t in range(self.num_targets):
+                if self.time_step == self.target_creation_time[t]:
+                    self.create_targets(t)
         else:
             for t in range(self.num_targets):
                 if self.time_step == self.target_creation_time[t]:

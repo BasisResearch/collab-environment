@@ -1,3 +1,5 @@
+import json
+
 import torch
 
 import pyarrow.parquet as pq
@@ -65,10 +67,12 @@ class GNN_Agents(SimulatorAgents):
         TODO: Get the node features from the dataset metadata  
         """
         dataset_metadata_file = agent_config["dataset_metadata_file"]
-        dataset_metadata = torch.load(
-            expand_path(dataset_metadata_file, get_project_root())
-        )
+        dataset_metadata_path = expand_path(dataset_metadata_file, get_project_root())
+        with dataset_metadata_path.open("r", encoding="utf-8") as f:
+            dataset_metadata = json.load(f)
+
         self.node_feature_columns = dataset_metadata["node_feature_columns"]
+        self.time_window_length = dataset_metadata["time_window_length"]
 
         """
         TOC -- 010626 12:32PM
@@ -78,56 +82,93 @@ class GNN_Agents(SimulatorAgents):
             agent_config["position_file"], get_project_root()
         )
         self.position_df = pq.read_pandas(position_file_path).to_pandas()
+
         start_time = agent_config["start_time"]
-
-        self.init_position = self.position_df.loc[
-            (self.position_df["time"] == start_time)
-            & (self.position_df["type"] == "agent"),
-            ["x", "y", "z"],
-        ].to_numpy()
-
+        self.init_position = self.get_position_from_df(start_time)
         self.last_position = self.init_position
+        self.fixed_action = None
+        self.time_step = -1  # use -1 to indicate that we haven't gotten a time step from a call to update() yet
+
+        self.observation_dataframe = None
+
+        self.predicting = False
 
         # if "node_feature_columns" in agent_config:
         #     self.node_feature_columns = agent_config["node_feature_columns"]
         # else:
         #     self.node_feature_columns = None
 
-    def get_action_list(self, obs):
-        df = add_obs_to_df(df=None, obs=obs)
+    def get_position_from_df(self, time_step: int):
+        return self.position_df.loc[
+            (self.position_df["time"] == time_step)
+            & (self.position_df["type"] == "agent"),
+            ["x", "y", "z"],
+        ].to_numpy()
 
-        data_list = compute_data_list_from_dataframe(
-            df.loc[df["type"] == "agent"],
-            num_time_steps=1,
-            num_agents=self.num_agents,
-            box_size=self.box_size,
-            label_offset=0,  # needs to be 0 so that we don't go beyond the end, label is ignored in rollout
-            node_feature_columns=self.node_feature_columns,
+    def get_action_list(self, obs):
+        # print("get_action_list() called with obs  = \n", obs)
+        # if self.observation_dataframe is not None:
+        #     print("get_action_list() called with obs dataframe length = \n", len(self.observation_dataframe))
+        #     print("get_action_list() called with obs dataframe max time = \n", self.observation_dataframe["time"].max())
+
+        # add the current observation to the observation dataframe.
+        self.observation_dataframe = add_obs_to_df(
+            df=self.observation_dataframe, obs=obs, time_step=self.time_step
         )
 
-        with torch.no_grad():
-            # we only created one graph, the one for the current observation.
-            prediction, _ = self.model(data_list[0])
+        if not self.predicting:
+            result = self.fixed_action
+        else:
+            data_list = compute_data_list_from_dataframe(
+                self.observation_dataframe.loc[
+                    self.observation_dataframe["type"] == "agent"
+                ],
+                num_time_steps=self.time_window_length,
+                num_agents=self.num_agents,
+                box_size=self.box_size,
+                label_offset=0,  # needs to be 0 so that we don't go beyond the end, label is ignored in rollout
+                node_feature_columns=self.node_feature_columns,
+                time_window_length=self.time_window_length,
+            )
 
-            """
-            TOC -- 010726 7:23PM
-            Need to multiply this by the box size to rescale everything back to original simulator coordinates
-            """
-            result = prediction.detach().cpu().numpy() * self.box_size
+            with torch.no_grad():
+                # we only created one graph, the one for the current observation.
+                prediction, _ = self.model(data_list[0])
 
-            # if we are predicting velocities, we need to add the velocity to the last position
-            if self.predictions_are_velocities:
-                result += self.last_position
-                self.last_position = result
+                """
+                TOC -- 010726 7:23PM
+                Need to multiply this by the box size to rescale everything back to original simulator coordinates
+                """
+                result = prediction.detach().cpu().numpy() * self.box_size
 
+                # if we are predicting velocities, we need to add the velocity to the last position
+                if self.predictions_are_velocities:
+                    result += self.last_position
+
+                # remove the oldest observation from the observation dataframe so we are ready to fill in next time window
+                self.observation_dataframe = self.observation_dataframe[
+                    self.observation_dataframe["time"]
+                    != self.observation_dataframe["time"].min()
+                ]
+
+        self.last_position = result
         return result
 
     def reset(self):
         self.last_position = self.init_position
 
     def update(self, time_step: int):
-        # nothing to do
-        pass
+        # print("update() called with time_step = ", time_step)
+        self.time_step = time_step
+        # why was this here? self.last_position = self.init_position
+        # if we don't have enough time steps yet to fill a time window, then get another position from the position
+        # dataframe and indicate that we are not predicting; otherwise indicate that we are ready to predict.
+        if time_step < self.time_window_length:
+            self.predicting = False
+            # we want the position at the next time frame because that is the result of our action at this time frame
+            self.fixed_action = self.get_position_from_df(time_step + 1)
+        else:
+            self.predicting = True
 
     def get_reset_options(self):
         # this should return dictionary that includes run_trajectories (value doesn't matter) and the initial position
