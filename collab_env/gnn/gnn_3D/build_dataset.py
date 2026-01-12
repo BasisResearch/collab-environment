@@ -512,7 +512,11 @@ class Sim3DInMemoryDataset(InMemoryDataset):
 
         self.label_type = labels
         self.time_window_length = time_window_length
+        self._metadata = None
 
+        #
+        # Call super()
+        #
         super(Sim3DInMemoryDataset, self).__init__(root, transform, pre_transform)
 
         self.episode_file_list = None  # this is created in load_episodes()
@@ -524,6 +528,10 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         self._label_dim = self.episodes[0][0].y.shape[1]
         # print('episodes:', self.episodes)
         # print(type(self.raw_dir))
+
+        # get the metadata from the file that process previously dumped the metadata to.
+        with open(self.processed_paths[0], "r", encoding="utf-8") as f:
+            self._metadata = json.load(f)
 
     @property
     def raw_file_names(self):
@@ -602,13 +610,18 @@ class Sim3DInMemoryDataset(InMemoryDataset):
             )
 
         # indicate that processing is complete by creating the indicator file
-        dataset_metadata = {
+        self._metadata = {
             "node_feature_columns": self.node_feature_columns,
             "time_window_length": self.time_window_length,
+            "input_node_dim": data_list[0].x.shape[1],
+            "edge_attr_dim": data_list[0].edge_attr.shape[1],
+            "label_dim": data_list[0].y.shape[1],
+            "episode_file_list": [ep_path.name for ep_path in episode_file_list],
+            "label_type": self.label_type,
         }
 
         with open(self.processed_paths[0], "w", encoding="utf-8") as f:
-            f.write(json.dumps(dataset_metadata, ensure_ascii=False))
+            f.write(json.dumps(self._metadata, ensure_ascii=False))
 
         # torch.save(dataset_metadata, self.processed_paths[0])
         # print("saved to ", self.processed_paths[0])
@@ -642,6 +655,10 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         and the actual trajectories when analyzing the results.
         """
         return self.episodes[index], index
+
+    @property
+    def metadata(self):
+        return self._metadata
 
     @property
     def input_node_dim(self):

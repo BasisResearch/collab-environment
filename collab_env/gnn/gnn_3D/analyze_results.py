@@ -100,7 +100,7 @@ def process_training_result(training_result, directory):
     print("processing training result")
 
     # use the episode file list to match result files names to input data file names
-    episode_file_list = list(training_result["episode_file_list"])
+    episode_file_list = list(training_result["dataset_metadata"]["episode_file_list"])
 
     # save losses
     loss_df = pd.DataFrame(
@@ -119,7 +119,12 @@ def process_training_result(training_result, directory):
     val_indices = training_result["val_dataset_indices"]
 
     for episode in range(len(training_result["val_predictions"])):
-        episode_file_name = episode_file_list[val_indices[episode]].name.split(".pt")[0]
+        """
+        TOC -- 011126 8:15PM 
+        episode file list is now a list of names, not paths, so we don't have to get
+        the name property anymore. 
+        """
+        episode_file_name = episode_file_list[val_indices[episode]].split(".pt")[0]
 
         # save the results labeled with the corresponding episode file name
         val_predictions = np.array(training_result["val_predictions"][episode])
@@ -138,9 +143,7 @@ def process_training_result(training_result, directory):
     # print("train_indices", train_indices)
     # print("number of train_predictions", len(training_result["train_predictions"]))
     for episode in range(len(training_result["train_predictions"])):
-        episode_file_name = episode_file_list[train_indices[episode]].name.split(".pt")[
-            0
-        ]
+        episode_file_name = episode_file_list[train_indices[episode]].split(".pt")[0]
         # save the results labeled with the corresponding episode number
         train_predictions = np.array(training_result["train_predictions"][episode])
         save_predictions(

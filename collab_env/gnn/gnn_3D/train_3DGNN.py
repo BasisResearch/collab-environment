@@ -1,5 +1,6 @@
 import argparse
-
+from pathlib import Path
+from typing import Optional
 
 import torch
 import numpy as np
@@ -126,7 +127,7 @@ def train_epoch(model, loader, optimizer, train=True):
             )  # divide by the number of time steps in episode
             episode_bar.set_postfix(
                 {
-                    "(total loss per step, episode loss)": f"({total_loss:.6f},{episode_loss:.6f})"
+                    "(total loss per step, episode loss)": f"({total_loss:.9f},{episode_loss:.6f})"
                 }
             )
         # end for episode
@@ -173,22 +174,55 @@ def load_dataset(directory: str):
         train_dataset.indices,
         val_loader,
         val_dataset.indices,
-        dataset.episode_file_list,
-        dataset.input_node_dim,
-        dataset.edge_attr_dim,
-        dataset.label_dim,
-        dataset.node_feature_columns,
+        dataset.metadata,
     )
+
+
+def model_factory(
+    mlp_layers=None,
+    load_model: Optional[Path] = None,
+    include_second_layer: bool = False,
+):
+    # print("train_3GDNN(): training indices ", training_dataset_indices)
+    # print("train_3GDNN(): validation indices ", val_dataset_indices)
+
+    if mlp_layers is not None:
+        mlp = MLP(mlp_layers)
+    else:
+        mlp = None
+
+    def model_creator(dataset_metadata: dict):
+        if load_model is not None:
+            # model_state = torch.load(load_model)
+            # model.load_state_dict(model_state)
+            # full model was saved for now -- change this later to be more portable
+            model = torch.load(load_model)
+        else:
+            model = GNN_Attention(
+                model_name="GNN-Attention-Linear",
+                in_node_dim=dataset_metadata["input_node_dim"],
+                edge_dim=dataset_metadata["edge_attr_dim"],  # get this from dataset
+                output_dim=dataset_metadata["label_dim"],  # get this from dataset
+                self_loops=True,
+                fill_value=torch.zeros(
+                    dataset_metadata["edge_attr_dim"]
+                ).float(),  # get dimension from dataset same as edge_dim
+                include_convolutional_layer=include_second_layer,
+                mlp=mlp,
+            )
+        optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
+
+        return model, optimizer
+
+    return model_creator
 
 
 def train_3DGNN(
     directory,
     training_result_path,
+    model_creation_function,
     num_epochs=1,
     evaluate_only=False,
-    include_second_layer=True,
-    mlp_layers=None,
-    load_model=None,
 ):
     """
     Loads training and validation datasets from specified directory, creates the GNN model, and runs the training loop
@@ -210,43 +244,11 @@ def train_3DGNN(
         training_dataset_indices,
         val_loader,
         val_dataset_indices,
-        episode_file_list,
-        input_node_dim,
-        edge_attr_dim,
-        label_dim,
-        node_feature_columns,
+        dataset_metadata,
     ) = load_dataset(directory)
 
-    # print("train_3GDNN(): training indices ", training_dataset_indices)
-    # print("train_3GDNN(): validation indices ", val_dataset_indices)
-
-    if mlp_layers is not None:
-        mlp = MLP(mlp_layers)
-    else:
-        mlp = None
-
-    model = GNN_Attention(
-        model_name="GNN-Attention-Linear",
-        in_node_dim=input_node_dim,
-        edge_dim=edge_attr_dim,  # get this from dataset
-        output_dim=label_dim,  # get this from dataset
-        self_loops=True,
-        fill_value=torch.zeros(
-            edge_attr_dim
-        ).float(),  # get dimension from dataset same as edge_dim
-        include_convolutional_layer=include_second_layer,
-        mlp=mlp,
-    )
-
-    if load_model is not None:
-        # model_state = torch.load(load_model)
-        # model.load_state_dict(model_state)
-        # full model was saved for now -- change this later to be more portable
-        model = torch.load(load_model)
-
+    model, optimizer = model_creation_function(dataset_metadata=dataset_metadata)
     summary(model)
-
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
 
     train_loss_list = []
     val_loss_list = []
@@ -302,7 +304,7 @@ def train_3DGNN(
         "val_attention": val_attention_weights_list,
         "val_dataset_indices": val_index_list,
         "trained_model": model,
-        "episode_file_list": episode_file_list,
+        "dataset_metadata": dataset_metadata,
     }
 
 
@@ -384,14 +386,15 @@ if __name__ == "__main__":
     training_result_path.mkdir(parents=True, exist_ok=False)
 
     result = train_3DGNN(
-        args.directory,
+        directory=args.directory,
         training_result_path=training_result_path,
         num_epochs=args.num_epochs,
         evaluate_only=args.evaluate_only,
-        include_second_layer=args.convolutional_layer,
-        mlp_layers=args.multilayer_perceptron_layers,
-        # force_reload=args.force_reload,
-        load_model=args.load_model,
+        model_creation_function=model_factory(
+            include_second_layer=args.convolutional_layer,
+            mlp_layers=args.multilayer_perceptron_layers,
+            load_model=args.load_model,
+        ),
     )
 
     process_training_result(
