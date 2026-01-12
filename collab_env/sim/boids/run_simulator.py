@@ -245,7 +245,7 @@ def run_simulator(config: dict, env, agents: SimulatorAgents, run_folder=None):
             agents.update(time_step=time_step)
             action = agents.get_action_list(obs)
             if np.isnan(action).any() or np.isinf(action).any():
-                raise ValueError(f"action contains infinity or nan\n{action}")
+                raise ValueError(f"Action contains infinity or nan: \n{action}")
 
             # Take the action in the environment and observe the result
             next_obs, reward, terminated, truncated, info = env.step(action)
@@ -262,7 +262,7 @@ def run_simulator(config: dict, env, agents: SimulatorAgents, run_folder=None):
             # Observe the next state
             obs = next_obs
 
-            # ignore terminated for now since we are just running for a specified number of frames
+            # if the environment indicates that the simulation should be terminated, break out of the time step loop
             if terminated or truncated:
                 break  # I hate breaks, why does Python make me do it?
 

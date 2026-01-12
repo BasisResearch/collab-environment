@@ -526,8 +526,6 @@ class Sim3DInMemoryDataset(InMemoryDataset):
         self._input_node_dim = self.episodes[0][0].x.shape[1]
         self._edge_attr_dim = self.episodes[0][0].edge_attr.shape[1]
         self._label_dim = self.episodes[0][0].y.shape[1]
-        # print('episodes:', self.episodes)
-        # print(type(self.raw_dir))
 
         # get the metadata from the file that process previously dumped the metadata to.
         with open(self.processed_paths[0], "r", encoding="utf-8") as f:
@@ -712,7 +710,7 @@ if __name__ == "__main__":
     # dataset_metadata = torch.load(dataset.processed_paths[0])
     with open(dataset.processed_paths[0], "r") as f:
         dataset_metadata = json.load(f)
-    print(dataset_metadata)
+    # print(dataset_metadata)
 
     # for episode_index, episode_data in enumerate(dataset):
     #     for graph in episode_data:

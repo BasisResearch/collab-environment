@@ -124,37 +124,42 @@ def process_training_result(training_result, directory):
         episode file list is now a list of names, not paths, so we don't have to get
         the name property anymore. 
         """
-        episode_file_name = episode_file_list[val_indices[episode]].split(".pt")[0]
+        episode_file_name = episode_file_list[val_indices[episode]]  # .split(".pt")[0]
 
         # save the results labeled with the corresponding episode file name
         val_predictions = np.array(training_result["val_predictions"][episode])
         save_predictions(
             val_predictions,
-            directory + f"/validation_predictions_{episode_file_name}.parquet",
+            directory + f"/validation_predictions_{episode_file_name}",  # .parquet",
         )
 
         val_attention_weights = training_result["val_attention"][episode]
         save_attention(
             val_attention_weights,
-            directory + f"/validation_attention_weights_{episode_file_name}.parquet",
+            directory
+            + f"/validation_attention_weights_{episode_file_name}",  # .parquet",
         )
 
     train_indices = training_result["train_dataset_indices"]
     # print("train_indices", train_indices)
     # print("number of train_predictions", len(training_result["train_predictions"]))
+    print("processing training result(): episode file list ", episode_file_list)
     for episode in range(len(training_result["train_predictions"])):
-        episode_file_name = episode_file_list[train_indices[episode]].split(".pt")[0]
+        episode_file_name = episode_file_list[
+            train_indices[episode]
+        ]  # .split(".pt")[0]
         # save the results labeled with the corresponding episode number
         train_predictions = np.array(training_result["train_predictions"][episode])
         save_predictions(
             train_predictions,
-            directory + f"/training_predictions_{episode_file_name}.parquet",
+            directory + f"/training_predictions_{episode_file_name}",  # .parquet",
         )
 
         train_attention_weights = training_result["train_attention"][episode]
         save_attention(
             train_attention_weights,
-            directory + f"/training_attention_weights_{episode_file_name}.parquet",
+            directory
+            + f"/training_attention_weights_{episode_file_name}",  # .parquet",
         )
 
     # plot_attention_weights(val_attention_weights[-40:])
