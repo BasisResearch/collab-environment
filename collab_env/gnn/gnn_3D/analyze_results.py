@@ -6,14 +6,15 @@ import numpy as np
 import pandas as pd
 import seaborn
 import torch
-import matplotlib
 import yaml
 from datetime import datetime
 
 from collab_env.gnn.gnn_3D.gnn_agent import GNN_Agents
 from collab_env.sim.boids.run_simulator import create_environment, run_simulator
 
-matplotlib.use("TkAgg")
+
+# matplotlib.use("TkAgg") # this was needed to do the matplotlib animation in OS X. Can't use for remote test so dropping.
+
 from matplotlib import pyplot as plt, animation
 import pyarrow as pa
 import pyarrow.parquet as pq
