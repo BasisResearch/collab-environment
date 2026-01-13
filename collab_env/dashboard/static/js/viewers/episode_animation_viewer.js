@@ -50,6 +50,9 @@ export class EpisodeAnimationViewer {
         // Trail history: {agent_id: [{x, y, time}, ...]}
         this.trailHistory = {};
 
+        // Agent appearance
+        this.agentRadius = 8;
+
         // Animation state
         this.animationId = null;
 
@@ -243,7 +246,7 @@ export class EpisodeAnimationViewer {
             // Draw circle
             this.ctx.fillStyle = color;
             this.ctx.beginPath();
-            this.ctx.arc(x, y, 8, 0, 2 * Math.PI);
+            this.ctx.arc(x, y, this.agentRadius, 0, 2 * Math.PI);
             this.ctx.fill();
 
             // Draw border
@@ -278,6 +281,14 @@ export class EpisodeAnimationViewer {
         return [canvasX, canvasY];
     }
 
+    setAgentSize(radius) {
+        /**
+         * Set the agent circle radius
+         */
+        console.log(`2D setAgentSize called with radius: ${radius}`);
+        this.agentRadius = radius;
+    }
+
     destroy() {
         /**
          * Clean up resources
@@ -303,3 +314,4 @@ export class EpisodeAnimationViewer {
         console.log('✅ Episode Animation Viewer destroyed');
     }
 }
+// Cache bust: 1736812800

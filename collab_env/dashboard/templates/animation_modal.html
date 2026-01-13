@@ -28,10 +28,14 @@
                          display: flex; gap: 10px; align-items: center; border-top: 1px solid #444;">
                         <button id="playPauseBtn" class="control-btn">▶ Play</button>
                         <button id="stopBtn" class="control-btn">⏹ Stop</button>
+                        <input type="range" id="timeSlider" min="0" max="{max_frame}" value="0" style="width: 250px;">
+                        <span id="frameInfo" style="color: #fff; min-width: 90px;">Frame: 0 / {max_frame}</span>
+                        <span style="color: #888; margin-left: 10px;">Speed:</span>
                         <input type="range" id="speedSlider" min="0.1" max="10" step="0.1"
-                               value="{playback_speed}" style="width: 150px;">
-                        <span id="speedValue" style="color: #fff; min-width: 50px;">{playback_speed}x</span>
-                        <span id="frameInfo" style="color: #fff; margin-left: 20px;">Frame: 0 / {max_frame}</span>
+                               value="{playback_speed}" style="width: 100px;">
+                        <span id="speedValue" style="color: #fff; min-width: 40px;">{playback_speed}x</span>
+                        <span style="color: #888; margin-left: 10px;">Size:</span>
+                        <input type="range" id="sizeSlider" min="2" max="30" value="8" style="width: 80px;">
                         <button id="closeBtn" class="control-btn close-btn" style="margin-left: auto;">✖ Close</button>
                     </div>
                 </div>
@@ -72,8 +76,10 @@
         const canvas = document.getElementById('animation-canvas');
         const playPauseBtn = document.getElementById('playPauseBtn');
         const stopBtn = document.getElementById('stopBtn');
+        const timeSlider = document.getElementById('timeSlider');
         const speedSlider = document.getElementById('speedSlider');
         const speedValue = document.getElementById('speedValue');
+        const sizeSlider = document.getElementById('sizeSlider');
         const closeBtn = document.getElementById('closeBtn');
         const modalOverlay = document.getElementById('animation-modal-overlay');
 
@@ -85,9 +91,11 @@
         console.log('Modal elements found, loading viewer module...');
 
         // Load and initialize viewer (2D or 3D based on data)
+        // Add cache bust query param to force reload of updated modules
+        const cacheBust = Date.now();
         const viewerModule = animationData.is_3d
-            ? '/dashboard-static/js/viewers/episode_animation_viewer_3d.js'
-            : '/dashboard-static/js/viewers/episode_animation_viewer.js';
+            ? `/dashboard-static/js/viewers/episode_animation_viewer_3d.js?v=${{cacheBust}}`
+            : `/dashboard-static/js/viewers/episode_animation_viewer.js?v=${{cacheBust}}`;
 
         import(viewerModule)
             .then(({{ EpisodeAnimationViewer }}) => {{
@@ -108,11 +116,23 @@
                     viewer.frameManager.jumpToStart();
                 }});
 
+                // Time slider (live scrubbing)
+                timeSlider.addEventListener('input', (e) => {{
+                    viewer.frameManager.setFrame(parseInt(e.target.value));
+                }});
+
                 // Speed slider
                 speedSlider.addEventListener('input', (e) => {{
                     const speed = parseFloat(e.target.value);
                     viewer.frameManager.setSpeed(speed);
                     speedValue.textContent = speed.toFixed(1) + 'x';
+                }});
+
+                // Size slider
+                sizeSlider.addEventListener('input', (e) => {{
+                    const size = parseFloat(e.target.value);
+                    console.log(`Size slider changed to: ${{size}}`);
+                    viewer.setAgentSize(size);
                 }});
 
                 // Close button - remove the modal from DOM
@@ -123,6 +143,7 @@
 
                 // Update UI on frame change
                 viewer.frameManager.onFrameChange((frame) => {{
+                    timeSlider.value = frame;
                     document.getElementById('frameInfo').textContent =
                         `Frame: ${{frame}} / {max_frame}`;
                     playPauseBtn.textContent = viewer.frameManager.isPlaying ? '⏸ Pause' : '▶ Play';

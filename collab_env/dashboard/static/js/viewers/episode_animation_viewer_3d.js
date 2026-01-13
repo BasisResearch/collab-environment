@@ -81,6 +81,9 @@ export class EpisodeAnimationViewer {
         // Calculate appropriate sphere size (0.5% of scene size)
         this.sphereSize = this.sceneSize * 0.005;
 
+        // Agent appearance scale (1.0 = default, adjustable via setAgentSize)
+        this.currentScale = 1.0;
+
         // Animation state
         this.animationId = null;
 
@@ -395,7 +398,7 @@ export class EpisodeAnimationViewer {
             const curve = new THREE.CatmullRomCurve3(points);
 
             // Use TubeGeometry for visible 3D trails
-            const tubeRadius = this.sphereSize / 3;
+            const tubeRadius = (this.sphereSize * this.currentScale) / 3;
             const tubeGeometry = new THREE.TubeGeometry(curve, 32, tubeRadius, 8, false);
             const tubeMaterial = new THREE.MeshBasicMaterial({
                 color: color,
@@ -426,6 +429,23 @@ export class EpisodeAnimationViewer {
             this.animationId = requestAnimationFrame(animate);
         };
         animate();
+    }
+
+    setAgentSize(scaleFactor) {
+        /**
+         * Set the agent sphere scale
+         * scaleFactor: 1.0 = default size, 2.0 = double, 0.5 = half
+         */
+        // Convert slider value (2-30) to scale factor (0.25x to 3.75x)
+        // Default slider value 8 should give scale 1.0
+        this.currentScale = scaleFactor / 8;
+        console.log(`3D setAgentSize called with scaleFactor: ${scaleFactor}, currentScale: ${this.currentScale}`);
+
+        // Scale all spheres efficiently using scale transform
+        for (const agentId in this.spheres) {
+            this.spheres[agentId].scale.set(this.currentScale, this.currentScale, this.currentScale);
+        }
+        console.log(`Scaled ${Object.keys(this.spheres).length} spheres`);
     }
 
     destroy() {
@@ -494,4 +514,4 @@ export class EpisodeAnimationViewer {
         console.log('✅ Episode Animation Viewer 3D destroyed');
     }
 }
-// Cache bust: 1763706684
+// Cache bust: 1736812801
