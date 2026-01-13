@@ -178,17 +178,8 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
             self.is_3d = False
             return
 
-        # Check if z values are all NULL
-        if self.tracks_df['z'].isna().all():
-            self.is_3d = False
-            return
-
-        # Check if z has meaningful variance (not all same value)
-        z_std = self.tracks_df['z'].std()
-        z_range = self.tracks_df['z'].max() - self.tracks_df['z'].min()
-
-        # Consider it 2D if z has very low variance (< 0.01) or range
-        self.is_3d = (z_std > 0.01) and (z_range > 0.01)
+        # If any z values exist (not all NULL), treat as 3D
+        self.is_3d = not self.tracks_df['z'].isna().all()
 
     def load_data(self) -> None:
         """Load data for animation and heatmap panels.
@@ -207,6 +198,14 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
 
             if len(self.tracks_df) == 0:
                 raise ValueError("No track data found for selected episode")
+
+            # Validate required columns exist and have valid data
+            required_cols = ['time_index', 'agent_id', 'x', 'y']
+            for col in required_cols:
+                if col not in self.tracks_df.columns:
+                    raise ValueError(f"Missing required column '{col}' in track data")
+                if self.tracks_df[col].isna().all():
+                    raise ValueError(f"Column '{col}' contains only NULL values")
 
             # Detect if data is 2D or 3D
             self._detect_dimensionality()
@@ -265,15 +264,8 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
             if len(heatmap_df) == 0:
                 raise ValueError("No heatmap data found for selected session")
 
-            # Detect dimensionality from heatmap data
-            # Check if z_bin has valid (non-NaN) values
-            has_valid_z = heatmap_df['z_bin'].notna().any()
-            if has_valid_z:
-                z_variance = heatmap_df['z_bin'].std()
-                z_range_span = heatmap_df['z_bin'].max() - heatmap_df['z_bin'].min()
-                self.is_3d = (z_variance > 0.01) and (z_range_span > 0.01)
-            else:
-                self.is_3d = False
+            # If any z values exist (not all NULL), treat as 3D
+            self.is_3d = heatmap_df['z_bin'].notna().any()
 
             # Compute spatial bounds from heatmap bins
             bin_size = self.context.spatial_bin_size
@@ -552,27 +544,54 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
             x_unique = sorted(df['x_center'].unique())
             y_unique = sorted(df['y_center'].unique())
 
-            # Create a 2D array for density values
-            density_grid = np.zeros((len(y_unique), len(x_unique)))
-            for _, row in df.iterrows():
-                x_idx = x_unique.index(row['x_center'])
-                y_idx = y_unique.index(row['y_center'])
-                density_grid[y_idx, x_idx] = row['density']
+            # Check if we have enough bins for a proper heatmap
+            # Need at least 2 unique values in both x and y, and non-zero range
+            x_range_ok = len(x_unique) >= 2 and (max(x_unique) - min(x_unique)) > 0
+            y_range_ok = len(y_unique) >= 2 and (max(y_unique) - min(y_unique)) > 0
 
-            # Create Image with proper bounds
-            # Flip y axis for heatmap (so y goes from max to min, as in image coordinates)
-            viz = hv.Image(
-                np.flipud(density_grid),
-                bounds=(min(x_unique), max(y_unique), max(x_unique), min(y_unique))  # flip y axis
-            ).opts(
-                cmap=self.color_scale,
-                # width=450,
-                # height=450,
-                colorbar=True,
-                title=f'Spatial Density (bin={bin_size})',
-                xlim=self.x_range,
-                ylim=self.y_range
-            )
+            if not x_range_ok or not y_range_ok:
+                # Fall back to scatter plot when bin_size is too large for data range
+                # This typically happens with 3D world coordinates (small values like -1 to 1)
+                # when using a bin_size designed for pixel coordinates (like 10.0)
+                logger.warning(
+                    f"Not enough bins for heatmap (x_bins={len(x_unique)}, y_bins={len(y_unique)}). "
+                    f"Consider using a smaller bin_size for this data range. Falling back to scatter plot."
+                )
+                viz = hv.Scatter(
+                    df,
+                    kdims=['x_center', 'y_center'],
+                    vdims='density'
+                ).opts(
+                    color='density',
+                    cmap=self.color_scale,
+                    size=10,
+                    colorbar=True,
+                    title=f'Spatial Density (bin={bin_size}) - Scatter fallback',
+                    xlim=self.x_range,
+                    ylim=self.y_range
+                )
+            else:
+                # Create a 2D array for density values
+                density_grid = np.zeros((len(y_unique), len(x_unique)))
+                for _, row in df.iterrows():
+                    x_idx = x_unique.index(row['x_center'])
+                    y_idx = y_unique.index(row['y_center'])
+                    density_grid[y_idx, x_idx] = row['density']
+
+                # Create Image with proper bounds
+                # Flip y axis for heatmap (so y goes from max to min, as in image coordinates)
+                viz = hv.Image(
+                    np.flipud(density_grid),
+                    bounds=(min(x_unique), max(y_unique), max(x_unique), min(y_unique))  # flip y axis
+                ).opts(
+                    cmap=self.color_scale,
+                    # width=450,
+                    # height=450,
+                    colorbar=True,
+                    title=f'Spatial Density (bin={bin_size})',
+                    xlim=self.x_range,
+                    ylim=self.y_range
+                )
 
         # Update pane content (efficient - just updates object, doesn't recreate widget)
         self.heatmap_viz_pane.object = viz

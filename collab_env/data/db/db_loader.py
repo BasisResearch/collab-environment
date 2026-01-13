@@ -15,6 +15,7 @@ import pickle
 import re
 import sys
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 import numpy as np
@@ -118,6 +119,46 @@ def get_food_location_from_config(config: Dict[str, Any], scene_size: float) -> 
                  f"scaled=({food_x:.2f}, {food_y:.2f})")
 
     return (food_x, food_y)
+
+
+class TrackingCSVFormat(Enum):
+    """Supported tracking CSV formats."""
+    TRACKS_2D = "tracks_2d"        # track_id, frame, x, y
+    TRACKS_3D = "tracks_3d"        # track_id, frame, x, y, z (simple 3D tracks)
+    BBOX_2D = "bbox_2d"            # track_id, frame, x1, y1, x2, y2, confidence, class
+    CENTROID_3D = "centroid_3d"    # track_id, frame, x1, y1, x2, y2, confidence, class, u, v, x, y, z
+    UNKNOWN = "unknown"            # Unsupported format (e.g., raw detections)
+
+
+def detect_csv_format(df: pd.DataFrame) -> TrackingCSVFormat:
+    """
+    Detect tracking CSV format based on column names.
+
+    Args:
+        df: DataFrame with CSV data (can be just header row)
+
+    Returns:
+        TrackingCSVFormat enum value
+    """
+    cols = set(df.columns)
+
+    # 3D centroids have world coordinates (x, y, z) and image coordinates (u, v)
+    if {'x', 'y', 'z', 'u', 'v'}.issubset(cols) and 'track_id' in cols:
+        return TrackingCSVFormat.CENTROID_3D
+
+    # 2D bboxes have corner coordinates
+    if {'x1', 'y1', 'x2', 'y2', 'track_id', 'frame'}.issubset(cols):
+        return TrackingCSVFormat.BBOX_2D
+
+    # Simple 3D tracks have centroid coordinates with z (check before 2D)
+    if {'x', 'y', 'z', 'track_id', 'frame'}.issubset(cols):
+        return TrackingCSVFormat.TRACKS_3D
+
+    # Simple 2D tracks have centroid coordinates
+    if {'x', 'y', 'track_id', 'frame'}.issubset(cols):
+        return TrackingCSVFormat.TRACKS_2D
+
+    return TrackingCSVFormat.UNKNOWN
 
 
 @dataclass
@@ -988,7 +1029,229 @@ class Boids2DLoader(BaseDataLoader):
 
 
 class TrackingCSVLoader(BaseDataLoader):
-    """Loader for real-world tracking CSV data from processed_tracks."""
+    """Loader for real-world tracking CSV data from processed_tracks.
+
+    Supports multiple CSV formats:
+    - 2D tracks: track_id, frame, x, y
+    - 2D bounding boxes: track_id, frame, x1, y1, x2, y2, confidence, class
+    - 3D centroids: track_id, frame, x1, y1, x2, y2, confidence, class, u, v, x, y, z
+      (creates two episodes: one with 3D world coords, one with 2D image coords)
+    """
+
+    def _discover_tracking_csvs(self, camera_dir: Path) -> List[Tuple[Path, TrackingCSVFormat]]:
+        """
+        Find all tracking CSVs in camera_dir with their formats.
+
+        Args:
+            camera_dir: Directory to search for CSV files
+
+        Returns:
+            List of (csv_path, format) tuples, sorted by filename
+        """
+        results = []
+        for csv_path in camera_dir.glob("*.csv"):
+            try:
+                # Read just the header to detect format
+                df_header = pd.read_csv(csv_path, nrows=0)
+                fmt = detect_csv_format(df_header)
+                if fmt != TrackingCSVFormat.UNKNOWN:
+                    results.append((csv_path, fmt))
+                else:
+                    logger.debug(f"Skipping unsupported CSV format: {csv_path.name}")
+            except Exception as e:
+                logger.warning(f"Error reading CSV header {csv_path}: {e}")
+        return sorted(results, key=lambda x: x[0].name)
+
+    def _normalize_bbox_to_centroid(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Convert bounding box format to centroid format.
+
+        Args:
+            df: DataFrame with x1, y1, x2, y2 columns
+
+        Returns:
+            DataFrame with track_id, frame, x, y columns
+        """
+        return pd.DataFrame({
+            'track_id': df['track_id'],
+            'frame': df['frame'],
+            'x': (df['x1'] + df['x2']) / 2,
+            'y': (df['y1'] + df['y2']) / 2
+        })
+
+    def _compute_velocities(self, df: pd.DataFrame, frame_rate: float = 30.0, has_z: bool = False) -> pd.DataFrame:
+        """
+        Compute velocities from position data.
+
+        Args:
+            df: DataFrame with track_id, frame, x, y (and optionally z) columns
+            frame_rate: Frame rate for velocity computation
+            has_z: Whether to compute z velocity
+
+        Returns:
+            DataFrame with v_x, v_y (and optionally v_z) columns added
+        """
+        # Sort by track_id and frame for proper diff() calculation
+        df = df.sort_values(['track_id', 'frame']).reset_index(drop=True)
+
+        # Compute position and frame differences using groupby (vectorized)
+        df['dx'] = df.groupby('track_id')['x'].diff()
+        df['dy'] = df.groupby('track_id')['y'].diff()
+        df['frame_diff'] = df.groupby('track_id')['frame'].diff()
+
+        if has_z and 'z' in df.columns:
+            df['dz'] = df.groupby('track_id')['z'].diff()
+
+        # Compute time delta: dt = frame_diff / frame_rate (seconds)
+        df['dt'] = df['frame_diff'] / frame_rate
+
+        # Compute velocities: v = dx / dt
+        df['v_x'] = df['dx'] / df['dt']
+        df['v_y'] = df['dy'] / df['dt']
+        if has_z and 'z' in df.columns:
+            df['v_z'] = df['dz'] / df['dt']
+
+        # Set velocity to NaN when there are frame gaps
+        gap_mask = df['frame_diff'] > 1
+        velocity_cols = ['v_x', 'v_y'] + (['v_z'] if has_z and 'z' in df.columns else [])
+        df.loc[gap_mask, velocity_cols] = np.nan
+
+        # For first frame of each track, set velocity to 0.0
+        first_frame_mask = df['frame_diff'].isna()
+        df.loc[first_frame_mask, velocity_cols] = 0.0
+
+        # Drop temporary columns
+        temp_cols = ['dx', 'dy', 'frame_diff', 'dt']
+        if has_z and 'dz' in df.columns:
+            temp_cols.append('dz')
+        df = df.drop(columns=temp_cols)
+
+        return df
+
+    def _load_episode_from_df(
+        self,
+        session_id: str,
+        episode_number: int,
+        episode_name: str,
+        df: pd.DataFrame,
+        csv_path: Path,
+        has_z: bool = False,
+        frame_rate: float = 30.0,
+        conn=None
+    ):
+        """
+        Load episode from a normalized DataFrame.
+
+        Args:
+            session_id: Session identifier
+            episode_number: Episode number within session
+            episode_name: Episode name
+            df: DataFrame with track_id, frame, x, y (and optionally z) columns
+            csv_path: Original CSV path (for metadata)
+            has_z: Whether data has z coordinate
+            frame_rate: Frame rate for velocity computation
+            conn: Optional connection
+        """
+        logger.info(f"Loading episode {episode_name} from: {csv_path}")
+
+        # Compute velocities
+        df = self._compute_velocities(df, frame_rate=frame_rate, has_z=has_z)
+
+        # Extract metadata
+        num_frames = int(df['frame'].max() + 1)
+        num_agents = int(df['track_id'].nunique())
+
+        episode_id = f"episode-{episode_name}-{session_id}"
+
+        episode_metadata = EpisodeMetadata(
+            episode_id=episode_id,
+            session_id=session_id,
+            episode_number=episode_number,
+            num_frames=num_frames,
+            num_agents=num_agents,
+            frame_rate=frame_rate,
+            file_path=str(csv_path)
+        )
+
+        self.load_episode(episode_metadata, conn=conn)
+
+        # Prepare observations DataFrame
+        observations = pd.DataFrame({
+            'time_index': df['frame'],
+            'agent_id': df['track_id'],
+            'agent_type_id': 'agent',
+            'x': df['x'],
+            'y': df['y'],
+            'z': df['z'] if has_z and 'z' in df.columns else None,
+            'v_x': df['v_x'],
+            'v_y': df['v_y'],
+            'v_z': df['v_z'] if has_z and 'v_z' in df.columns else None
+        })
+
+        self.load_observations_batch(observations, episode_id, conn=conn)
+
+        logger.info(f"Loaded episode {episode_name}: {num_frames} frames, {num_agents} tracks, {len(df)} observations")
+
+    def _load_3d_centroid_episodes(
+        self,
+        session_id: str,
+        episode_number: int,
+        camera_name: str,
+        csv_path: Path,
+        conn=None
+    ) -> int:
+        """
+        Load 3D centroid CSV as two episodes: 3D world coords and 2D image coords.
+
+        Args:
+            session_id: Session identifier
+            episode_number: Starting episode number
+            camera_name: Camera directory name
+            csv_path: Path to CSV file
+            conn: Optional connection
+
+        Returns:
+            Number of episodes created (2)
+        """
+        logger.info(f"Loading 3D centroid CSV: {csv_path}")
+
+        df = pd.read_csv(csv_path)
+        csv_stem = csv_path.stem
+
+        # Episode 1: 3D world coordinates (x, y, z)
+        # Filter out rows where 3D triangulation failed (x, y, z are NaN)
+        df_3d_raw = df[df['x'].notna() & df['y'].notna() & df['z'].notna()]
+        if len(df_3d_raw) < len(df):
+            logger.info(f"Filtered {len(df) - len(df_3d_raw)} rows with null 3D coordinates")
+
+        df_3d = pd.DataFrame({
+            'track_id': df_3d_raw['track_id'],
+            'frame': df_3d_raw['frame'],
+            'x': df_3d_raw['x'],
+            'y': df_3d_raw['y'],
+            'z': df_3d_raw['z']
+        })
+        episode_name_3d = f"{camera_name}_{csv_stem}_3d"
+        self._load_episode_from_df(
+            session_id, episode_number, episode_name_3d,
+            df_3d, csv_path, has_z=True, conn=conn
+        )
+
+        # Episode 2: 2D image coordinates (u, v as x, y)
+        # u, v should always be present (2D detection succeeded)
+        df_2d = pd.DataFrame({
+            'track_id': df['track_id'],
+            'frame': df['frame'],
+            'x': df['u'],
+            'y': df['v']
+        })
+        episode_name_2d = f"{camera_name}_{csv_stem}_2d"
+        self._load_episode_from_df(
+            session_id, episode_number + 1, episode_name_2d,
+            df_2d, csv_path, has_z=False, conn=conn
+        )
+
+        return 2  # Number of episodes created
 
     def load_sessions_bulk(self, parent_dir: Path):
         """
@@ -1050,32 +1313,62 @@ class TrackingCSVLoader(BaseDataLoader):
 
         self.load_session(session_metadata, conn=conn)
 
-        # Discover all camera episodes in aligned_frames/
+        # Discover all camera directories in aligned_frames/
         aligned_frames = session_dir / "aligned_frames"
         camera_dirs = sorted([d for d in aligned_frames.iterdir()
                               if d.is_dir() and not d.name.startswith('.')])
 
-        logger.info(f"Loading up to {min(len(camera_dirs), self.max_episodes)} camera episodes...")
+        # Discover all CSVs across all camera directories
+        all_csvs: List[Tuple[Path, Path, TrackingCSVFormat]] = []  # (camera_dir, csv_path, format)
+        for camera_dir in camera_dirs:
+            csv_files = self._discover_tracking_csvs(camera_dir)
+            for csv_path, csv_format in csv_files:
+                all_csvs.append((camera_dir, csv_path, csv_format))
+
+        if not all_csvs:
+            logger.warning(f"No tracking CSV files found in {aligned_frames}")
+            return
+
+        # Count potential episodes (CENTROID_3D creates 2 episodes per CSV)
+        total_potential = sum(
+            2 if fmt == TrackingCSVFormat.CENTROID_3D else 1
+            for _, _, fmt in all_csvs
+        )
+        logger.info(f"Found {len(all_csvs)} CSV files, {total_potential} potential episodes")
+        logger.info(f"Loading up to {min(total_potential, self.max_episodes)} episodes...")
 
         episodes_loaded = 0
-        for episode_num, camera_dir in enumerate(camera_dirs):
-            if episode_num >= self.max_episodes:
+        episode_number = 0
+
+        for camera_dir, csv_path, csv_format in all_csvs:
+            if episodes_loaded >= self.max_episodes:
                 logger.info(f"Reached maximum number of episodes ({self.max_episodes}) for session {session_id}, stopping...")
                 break
 
-            # Find CSV file (e.g., thermal_2_tracks.csv)
-            csv_files = list(camera_dir.glob("*_tracks.csv"))
-            if not csv_files:
-                logger.warning(f"No CSV file found in {camera_dir}, skipping")
-                continue
+            camera_name = camera_dir.name
 
-            csv_path = csv_files[0]
-            episode_name = camera_dir.name  # e.g., "thermal_2"
+            if csv_format == TrackingCSVFormat.CENTROID_3D:
+                # Check if we have room for 2 episodes
+                if episodes_loaded + 2 > self.max_episodes:
+                    logger.info(f"Skipping 3D centroid CSV (would exceed max_episodes): {csv_path.name}")
+                    continue
+                # Creates 2 episodes: 3D and 2D
+                num_created = self._load_3d_centroid_episodes(
+                    session_id, episode_number, camera_name, csv_path, conn=conn
+                )
+                episodes_loaded += num_created
+                episode_number += num_created
+            else:
+                # TRACKS_2D or BBOX_2D: creates 1 episode
+                episode_name = f"{camera_name}_{csv_path.stem}"
+                self.load_episode_csv(
+                    session_id, episode_number, episode_name, csv_path,
+                    csv_format=csv_format, conn=conn
+                )
+                episodes_loaded += 1
+                episode_number += 1
 
-            self.load_episode_csv(session_id, episode_num, episode_name, csv_path, conn=conn)
-            episodes_loaded += 1
-
-        logger.info(f"Completed loading session: {session_id} ({episodes_loaded} out of {len(camera_dirs)} episodes)")
+        logger.info(f"Completed loading session: {session_id} ({episodes_loaded} episodes from {len(all_csvs)} CSV files)")
 
     def load_tracking_session(self, session_dir: Path):
         """
@@ -1103,91 +1396,50 @@ class TrackingCSVLoader(BaseDataLoader):
         episode_number: int,
         episode_name: str,
         csv_path: Path,
+        csv_format: Optional[TrackingCSVFormat] = None,
         conn=None
     ):
-        """Load a single camera's tracking CSV file.
+        """Load a single camera's tracking CSV file (2D/3D tracks or bounding boxes).
 
         Args:
             session_id: Session identifier
             episode_number: Episode number within session
             episode_name: Episode name (camera name)
             csv_path: Path to CSV file
+            csv_format: CSV format (auto-detected if None)
             conn: Optional connection (for transactional usage)
-        """
-        logger.info(f"Loading episode {episode_name} from: {csv_path}")
 
+        Note:
+            For 3D centroid CSVs with u,v image coords, use _load_3d_centroid_episodes() instead.
+        """
         # Read CSV
         df = pd.read_csv(csv_path)
 
-        # Validate required columns
-        required_cols = ['track_id', 'frame', 'x', 'y']
-        for col in required_cols:
-            if col not in df.columns:
-                raise ValueError(f"Missing required column '{col}' in {csv_path}")
+        # Auto-detect format if not provided
+        if csv_format is None:
+            csv_format = detect_csv_format(df)
 
-        # Compute velocities per track with proper time scaling (vectorized approach)
-        import numpy as np
-        frame_rate = 30.0  # Default for video tracking
+        if csv_format == TrackingCSVFormat.UNKNOWN:
+            raise ValueError(f"Unsupported CSV format in {csv_path}")
 
-        # Sort by track_id and frame for proper diff() calculation
-        df = df.sort_values(['track_id', 'frame']).reset_index(drop=True)
+        if csv_format == TrackingCSVFormat.CENTROID_3D:
+            raise ValueError(
+                f"3D centroid CSV should be loaded via _load_3d_centroid_episodes(): {csv_path}"
+            )
 
-        # Compute position and frame differences using groupby (vectorized, much faster than loop)
-        df['dx'] = df.groupby('track_id')['x'].diff()
-        df['dy'] = df.groupby('track_id')['y'].diff()
-        df['frame_diff'] = df.groupby('track_id')['frame'].diff()
+        # Normalize to standard format
+        if csv_format == TrackingCSVFormat.BBOX_2D:
+            df = self._normalize_bbox_to_centroid(df)
+        # TRACKS_2D and TRACKS_3D already have the right format
 
-        # Compute time delta: dt = frame_diff / frame_rate (seconds)
-        df['dt'] = df['frame_diff'] / frame_rate
+        # Determine if data has z coordinate
+        has_z = csv_format == TrackingCSVFormat.TRACKS_3D
 
-        # Compute velocities: v = dx / dt (pixels/second)
-        df['v_x'] = df['dx'] / df['dt']
-        df['v_y'] = df['dy'] / df['dt']
-
-        # Set velocity to NaN when there are frame gaps (frame_diff > 1 means missing frames)
-        df.loc[df['frame_diff'] > 1, ['v_x', 'v_y']] = np.nan
-
-        # For first frame of each track, set velocity to 0.0 (instead of NaN)
-        first_frame_mask = df['frame_diff'].isna()
-        df.loc[first_frame_mask, ['v_x', 'v_y']] = 0.0
-
-        # Drop temporary columns
-        df = df.drop(columns=['dx', 'dy', 'frame_diff', 'dt'])
-
-        # Extract metadata
-        num_frames = int(df['frame'].max() + 1)
-        num_agents = int(df['track_id'].nunique())
-
-        episode_id = f"episode-{episode_name}-{session_id}"
-
-        episode_metadata = EpisodeMetadata(
-            episode_id=episode_id,
-            session_id=session_id,
-            episode_number=episode_number,
-            num_frames=num_frames,
-            num_agents=num_agents,
-            frame_rate=frame_rate,
-            file_path=str(csv_path)
+        # Load using the common helper
+        self._load_episode_from_df(
+            session_id, episode_number, episode_name,
+            df, csv_path, has_z=has_z, conn=conn
         )
-
-        self.load_episode(episode_metadata, conn=conn)
-
-        # Prepare observations DataFrame
-        observations = pd.DataFrame({
-            'time_index': df['frame'],
-            'agent_id': df['track_id'],
-            'agent_type_id': 'agent',  # Default type
-            'x': df['x'],
-            'y': df['y'],
-            'z': None,  # 2D data
-            'v_x': df['v_x'],
-            'v_y': df['v_y'],
-            'v_z': None
-        })
-
-        self.load_observations_batch(observations, episode_id, conn=conn)
-
-        logger.info(f"Loaded episode {episode_name}: {num_frames} frames, {num_agents} tracks, {len(df)} observations")
 
 
 class GNNRolloutLoader(BaseDataLoader):

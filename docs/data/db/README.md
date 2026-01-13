@@ -273,18 +273,31 @@ python -m collab_env.data.db.db_loader \
 The tracking loader will:
 
 - Load session metadata from optional `Metadata.yaml` file
-- Discover all camera episodes in `aligned_frames/` subdirectory
-- Read CSV files matching pattern `*_tracks.csv`
+- Discover all camera directories in `aligned_frames/` subdirectory
+- **Auto-detect and load all CSV files** in each camera directory (not just `*_tracks.csv`)
 - Compute velocities from positions: `v[t] = (p[t+1] - p[t]) / dt` where `dt = frame_diff / frame_rate`
 - Handle frame gaps by setting velocity to NaN when frames are missing
-- Create 2D observations (z and v_z are NULL)
-- Store velocities in pixels/second units
+- Store velocities in pixels/second (2D) or world units/second (3D)
 
-**CSV Format Requirements**:
-- Required columns: `track_id`, `frame`, `x`, `y`
-- Pixel coordinates (video resolution dependent)
-- Frame numbers (0-indexed)
-- Frame rate: 30 fps (default for video tracking)
+**Supported CSV Formats**:
+
+| Format | Columns | Episodes Created | Notes |
+| ------ | ------- | ---------------- | ----- |
+| **2D Tracks** | `track_id, frame, x, y` | 1 (2D) | Simple centroid tracking |
+| **2D Bounding Boxes** | `track_id, frame, x1, y1, x2, y2, confidence, class` | 1 (2D) | Centroid computed as `(x1+x2)/2, (y1+y2)/2` |
+| **3D Centroids** | `track_id, frame, x1, y1, x2, y2, confidence, class, u, v, x, y, z` | **2** (3D + 2D) | Creates separate episodes for world coords (x,y,z) and image coords (u,v) |
+
+**Episode Naming**:
+
+- 2D tracks: `episode-{camera}_{csv_stem}-{session}`
+- 2D bounding boxes: `episode-{camera}_{csv_stem}-{session}`
+- 3D centroids: `episode-{camera}_{csv_stem}_3d-{session}` and `episode-{camera}_{csv_stem}_2d-{session}`
+
+**Example**: A camera directory with both `rgb_1_tracked_bboxes.csv` and `rgb_1_tracked_centroids_3d.csv` will create 3 episodes:
+
+1. `episode-rgb_1_rgb_1_tracked_bboxes-{session}` (2D centroids from bounding boxes)
+2. `episode-rgb_1_rgb_1_tracked_centroids_3d_3d-{session}` (3D world coordinates)
+3. `episode-rgb_1_rgb_1_tracked_centroids_3d_2d-{session}` (2D image coordinates)
 
 **Performance**: ~5,000 observations/second for bulk loading
 
