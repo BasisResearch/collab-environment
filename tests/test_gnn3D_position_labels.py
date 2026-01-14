@@ -1,10 +1,14 @@
+import glob
 import os
 import shlex
 import subprocess
 import sys
 
+from tqdm import tqdm
 
+from collab_env.data.file_utils import expand_path, get_project_root
 from collab_env.sim.boids.run_simulator import run_simulator_main
+from collab_env.sim.boids.show_trajectories_all import show_trajectories
 from tests.sim_test_util import remove_run_folder
 
 
@@ -105,26 +109,27 @@ def build_train_analyze_show(
     #         f"analyze_results.py was not successful for episode file {episode}, return code {result.returncode}"
     #     )
     #
-    # #
-    # # Show trajectories for each validation prediction file
-    # #
-    # training_result_directory = output_directory + "/" + training_result_subdirectory
-    # validation_file_list = glob.glob(
-    #     training_result_directory + "/validation_prediction*.parquet"
-    # )
-    # for episode_number, episode_file in enumerate(tqdm(validation_file_list)):
-    #     show_run_folder = show_trajectories(
-    #         config_file=expand_path(
-    #             output_directory + "/config.yaml", get_project_root()
-    #         ),
-    #         trajectory_file_name=episode_file.split("/")[-1],
-    #         trajectory_directory_name=training_result_directory,
-    #         show_visualizer=False,
-    #         scale_positions=1500,
-    #     )
+
     #
-    #     if remote_test:
-    #         remove_run_folder(show_run_folder)
+    # Show trajectories for each validation prediction file
+    #
+    training_result_directory = output_directory + "/" + training_result_subdirectory
+    validation_file_list = glob.glob(
+        training_result_directory + "/validation_prediction*.parquet"
+    )
+    for episode_number, episode_file in enumerate(tqdm(validation_file_list)):
+        show_run_folder = show_trajectories(
+            config_file=expand_path(
+                output_directory + "/config.yaml", get_project_root()
+            ),
+            trajectory_file_name=episode_file.split("/")[-1],
+            trajectory_directory_name=training_result_directory,
+            show_visualizer=False,
+            scale_positions=1500,
+        )
+
+        if remote_test:
+            remove_run_folder(show_run_folder)
 
 
 def test_gnn3D_with_position_labels():
