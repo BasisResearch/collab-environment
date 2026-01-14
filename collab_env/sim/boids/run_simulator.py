@@ -187,7 +187,9 @@ def create_environment(
     return env
 
 
-def run_simulator(config: dict, env, agents: SimulatorAgents, run_folder=None):
+def run_simulator(
+    config: dict, env, agents: SimulatorAgents, run_folder=None, save_results=True
+):
     #
     # Set up the random seeds for each episode. ** This will abort if there aren't enough seeds in the config file. **
     #
@@ -200,10 +202,6 @@ def run_simulator(config: dict, env, agents: SimulatorAgents, run_folder=None):
     # There may be a better way to do this to make sure we get all parameters stored
     # in case there are still hardcoded values in the code -- which should be removed
     # at some point.
-
-    # write out the package list to help with reproducibility. This seems to be especially important
-    # for random number generators, which change based on package level.
-    write_package_list(run_folder)
 
     # -- 080225
     # Find the path for the video in the run folder.
@@ -268,19 +266,24 @@ def run_simulator(config: dict, env, agents: SimulatorAgents, run_folder=None):
 
         env.close()
 
-        #
-        # Dump data to output file
-        #
-        table = pa.Table.from_pandas(df)
-        logger.debug(f"table \n {table}")
+        if save_results:
+            # write out the package list to help with reproducibility. This seems to be especially important
+            # for random number generators, which change based on package level.
+            write_package_list(run_folder)
 
-        file_path = expand_path(
-            f"episode-{episode}-completed-{datetime.now().strftime('%Y%m%d-%H%M%S')}.parquet",
-            # f"episode-{episode}.parquet",
-            run_folder,
-        )
-        logger.info(f"episode {episode} writing output to {file_path}")
-        pq.write_table(table, file_path)
+            #
+            # Dump data to output file
+            #
+            table = pa.Table.from_pandas(df)
+            logger.debug(f"table \n {table}")
+
+            file_path = expand_path(
+                f"episode-{episode}-completed-{datetime.now().strftime('%Y%m%d-%H%M%S')}.parquet",
+                # f"episode-{episode}.parquet",
+                run_folder,
+            )
+            logger.info(f"episode {episode} writing output to {file_path}")
+            pq.write_table(table, file_path)
 
         # plot trajectories if specified
         if config["simulator"]["show_trajectories"]:
@@ -302,8 +305,8 @@ def run_simulator(config: dict, env, agents: SimulatorAgents, run_folder=None):
     return run_folder
 
 
-def run_simulator_main(config_filename):
-    config = yaml.safe_load(open(config_filename))
+def run_simulator_main(config_file: Path, save_results: bool = True):
+    config = yaml.safe_load(open(config_file))
 
     # -- 080225 9:15AM
     # Create the output folder
@@ -312,12 +315,16 @@ def run_simulator_main(config_filename):
     new_run_folder.mkdir(parents=True, exist_ok=True)
     # os.mkdir(new_run_folder)
     copied_config_file_path = expand_path("config.yaml", new_run_folder)
-    shutil.copy(config_filename, copied_config_file_path)
+    shutil.copy(config_file, copied_config_file_path)
 
     env = create_environment(config=config, run_folder=new_run_folder)
     agents = BoidAgents(simulator_config=config, agent_config=None, env=env)
     run_folder = run_simulator(
-        config=config, env=env, agents=agents, run_folder=new_run_folder
+        config=config,
+        env=env,
+        agents=agents,
+        run_folder=new_run_folder,
+        save_results=save_results,
     )
 
     logger.info(
@@ -337,6 +344,8 @@ if __name__ == "__main__":
         epilog="---",
     )
     parser.add_argument("-cf", "--config_file")
+    parser.add_argument("-s", "--save_results", action="store_true")
+
     args = parser.parse_args()
 
     if args.config_file:
@@ -346,4 +355,4 @@ if __name__ == "__main__":
             "collab_env/sim/boids/config.yaml", get_project_root()
         )
 
-    run_simulator_main(config_filename)
+    run_simulator_main(config_filename, args.save_results)

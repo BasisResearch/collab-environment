@@ -7,14 +7,18 @@ import sys
 import yaml
 from tqdm import tqdm
 
+from collab_env.data.file_utils import expand_path, get_project_root
 from collab_env.sim.boids.run_simulator import run_simulator_main
+from collab_env.sim.boids.show_trajectories_all import show_trajectories
+from tests.sim_test_util import remove_run_folder
 
 
 def build_train_analyze_show(
     output_directory: str,
     training_result_subdirectory: str,
-    sim_run_folder: str,
+    # sim_run_folder: str,
     predictions_are_velocities: bool = False,
+    remote_test: bool = False,
 ):
     #
     # Build dataset
@@ -25,8 +29,8 @@ def build_train_analyze_show(
         "collab_env/gnn/gnn_3D/build_dataset.py",
         "-d",
         output_directory,
-        "-id",
-        f"{sim_run_folder}",
+        # "-id",
+        # f"{sim_run_folder}",
         # "-lv" if predictions_are_velocities else "",
     ]
     if predictions_are_velocities:
@@ -89,11 +93,11 @@ def build_train_analyze_show(
             "-d",
             output_directory,
             "-r",
-            "-v",
+            # "-v",
             "-rsd",
             "rollout",
             "-scf",
-            "raw/link_to_raw_data/config.yaml",
+            "config.yaml",
             "-acf",
             "gnn_agent_config.yaml",
         ]
@@ -109,59 +113,62 @@ def build_train_analyze_show(
     #
     # Show trajectories for each validation prediction file
     #
-    training_result_directory = output_directory + "/" + training_result_subdirectory
-    validation_file_list = glob.glob(
-        training_result_directory + "/validation_prediction*.parquet"
-    )
-    for episode_number, episode_file in enumerate(tqdm(validation_file_list)):
-        result = subprocess.run(
-            [
-                sys.executable,
-                "collab_env/sim/boids/show_trajectories_all.py",
-                "-v",
-                "-sp",
-                "1500",
-                "-td",
-                training_result_directory,
-                "-tf",
-                episode_file.split("/")[-1],
-                "-cf",
-                output_directory + "/raw/link_to_raw_data/config.yaml",
-            ]
+    if not remote_test:
+        training_result_directory = (
+            output_directory + "/" + training_result_subdirectory
         )
-        assert result.returncode == 0, (
-            f"show_trajectories_all.py was not successful for episode file {episode}, return code {result.returncode}"
+        validation_file_list = glob.glob(
+            training_result_directory + "/validation_prediction*.parquet"
         )
+        for episode_number, episode_file in enumerate(tqdm(validation_file_list)):
+            show_run_folder = show_trajectories(
+                config_file=expand_path(
+                    output_directory + "/config.yaml", get_project_root()
+                ),
+                trajectory_file_name=episode_file.split("/")[-1],
+                trajectory_directory_name=training_result_directory,
+                show_visualizer=False,
+                scale_positions=1500,
+            )
+
+            if remote_test:
+                remove_run_folder(show_run_folder)
 
 
 def test_gnn3D_with_position_labels():
+    remote_test = "CI" in os.environ
+
     # Run simulator
     #
     # subprocess.run([sys.executable, "collab_env/sim/boids/run_simulator.py", "-cf",  "tests/gnn3D_position_labels_config.yaml"])
-    sim_run_folder = run_simulator_main(
-        config_filename="tests/gnn3D_position_labels_config.yaml"
-    )
+    sim_run_folder = run_simulator_main(config_file="tests/gnn3D_config.yaml")
     assert os.path.exists(sim_run_folder), (
         f"sim_run_folder {sim_run_folder} was returned by run_simulator_main but does not exist"
     )
 
-    output_directory = "tests/gnn3D_pytest_position_labels"
+    # output_directory = "tests/gnn3D_pytest"
     build_train_analyze_show(
-        output_directory,
-        "training_result_position_labels",
-        sim_run_folder=str(sim_run_folder),
+        output_directory=str(sim_run_folder),
+        # output_directory,
+        training_result_subdirectory="training_result_position_labels",
+        # sim_run_folder=str(sim_run_folder),
+        remote_test=remote_test,
     )
 
     #
     # Velocity Labels
     #
-    output_directory = "tests/gnn3D_pytest_velocity_labels"
+    # output_directory = "tests/gnn3D_pytest_velocity_labels"
     build_train_analyze_show(
-        output_directory,
-        "training_results_velocity_labels",
+        output_directory=str(sim_run_folder),
+        training_result_subdirectory="training_results_velocity_labels",
         predictions_are_velocities=True,
-        sim_run_folder=str(sim_run_folder),
+        remote_test=remote_test,
+        # sim_run_folder=str(sim_run_folder),
     )
+
+    # if remote_test:
+    remove_run_folder(sim_run_folder)
 
 
 if __name__ == "__main__":

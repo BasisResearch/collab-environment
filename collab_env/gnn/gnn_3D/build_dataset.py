@@ -710,20 +710,3 @@ if __name__ == "__main__":
     # dataset_metadata = torch.load(dataset.processed_paths[0])
     with open(dataset.processed_paths[0], "r") as f:
         dataset_metadata = json.load(f)
-    # print(dataset_metadata)
-
-    # for episode_index, episode_data in enumerate(dataset):
-    #     for graph in episode_data:
-    #         print("x", graph[0].x)
-    #         print("y", graph[0].y)
-    #         break
-    #     break
-
-    # print("checking data from loader")
-    # for episode_number, episode in enumerate(loader):
-    #     print(f"episode {episode_number} length {len(episode)}")
-    #     for graph in episode:
-    #         print("first graph: \n", graph)
-    #         break
-    #         # print('graph.x: \n', graph.x)
-    #         # print('-' * a10)

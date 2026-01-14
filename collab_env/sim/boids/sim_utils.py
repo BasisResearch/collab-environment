@@ -360,41 +360,9 @@ def plot_trajectories(df, env, frame_limit=None, scale_positions=0):
 
     """
      -- 081825 9:01PM
-    Not sure this should be closed because we may need it 
-    for additional episodes. 
+    Not sure this should be closed because we may need it for additional episodes. 
     """
     # env.close()
-
-
-# def interpolate_color(start_color, end_color, steps):
-#     """Interpolate between two RGB colors."""
-#     # Number of steps for each transition
-#     steps = 50
-#
-#     # Define colors
-#     blue = (0, 0, 1.0)
-#     cyan = (0, 1.0, 1.0)
-#     green = (0, 1.0, 0)
-#     yellow = (1.0, 1.0, 0)
-#     red = (1.0, 0, 0)
-#     # Generate the color list
-#     color_list = (
-#             interpolate_color(blue, cyan, steps) +
-#             interpolate_color(cyan, green, steps) +
-#             interpolate_color(green, yellow, steps) +
-#             interpolate_color(yellow, red, steps)
-#     )
-#
-#     return [
-#         (
-#             int(start_color[0] + (end_color[0] - start_color[0]) * (i / steps)),
-#             int(start_color[1] + (end_color[1] - start_color[1]) * (i / steps)),
-#             int(start_color[2] + (end_color[2] - start_color[2]) * (i / steps))
-#         )
-#         for i in range(steps + 1)
-#     ]
-#
-#
 
 
 if __name__ == "__main__":
