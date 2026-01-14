@@ -38,24 +38,24 @@ def build_train_analyze_show(
     assert result.returncode == 0, (
         f"build_dataset.py {build_command} was not successful, return code {result.returncode}"
     )
+
     #
-    # #
-    # # Train
-    # #
-    # result = subprocess.run(
-    #     [
-    #         sys.executable,
-    #         "collab_env/gnn/gnn_3D/train_3DGNN.py",
-    #         "-d",
-    #         output_directory,
-    #         "-trd",
-    #         training_result_subdirectory,
-    #     ]
-    # )
-    # assert result.returncode == 0, (
-    #     f"train_3DGNN.py was not successful, return code {result.returncode}"
-    # )
+    # Train
     #
+    result = subprocess.run(
+        [
+            sys.executable,
+            "collab_env/gnn/gnn_3D/train_3DGNN.py",
+            "-d",
+            output_directory,
+            "-trd",
+            training_result_subdirectory,
+        ]
+    )
+    assert result.returncode == 0, (
+        f"train_3DGNN.py was not successful, return code {result.returncode}"
+    )
+
     # #
     # # Analyze results
     # #
@@ -146,18 +146,18 @@ def test_gnn3D_with_position_labels():
         # sim_run_folder=str(sim_run_folder),
         remote_test=remote_test,
     )
-
     #
-    # Velocity Labels
-    #
-    # output_directory = "tests/gnn3D_pytest_velocity_labels"
-    build_train_analyze_show(
-        output_directory=str(sim_run_folder),
-        training_result_subdirectory="training_results_velocity_labels",
-        predictions_are_velocities=True,
-        remote_test=remote_test,
-        # sim_run_folder=str(sim_run_folder),
-    )
+    # #
+    # # Velocity Labels
+    # #
+    # # output_directory = "tests/gnn3D_pytest_velocity_labels"
+    # build_train_analyze_show(
+    #     output_directory=str(sim_run_folder),
+    #     training_result_subdirectory="training_results_velocity_labels",
+    #     predictions_are_velocities=True,
+    #     remote_test=remote_test,
+    #     # sim_run_folder=str(sim_run_folder),
+    # )
 
     # if remote_test:
     remove_run_folder(sim_run_folder)
