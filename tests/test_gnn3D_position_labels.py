@@ -103,7 +103,7 @@ def build_train_analyze_show(
         output_directory  # type: ignore[assignment]
         + "/"
         + training_result_subdirectory
-        + "/saved_models/gnn-Attention-Linear_epoch_0.pt"
+        + "/saved_models/GNN-Attention-Linear_epoch_0.pt"
     )
 
     from argparse import Namespace
