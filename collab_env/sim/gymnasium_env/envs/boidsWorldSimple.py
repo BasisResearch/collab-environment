@@ -2,7 +2,6 @@ import gymnasium as gym
 import numpy as np
 import open3d
 import cv2
-import torch
 from gymnasium import spaces
 
 # from Boids.sim_utils import calc_angles
@@ -220,16 +219,12 @@ class BoidsWorldSimpleEnv(gym.Env):
 
             # self.submesh_vertex_indices[1] = list(range(121350, 121550))
 
-        """
-        TOC -- 010226 8:52PM
-        Why are these torch.inf instead of np.inf?
-        """
         self.observation_space = spaces.Dict(
             {
                 "agent_loc": spaces.Tuple(
                     [
                         spaces.Box(
-                            low=-torch.inf, high=torch.inf, shape=(3,), dtype=np.float32
+                            low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32
                         )
                         for _ in range(num_agents)
                     ]
@@ -237,7 +232,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                 "agent_vel": spaces.Tuple(
                     [
                         spaces.Box(
-                            low=-torch.inf, high=torch.inf, shape=(3,), dtype=np.float64
+                            low=-np.inf, high=np.inf, shape=(3,), dtype=np.float64
                         )
                         for _ in range(num_agents)
                     ]
@@ -245,12 +240,12 @@ class BoidsWorldSimpleEnv(gym.Env):
                 # -- 080525 2:01PM
                 # replaced this with list of targets.
                 # "target_loc": spaces.Box(
-                #     low=-torch.inf, high=torch.inf, shape=(3,), dtype=np.float64
+                #     low=-np.inf, high=np.inf, shape=(3,), dtype=np.float64
                 # ),
                 "target_loc": spaces.Tuple(
                     [
                         spaces.Box(
-                            low=-torch.inf, high=torch.inf, shape=(3,), dtype=np.float32
+                            low=-np.inf, high=np.inf, shape=(3,), dtype=np.float32
                         )
                         for _ in range(max(num_targets, 1))
                     ]
@@ -264,8 +259,8 @@ class BoidsWorldSimpleEnv(gym.Env):
                         spaces.Tuple(
                             [
                                 spaces.Box(
-                                    low=-torch.inf,
-                                    high=torch.inf,
+                                    low=-np.inf,
+                                    high=np.inf,
                                     shape=(1,),
                                     dtype=np.float32,
                                 )
@@ -280,8 +275,8 @@ class BoidsWorldSimpleEnv(gym.Env):
                         spaces.Tuple(
                             [
                                 spaces.Box(
-                                    low=-torch.inf,
-                                    high=torch.inf,
+                                    low=-np.inf,
+                                    high=np.inf,
                                     shape=(1,),
                                     dtype=np.float32,
                                 )
@@ -296,8 +291,8 @@ class BoidsWorldSimpleEnv(gym.Env):
                         spaces.Tuple(
                             [
                                 spaces.Box(
-                                    low=-torch.inf,
-                                    high=torch.inf,
+                                    low=-np.inf,
+                                    high=np.inf,
                                     shape=(3,),
                                     dtype=np.float32,
                                 )
@@ -310,7 +305,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                 "mesh_scene_distance": spaces.Tuple(
                     [
                         spaces.Box(
-                            low=-torch.inf, high=torch.inf, shape=(1,), dtype=np.float64
+                            low=-np.inf, high=np.inf, shape=(1,), dtype=np.float64
                         )
                         for _ in range(self.num_agents)
                     ]
@@ -318,7 +313,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                 "mesh_scene_closest_points": spaces.Tuple(
                     [
                         spaces.Box(
-                            low=-torch.inf, high=torch.inf, shape=(3,), dtype=np.float64
+                            low=-np.inf, high=np.inf, shape=(3,), dtype=np.float64
                         )
                         for _ in range(self.num_agents)
                     ]
@@ -330,7 +325,7 @@ class BoidsWorldSimpleEnv(gym.Env):
         # actions are velocities
         self.action_space = spaces.Tuple(
             [
-                spaces.Box(low=-torch.inf, high=torch.inf, shape=(3,), dtype=np.float64)
+                spaces.Box(low=-np.inf, high=np.inf, shape=(3,), dtype=np.float64)
                 for _ in range(num_agents)
             ]
         )
@@ -1212,7 +1207,7 @@ class BoidsWorldSimpleEnv(gym.Env):
                         -- 100125 make these numbers configurable 
                         """
                         self._agent_velocity[i][coordinate] = (
-                            self.np_random.normal(-0.8, 0.1, size=1)
+                            self.np_random.normal(-0.8, 0.1)
                             * self._agent_velocity[i][coordinate]
                         )
 

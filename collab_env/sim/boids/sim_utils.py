@@ -3,6 +3,7 @@ import struct
 
 import numpy as np
 import pandas as pd
+from pandas import DataFrame
 from tqdm import tqdm
 from loguru import logger
 
@@ -95,7 +96,7 @@ def add_obs_to_df_keep_lists(
 
 def add_obs_to_df(
     df: pd.DataFrame, obs, time_step=0, variant_index_list=None, variant_type_list=None
-):
+) -> DataFrame:
     num_agents = len(obs["agent_loc"])
     num_targets = len(obs["target_loc"])
     logger.debug(f"time step = {time_step}")

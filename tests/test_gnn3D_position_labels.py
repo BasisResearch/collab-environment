@@ -1,13 +1,14 @@
 import glob
 import os
-import shlex
-import subprocess
-import sys
+from pathlib import Path
 
 import yaml
 from tqdm import tqdm
 
 from collab_env.data.file_utils import expand_path, get_project_root
+from collab_env.gnn.gnn_3D.analyze_results import analyze_results
+from collab_env.gnn.gnn_3D.build_dataset import Sim3DInMemoryDataset
+from collab_env.gnn.gnn_3D.train_3DGNN import train_3DGNN, model_factory
 from collab_env.sim.boids.run_simulator import run_simulator_main
 from collab_env.sim.boids.show_trajectories_all import show_trajectories
 from tests.sim_test_util import remove_run_folder
@@ -16,50 +17,79 @@ from tests.sim_test_util import remove_run_folder
 def build_train_analyze_show(
     output_directory: str,
     training_result_subdirectory: str,
-    # sim_run_folder: str,
+    sim_run_folder: Path,
     predictions_are_velocities: bool = False,
     remote_test: bool = False,
 ):
+    """
+    Args:
+        output_directory (str): the name of the directory where the dataset should be stored
+        training_result_subdirectory (str): the name of the subdirectory inside the output directory where the training
+            results should be stored
+        sim_run_folder (Path): the path to the folder where the simulator data is stored
+        predictions_are_velocities: bool (default = False) apparently no longer used
+        remote_test: bool (default = False) indicates that the test is being conducted in a remote environment
+    """
     #
     # Build dataset
     #
-
-    build_command = [
-        sys.executable,
-        "collab_env/gnn/gnn_3D/build_dataset.py",
-        "-d",
+    node_feature_columns = "distance_to_target_mesh_closest_point_1,target_mesh_closest_point_x,target_mesh_closest_point_y,target_mesh_closest_point_z,mesh_scene_distance,mesh_scene_closest_point_x,mesh_scene_closest_point_y,mesh_scene_closest_point_z"
+    dataset = Sim3DInMemoryDataset(
         output_directory,
-        # "-id",
-        # f"{sim_run_folder}",
-        # "-lv" if predictions_are_velocities else "",
-    ]
-    if predictions_are_velocities:
-        build_command.append("-lv")
-
-    print("build_command", build_command)
-    print(shlex.join(build_command))
-    result = subprocess.run(build_command)
-
-    assert result.returncode == 0, (
-        f"build_dataset.py {build_command} was not successful, return code {result.returncode}"
+        label_type="velocities",
+        time_window_length=1,
+        node_feature_columns=node_feature_columns.split(","),
     )
+
+    assert dataset is not None, "dataset created by Sim3DInMemoryDataset was None"
+    # build_command = [
+    #     sys.executable,
+    #     "collab_env/gnn/gnn_3D/build_dataset.py",
+    #     "-d",
+    #     output_directory,
+    #     # "-id",
+    #     # f"{sim_run_folder}",
+    #     # "-lv" if predictions_are_velocities else "",
+    # ]
+    # if predictions_are_velocities:
+    #     build_command.append("-lv")
+    #
+    # print("build_command", build_command)
+    # print(shlex.join(build_command))
+    # result = subprocess.run(build_command)
+    #
+    # assert result.returncode == 0, (
+    #     f"build_dataset.py {build_command} was not successful, return code {result.returncode}"
+    # )
 
     #
     # Train
     #
-    result = subprocess.run(
-        [
-            sys.executable,
-            "collab_env/gnn/gnn_3D/train_3DGNN.py",
-            "-d",
-            output_directory,
-            "-trd",
-            training_result_subdirectory,
-        ]
+
+    training_result_path = expand_path(training_result_subdirectory, sim_run_folder)
+    training_result_path.mkdir(parents=True, exist_ok=True)
+
+    result = train_3DGNN(
+        directory=str(sim_run_folder),
+        training_result_path=training_result_path,
+        num_epochs=1,
+        evaluate_only=False,
+        model_creation_function=model_factory(),
     )
-    assert result.returncode == 0, (
-        f"train_3DGNN.py was not successful, return code {result.returncode}"
-    )
+    assert result is not None, "result from train_3DGNN.py was None"
+    # result = subprocess.run(
+    #     [
+    #         sys.executable,
+    #         "collab_env/gnn/gnn_3D/train_3DGNN.py",
+    #         "-d",
+    #         output_directory,
+    #         "-trd",
+    #         training_result_subdirectory,
+    #     ]
+    # )
+    # assert result.returncode == 0, (
+    #     f"train_3DGNN.py was not successful, return code {result.returncode}"
+    # )
 
     #
     # Analyze results
@@ -73,42 +103,60 @@ def build_train_analyze_show(
         output_directory  # type: ignore[assignment]
         + "/"
         + training_result_subdirectory
-        + "/saved_models/gnn-Attention-Linear_epoch_0.pt"
+        + "/saved_models/GNN-Attention-Linear_epoch_0.pt"
     )
+
+    from argparse import Namespace
+
+    args = Namespace()
+    args.directory = "sim-output/" + sim_run_folder.name
+    args.show_visualizer = False if remote_test else True
+    args.rollout = True
+    args.rollout_subdirectory = "rollout"
+    args.agent_config_file = "gnn_agent_config.yaml"
+    args.simulator_config_file = "config.yaml"
+    args.plot_attention = False
+    args.animate_attention = False
+    args.predictions_are_velocities = True
 
     # To run the rollouts, we need a position file to specify the starting position. This should be a parquet file with
     # columns that include time, type, x, y, z. The type should be "agent". We can use the episode file from the first
     # episode generated by the simulator. We will run analyze_results for each episode the simulator generated above.
-    link_to_raw = output_directory + "/raw/link_to_raw_data"
-    episode_list = glob.glob(link_to_raw + "/*episode*.parquet")
+    # link_to_raw = output_directory + "/raw/link_to_raw_data"
+    # episode_list = glob.glob(link_to_raw + "/*episode*.parquet")
+    episode_list = glob.glob(output_directory + "/*episode*.parquet")
     for episode_number, episode in enumerate(tqdm(episode_list)):
         agent_config["position_file"] = episode
 
         # write the agent config file to the output directory and pass the file name to the analyze_results program.
-        yaml.dump(agent_config, open(output_directory + "/gnn_agent_config.yaml", "w"))
-
-        command = [
-            sys.executable,
-            "collab_env/gnn/gnn_3D/analyze_results.py",
-            "-d",
-            output_directory,
-            "-r",
-            # "-v",
-            "-rsd",
-            "rollout",
-            "-scf",
-            "config.yaml",
-            "-acf",
-            "gnn_agent_config.yaml",
-        ]
-        if predictions_are_velocities:
-            command.append("-pv")
-        result = subprocess.run(command)
-        print("analyze command \n", shlex.join(command))
-
-        assert result.returncode == 0, (
-            f"analyze_results.py was not successful for episode file {episode}, return code {result.returncode}"
+        yaml.dump(
+            agent_config,
+            open(output_directory + "/gnn_agent_config.yaml", "w"),
         )
+
+        analyze_results(args)
+        # command = [
+        #     sys.executable,
+        #     "collab_env/gnn/gnn_3D/analyze_results.py",
+        #     "-d",
+        #     output_directory,
+        #     "-r",
+        #     # "-v",
+        #     "-rsd",
+        #     "rollout",
+        #     "-scf",
+        #     "config.yaml",
+        #     "-acf",
+        #     "gnn_agent_config.yaml",
+        # ]
+        # if predictions_are_velocities:
+        #     command.append("-pv")
+        # result = subprocess.run(command)
+        # print("analyze command \n", shlex.join(command))
+        #
+        # assert result.returncode == 0, (
+        #     f"analyze_results.py was not successful for episode file {episode}, return code {result.returncode}"
+        # )
 
     #
     # Show trajectories for each validation prediction file
@@ -148,10 +196,10 @@ def test_gnn3D_with_position_labels():
 
     # output_directory = "tests/gnn3D_pytest"
     build_train_analyze_show(
-        output_directory=str(sim_run_folder),
+        output_directory="sim-output/" + sim_run_folder.name,
         # output_directory,
         training_result_subdirectory="training_result_position_labels",
-        # sim_run_folder=str(sim_run_folder),
+        sim_run_folder=sim_run_folder,
         remote_test=remote_test,
     )
 
@@ -164,7 +212,7 @@ def test_gnn3D_with_position_labels():
         training_result_subdirectory="training_results_velocity_labels",
         predictions_are_velocities=True,
         remote_test=remote_test,
-        # sim_run_folder=str(sim_run_folder),
+        sim_run_folder=sim_run_folder,
     )
 
     # if remote_test:

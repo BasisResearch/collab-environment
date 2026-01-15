@@ -1,3 +1,0 @@
-model_file: "tests/gnn3D_pytest_position_labels/saved_models/gnn-Attention-Linear_epoch_0.pt"
-start_time: 0
-position_file: "tests/gnn3D_pytest_position_labels/raw/link_to_raw_data/episode-0-completed-20251225-083848.parquet"

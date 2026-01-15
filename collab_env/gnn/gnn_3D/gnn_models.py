@@ -22,15 +22,15 @@ class GNN_Attention(torch.nn.Module):
         """
 
         Args:
-            model_name (str):
-            in_node_dim (int):
-            heads (int):
-            edge_dim (int):
-            hidden_dim (int):
-            output_dim (int):
-            self_loops (bool):
-            fill_value (object):
-            self_loops_layer_2 (bool):
+            model_name (str): the name of the model
+            in_node_dim (int): the dimension of the input node features
+            heads (int): the number of heads
+            edge_dim (int): the dimension of the edge features
+            hidden_dim (int): the dimension of the hidden layer
+            output_dim (int): the dimension of the output layer
+            self_loops (bool): whether to include self loops
+            fill_value (object): fill value for the self loops
+            self_loops_layer_2 (bool): whether to include self loops in the convolutional layer
 
         Returns:
             output (torch.tensor of shape [output_dim]:
@@ -94,12 +94,13 @@ class GNN_Attention(torch.nn.Module):
         self.output_layer = torch.nn.Linear(hidden_dim, output_dim)
 
     def forward(self, data):
-        # the 1st layer is a graph attention network.
+        """
+        Args:
+            data (torch.tensor) : the data representing a graph
+        """
         x = data.x.float()
-        # if edge_feature is not None:
-        #     edge_feature = (
-        #         edge_feature.float()
-        #     )  # all input needs to be the same precision.
+
+        # the 1st layer is a graph attention network.
 
         attention_layer_activation, attention_weights = self.attention_layer(
             x, data.edge_index, edge_attr=data.edge_attr, return_attention_weights=True
