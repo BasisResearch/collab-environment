@@ -1,6 +1,7 @@
 import argparse
 import shutil
 from pathlib import Path
+from typing import Any, Tuple
 
 import numpy as np
 import pandas as pd
@@ -22,15 +23,13 @@ import pyarrow.parquet as pq
 from collab_env.data.file_utils import get_project_root, expand_path
 
 
-def save_attention(attention_weights_list, filename):
+def save_attention(attention_weights_list: list[Any], filename: str) -> None:
     """
     Saves attention weights to a parquet file.
     Args:
-        attention_weights_list (): this is a list of attention weights for each graph over the
-                            time steps in a single episode.
-        filename ():
-
-    Returns:
+        attention_weights_list (list[Any]): this is a list of attention weights for each graph over the
+            time steps in a single episode.
+        filename (str): the name of the file off of the project root to save the attention weights to.
 
     """
     from_nodes = []
@@ -68,7 +67,12 @@ def save_attention(attention_weights_list, filename):
     pq.write_table(attention_table, file_path)
 
 
-def save_predictions(predictions, filename):
+def save_predictions(predictions: np.ndarray, filename: str) -> None:
+    """
+    Args:
+        predictions (np.ndarray): this is a list of predictions for each episode, shape (num_time_steps, num_agents, label length)
+        filename (str): the name of the file off of the project root to save the predictions to.
+    """
     # print("saving predictions\n", predictions)
     num_time_steps, num_agents, _ = predictions.shape
 
@@ -97,7 +101,12 @@ def save_predictions(predictions, filename):
     pq.write_table(prediction_table, file_path)
 
 
-def process_training_result(training_result, directory):
+def process_training_result(training_result, directory) -> None:
+    """
+    Args:
+        training_result (dict): the result of the training process.
+        directory (str): the directory pff of the project root to save the results.
+    """
     print("processing training result")
 
     # use the episode file list to match result files names to input data file names
@@ -168,13 +177,22 @@ def process_training_result(training_result, directory):
     # plot_losses(training_result["train_losses"], training_result["val_losses"])
 
 
-def plot_losses(train_loss_list, val_loss_list):
+def plot_losses(train_loss_list: list[Any], val_loss_list: list[Any]) -> None:
+    """
+    Args:
+        train_loss_list (list): list of training losses
+        val_loss_list (list): list of validation losses
+    """
     plt.plot(train_loss_list[1:], label="train loss")
     plt.plot(val_loss_list, label="val loss")
     plt.show()
 
 
-def animate_attention_weights(attention_weights_list):
+def animate_attention_weights(attention_weights_list: list[Any]) -> None:
+    """
+    Args:
+        attention_weights_list (list): list of attention weights of shape (time, num agents, num agents)
+    """
     attention_matrices = [
         convert_attention_weights_to_adj_matrix(w) for w in attention_weights_list
     ]
@@ -204,6 +222,9 @@ def animate_attention_weights(attention_weights_list):
         title.set_text(f"Frame: {frame:10.0f}")
         return (im, title)
 
+    # lint doesn't like when this is a named variable, but I get a warning in the jupyter notebook  when I don't name it,
+    # though even when I do name it, the animation doesn't work in the jupyter notebook but that might be a matplotlib
+    # configuration issue on OS X.
     _ = animation.FuncAnimation(
         fig,
         update,
@@ -215,12 +236,18 @@ def animate_attention_weights(attention_weights_list):
     plt.show()
 
 
-def plot_attention_weights(attention_weight_list, num_cols=2):
+def plot_attention_weights(attention_weight_list: list[Any], num_cols: int = 2) -> None:
+    """
+    Args:
+        attention_weight_list (list[Any]): list of attention weights for each time step in COO format like the edge_index in torch-geometric
+        num_cols (int, optional): number of columns in the plot. Defaults to 2.
+    """
     attention_matrices = [
         convert_attention_weights_to_adj_matrix(w) for w in attention_weight_list
     ]
+    # figure out how many rows will be needed for plot all time steps for the specified number of columns
     num_rows = int(np.ceil(len(attention_weight_list) / num_cols))
-    # print("num_rows", num_rows)
+
     fig, axes = plt.subplots(
         num_rows,
         num_cols,
@@ -243,7 +270,9 @@ def plot_attention_weights(attention_weight_list, num_cols=2):
     plt.show()
 
 
-def convert_attention_weights_to_adj_matrix(attention_weights):
+def convert_attention_weights_to_adj_matrix(
+    attention_weights: list[Any],
+) -> torch.Tensor:
     """
     converts the attention weights from COO format to an adjacency matrix
 
@@ -270,15 +299,16 @@ def convert_attention_weights_to_adj_matrix(attention_weights):
     return adj.t()
 
 
-def load_attention_weights(directory, filename):
+def load_attention_weights(
+    directory: str, filename: str
+) -> list[Tuple[torch.Tensor, torch.Tensor]]:
     """
     Args:
-        directory (): the parent directory containing the training data. This function
-                    assumes training_results is a subdirectory containing the parquet files
-        filename (): name of the parquet file containing the attention weights in a dataframe
+        directory (str): the parent directory containing the training results data.
+        filename (str): name of the parquet file containing the attention weights in a dataframe
 
     Returns:
-
+        attention_weights_list (list[Tuple[torch.Tensor, torch.Tensor]): list of attention weights for each time step in COO format
     """
 
     path = expand_path(directory + "/" + filename, get_project_root())
@@ -294,14 +324,14 @@ def rollout(
     simulator_config: dict,
     agent_config: dict,
     rollout_path: Path,
-    positions_are_velocities: bool = False,
-):
+    predictions_are_velocities: bool = False,
+) -> None:
     """
     Args:
         simulator_config (dict): configuration dictionary for the simulator
         agent_config (dict): configuration dictionary for the rollout agent
         rollout_path (Path): path to the rollout output folder
-        positions_are_velocities (bool): if True, the agent positions are velocities
+        predictions_are_velocities (bool): if True, the agent positions are velocities
     This function displays the predicted trajectories of the agents. It needs to be given the simulator config and the
     agent config so that the environment and agents can be constructed and the simulator can be run.
     """
@@ -316,7 +346,7 @@ def rollout(
         simulator_config=simulator_config,
         agent_config=agent_config,
         env=env,
-        predictions_are_velocities=positions_are_velocities,
+        predictions_are_velocities=predictions_are_velocities,
     )
 
     # Run the simulator with the environment and agents created. The output of the simulator will go in the rollout path.
@@ -327,7 +357,11 @@ def rollout(
     print(f"rollout completed at {datetime.now().strftime('%Y%m%d-%H%M%S')}")
 
 
-def analyze_results(args):
+def analyze_results(args: argparse.Namespace) -> None:
+    """
+    Args:
+        args (argparse.Namespace): arguments parsed from the command line
+    """
     if args.plot_attention:
         attention_weights_list = load_attention_weights(args.directory, args.filename)
         plot_attention_weights(

@@ -1,9 +1,10 @@
 import argparse
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple, Any, ContextManager, Sequence, Callable
 
 import torch
 import numpy as np
+import torch_geometric
 from torch.utils.data import Subset
 from torch_geometric.nn import MLP
 from torchinfo import summary
@@ -19,19 +20,24 @@ from tqdm.auto import tqdm as auto_tgdm
 
 from contextlib import nullcontext
 
-from collab_env.data.file_utils import expand_path
+from collab_env.data.file_utils import expand_path, get_project_root
 from collab_env.gnn.gnn_3D.analyze_results import process_training_result
 from collab_env.gnn.gnn_3D.build_dataset import Sim3DInMemoryDataset
 from collab_env.gnn.gnn_3D.gnn_models import GNN_Attention
 
 
-def train_epoch(model, loader, optimizer, train=True):
+def train_epoch(
+    model: torch.nn.Module,
+    loader: DataLoader,
+    optimizer: torch.optim.Optimizer,
+    train: bool = True,
+) -> Tuple[float, list[Any], list[Any], list[Any]]:
     """
-    Trains the given model for one epoch or evluates the  for one epoch.
+    Trains the given model for one epoch or evaluates the model for one epoch.
     Args:
-        model (): pytorch model to train
-        loader (): dataset loader
-        optimizer (): pytorch optimizer
+        model (torch.nn.Module): pytorch model to train
+        loader (DataLoader): dataset loader
+        optimizer (torch.optim.Optimizer): pytorch optimizer
         train (bool): indicates whether this is an evaluation only run or if we should train):
 
     Returns:
@@ -40,7 +46,7 @@ def train_epoch(model, loader, optimizer, train=True):
         attention_weights_list (list): the attention weights for every episode and every time step within the episode
 
     """
-
+    context: ContextManager[Optional[None]]  # needed for lint
     if train:
         model.train()
         context = nullcontext()
@@ -61,8 +67,8 @@ def train_epoch(model, loader, optimizer, train=True):
         )
 
         # create lists for results, there will be one entry for each episode
-        prediction_list = []
-        attention_weights_list = []
+        prediction_list: list[Any] = []
+        attention_weights_list: list[Any] = []
         episode_index_list = []
         total_loss = 0.0
         for episode, index in episode_bar:
@@ -74,31 +80,8 @@ def train_epoch(model, loader, optimizer, train=True):
             attention_weights_list.append([])
 
             # there is a graph for every time step.
-            stored_init_pos = False
             for graph in episode:
-                # print("graph.x ", graph.x)
-                # print("graph.x.shape ", graph.x.shape)
-
-                if not stored_init_pos:
-                    stored_init_pos = True
-                    # print('x shape: ', graph.x.shape)
-                    """
-                    TOC -- 010426 8:04PM
-                    This is making an assumption about the structure of the data that 
-                    we don't want to make. This code should be completely independent of
-                    the data. So let's take this out and let the results analysis code figure
-                    out what the starting position is. The training code should only store the 
-                    predictions that the model made. This will require changes to the rollout code.
-                    """
-                    # input_position = graph.x[:, :3].detach().numpy()
-                    # # print('input shape: ', input_position.shape)
-                    # prediction_list[-1].append(input_position)
-
                 prediction, attention_weights = model(graph)
-
-                # edge_index, alpha = attention_weights
-
-                # attention_weights = convert_attention_weights_to_adj_matrix(attention_weights)
 
                 # store the predictions and attention weights for this time step
                 prediction_list[-1].append(prediction.detach().cpu().numpy())
@@ -141,7 +124,15 @@ def train_epoch(model, loader, optimizer, train=True):
     )
 
 
-def load_dataset(directory: str):
+def load_dataset(
+    directory: str,
+) -> Tuple[
+    torch_geometric.data.DataLoader,
+    Sequence[int],
+    torch_geometric.data.DataLoader,
+    Sequence[int],
+    dict,
+]:
     """
     Loads training and validation datasets from specified directory.
     Args:
@@ -182,10 +173,13 @@ def model_factory(
     mlp_layers=None,
     load_model: Optional[Path] = None,
     include_second_layer: bool = False,
-):
-    # print("train_3GDNN(): training indices ", training_dataset_indices)
-    # print("train_3GDNN(): validation indices ", val_dataset_indices)
-
+) -> Callable[[dict], Tuple[torch.nn.Module, torch.optim.Optimizer]]:
+    """
+    Args:
+        mlp_layers (list): list of dimensions of each layer in the MLP to creates.
+    Returns:
+        A function that creates a GNN model and optimizer.
+    """
     if mlp_layers is not None:
         mlp = MLP(mlp_layers)
     else:
@@ -218,12 +212,14 @@ def model_factory(
 
 
 def train_3DGNN(
-    directory,
-    training_result_path,
-    model_creation_function,
-    num_epochs=1,
-    evaluate_only=False,
-):
+    directory: str,
+    training_result_path: Path,
+    model_creation_function: Callable[
+        ..., Tuple[torch.nn.Module, torch.optim.Optimizer]
+    ],
+    num_epochs: int = 1,
+    evaluate_only: bool = False,
+) -> dict:
     """
     Loads training and validation datasets from specified directory, creates the GNN model, and runs the training loop
     by calling train_epoch() for each epoch.
@@ -238,7 +234,7 @@ def train_3DGNN(
         attention weights for the last epoch.
 
     """
-
+    # load the dataset
     (
         train_loader,
         training_dataset_indices,
@@ -247,9 +243,11 @@ def train_3DGNN(
         dataset_metadata,
     ) = load_dataset(directory)
 
+    # create the model and optimizer
     model, optimizer = model_creation_function(dataset_metadata=dataset_metadata)
     summary(model)
 
+    # train or evaluate the model as specified
     train_loss_list = []
     val_loss_list = []
     for epoch in range(num_epochs):
@@ -308,12 +306,11 @@ def train_3DGNN(
     }
 
 
-# need this for using lists in command line arguments
-def csv_ints(arg):
-    return [int(x) for x in arg.split(",")]
-
-
 if __name__ == "__main__":
+    # need this for using lists in command line arguments
+    def csv_ints(arg):
+        return [int(x) for x in arg.split(",")]
+
     parser = argparse.ArgumentParser(
         prog="train_3DGNN.py",
         description="Trains a GNN on the graph dataset generated from 3D simulation data.",
@@ -371,7 +368,7 @@ if __name__ == "__main__":
     # create the training result folder right away so we don't waste time training
     # and then blow up trying to save the results.
     training_result_path = expand_path(
-        args.directory + "/" + args.training_result_subdirectory
+        args.directory + "/" + args.training_result_subdirectory, get_project_root()
     )
 
     # if the training result directory exists and is not empty, raise an exception.
@@ -397,6 +394,7 @@ if __name__ == "__main__":
         ),
     )
 
+    print("calling process training result")
     process_training_result(
         result, args.directory + "/" + args.training_result_subdirectory
     )

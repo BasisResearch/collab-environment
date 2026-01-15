@@ -1,5 +1,8 @@
 import json
+from typing import Tuple, Any, Optional
 
+import numpy as np
+import pandas as pd
 import torch
 
 import pyarrow.parquet as pq
@@ -19,20 +22,21 @@ class GNN_Agents(SimulatorAgents):
         self,
         simulator_config: dict,
         agent_config: dict,
-        env,
+        env: Any,  # this is ignored
         predictions_are_velocities: bool = False,
     ):
         """
-        :param simulator_config: the configuration dictionary for the simulator
-        :param agent_config: the configuration dictionary specific to the agent.
-        The agent config must contain the model file, the position file, the time step to of the initial position in the
-        position file and the time step at which to end the rollout. The model file contains a full PyTorch model (this
-        needs to be changed later for security and portability). The position file must contain the initial positions of
-        the agents at the time step specified in the agent config. The episode file that was used to train the model
-        could be used for the position file, but there could be situations where you would like to see where the model
-        predicts agents to go from different initial positions.
-        :param env: the environment, this is ignored for now and should probably be removed but boids_agents would also
-        have to change if we remove it.
+        Args:
+            simulator_config(dict): the configuration dictionary for the simulator
+            agent_config(dict): the configuration dictionary specific to the agent. The agent config must contain
+                the model file, the position file, the time step to of the initial position in the position file and the
+                time step at which to end the rollout. The model file contains a full PyTorch model (this needs to be
+                changed later for security and portability). The position file must contain the initial positions of the
+                agents at the time step specified in the agent config. The episode file that was used to train the model
+                could be used for the position file, but there could be situations where you would like to see where the
+                model predicts agents to go from different initial positions.
+            env(Any): the environment, this is ignored for now and should probably be removed but boids_agents would
+                also have to change if we remove it from the abstract class.
         """
 
         self.simulator_config = simulator_config
@@ -84,28 +88,40 @@ class GNN_Agents(SimulatorAgents):
         self.position_df = pq.read_pandas(position_file_path).to_pandas()
 
         start_time = agent_config["start_time"]
-        self.init_position = self.get_position_from_df(start_time)
-        self.last_position = self.init_position
-        self.fixed_action = None
+        self.init_position: np.ndarray[Any, Any] = self.get_position_from_df(start_time)
+        self.last_position: np.ndarray[Any, Any] = self.init_position
+        # lint didn't like when I set fixed_action to None, so I was forced to make it something
+        # (and yeah, I know about Optional and it didn't work -- weird chain of assignments that forced
+        # bad decisions all over the place)
+        self.fixed_action: np.ndarray[Any, Any] = np.zeros(
+            (1, 1)
+        )  # Optional[np.ndarray[Any, Any]] = None
         self.time_step = -1  # use -1 to indicate that we haven't gotten a time step from a call to update() yet
 
-        self.observation_dataframe = None
+        self.observation_dataframe: Optional[pd.DataFrame] = None
 
         self.predicting = False
 
-        # if "node_feature_columns" in agent_config:
-        #     self.node_feature_columns = agent_config["node_feature_columns"]
-        # else:
-        #     self.node_feature_columns = None
-
-    def get_position_from_df(self, time_step: int):
+    def get_position_from_df(self, time_step: int) -> np.ndarray:
+        """
+        Args:
+            time_step (int): the time step in the dataframe for which we should return the position
+        Returns:
+            np.ndarray[Any, Any]: the positions of the agents at the specified time step.
+        """
         return self.position_df.loc[
             (self.position_df["time"] == time_step)
             & (self.position_df["type"] == "agent"),
             ["x", "y", "z"],
         ].to_numpy()
 
-    def get_action_list(self, obs):
+    def get_action_list(self, obs: dict) -> np.ndarray:
+        """
+        Args:
+            obs (dict): the observation from the simulator for a single time step.
+        Returns:
+            the actions for all the agents.
+        """
         # print("get_action_list() called with obs  = \n", obs)
         # if self.observation_dataframe is not None:
         #     print("get_action_list() called with obs dataframe length = \n", len(self.observation_dataframe))
@@ -154,13 +170,20 @@ class GNN_Agents(SimulatorAgents):
         self.last_position = result
         return result
 
-    def reset(self):
+    def reset(self) -> None:
+        """
+        resets the agents to their initial state
+        """
         self.last_position = self.init_position
 
-    def update(self, time_step: int):
-        # print("update() called with time_step = ", time_step)
+    def update(self, time_step: int) -> None:
+        """
+        Called by the simulator at the beginning of each time step before get_action_list()
+        Args:
+            time_step (int): the current time step in the simulation
+        """
         self.time_step = time_step
-        # why was this here? self.last_position = self.init_position
+
         # if we don't have enough time steps yet to fill a time window, then get another position from the position
         # dataframe and indicate that we are not predicting; otherwise indicate that we are ready to predict.
         if time_step < self.time_window_length:
@@ -170,10 +193,21 @@ class GNN_Agents(SimulatorAgents):
         else:
             self.predicting = True
 
-    def get_reset_options(self):
-        # this should return dictionary that includes run_trajectories (value doesn't matter) and the initial position
-        # for the agents.
+    def get_reset_options(self) -> dict:
+        """
+        Called by the simulator at the beginning of the simulation so the simulator
+        can be reset with the proper options.
+
+          Returns:
+              a dictionary with the reset options to be used to initialize the simulator.
+              The returned dictionary should includes run_trajectories (value doesn't matter)
+              and the initial positions of the agents.
+        """
         return {"run_trajectories": True, "agent_trajectories": self.init_position}
 
-    def get_variant_types(self):
+    def get_variant_types(self) -> Tuple[Any, Any]:
+        """
+        This isn't needed for the GNN agents, but it is needed for the BoidsAgents, so it is
+        included in the abstract class and so must be included here.
+        """
         return None, None
