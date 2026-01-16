@@ -70,7 +70,7 @@ def save_attention(attention_weights_list: list[Any], filename: str) -> None:
 def save_predictions(predictions: torch.Tensor, filename: str) -> None:
     """
     Args:
-        predictions (np.ndarray): this is a list of predictions for each episode, shape (num_time_steps, num_agents, label length)
+        predictions (torch.Tensor): this is a list of predictions for each episode, shape (num_time_steps, num_agents, label length)
         filename (str): the name of the file off of the project root to save the predictions to.
     """
     num_time_steps, num_agents, _ = predictions.shape
