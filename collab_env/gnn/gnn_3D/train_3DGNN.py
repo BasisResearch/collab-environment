@@ -126,6 +126,9 @@ def train_epoch(
 
 def load_dataset(
     directory: str,
+    batch_size: int = 1,
+    train_size_ratio: float = 0.8,
+    seed: Optional[int] = None,
 ) -> Tuple[
     torch_geometric.data.DataLoader,
     Sequence[int],
@@ -137,7 +140,9 @@ def load_dataset(
     Loads training and validation datasets from specified directory.
     Args:
         directory (string): the path to the directory containing sim3d dataset
-        node_feature_columns (list): the list of columns from the dataframe to include as input features
+        batch_size (int): the batch size for training.
+        train_size_ratio (float): the ratio of training data to validation data.
+        seed (int): the random seed for training. If None, then a seed will be generated.
 
     Returns:
         train_loader (torch.utils.data.DataLoader): the training dataset loader
@@ -145,11 +150,13 @@ def load_dataset(
     """
     dataset = Sim3DInMemoryDataset(directory, load_only=True)
 
-    seed = np.random.randint(low=0, high=2**31)
+    if seed is None:
+        seed = np.random.randint(low=0, high=2**31)
+
     torch_generator = torch.manual_seed(seed)
     np.random.seed(seed)
 
-    train_size = int(len(dataset) * 0.8)
+    train_size = int(len(dataset) * train_size_ratio)
 
     train_dataset: Subset
     val_dataset: Subset
@@ -157,8 +164,10 @@ def load_dataset(
         dataset, [train_size, len(dataset) - train_size], generator=torch_generator
     )
 
-    train_loader = DataLoader(dataset=train_dataset, batch_size=1, shuffle=True)
-    val_loader = DataLoader(dataset=val_dataset, batch_size=1, shuffle=True)
+    train_loader = DataLoader(
+        dataset=train_dataset, batch_size=batch_size, shuffle=True
+    )
+    val_loader = DataLoader(dataset=val_dataset, batch_size=batch_size, shuffle=False)
 
     return (
         train_loader,
@@ -172,11 +181,13 @@ def load_dataset(
 def model_factory(
     mlp_layers=None,
     load_model: Optional[Path] = None,
-    include_second_layer: bool = False,
+    include_convolutional_layer: bool = False,
 ) -> Callable[[dict], Tuple[torch.nn.Module, torch.optim.Optimizer]]:
     """
     Args:
         mlp_layers (list): list of dimensions of each layer in the MLP to creates.
+        load_model (path): path to model to load.
+        include_convolutional_layer (bool): whether to include convolutional layer in the GNN.
     Returns:
         A function that creates a GNN model and optimizer.
     """
@@ -201,7 +212,7 @@ def model_factory(
                 fill_value=torch.zeros(
                     dataset_metadata["edge_attr_dim"]
                 ).float(),  # get dimension from dataset same as edge_dim
-                include_convolutional_layer=include_second_layer,
+                include_convolutional_layer=include_convolutional_layer,
                 mlp=mlp,
             )
         optimizer = torch.optim.Adam(model.parameters(), lr=1e-2)
@@ -218,6 +229,9 @@ def train_3DGNN(
         ..., Tuple[torch.nn.Module, torch.optim.Optimizer]
     ],
     num_epochs: int = 1,
+    batch_size: int = 1,
+    train_size_ratio: float = 0.8,
+    seed: Optional[int] = None,
     evaluate_only: bool = False,
 ) -> dict:
     """
@@ -227,6 +241,9 @@ def train_3DGNN(
     Args:
         directory (string): the path to the directory containing sim3d dataset
         num_epochs (int): the number of epochs to run
+        batch_size (int): the batch size to use for training and validation
+        train_size_ratio (float): the ratio of training data to validation data.
+        seed (int): the random seed for shuffling the training data. If None, then a seed will be generated randomly.
         evaluate_only (bool): indicates whether this is an evaluation only run or if we should train
 
     Returns:
@@ -241,7 +258,9 @@ def train_3DGNN(
         val_loader,
         val_dataset_indices,
         dataset_metadata,
-    ) = load_dataset(directory)
+    ) = load_dataset(
+        directory, batch_size=batch_size, train_size_ratio=train_size_ratio, seed=seed
+    )
 
     # create the model and optimizer
     model, optimizer = model_creation_function(dataset_metadata=dataset_metadata)
@@ -344,6 +363,27 @@ if __name__ == "__main__":
         help="the number of epochs for training",
     )
     parser.add_argument(
+        "-b",
+        "--batch_size",
+        default=1,
+        type=int,
+        help="the batch size for training",
+    )
+    parser.add_argument(
+        "-rat",
+        "--train_ratio",
+        default=0.8,
+        type=float,
+        help="the ratio to use in splitting the dataset into training data and validation data",
+    )
+    parser.add_argument(
+        "-seed",
+        "--seed",
+        default=None,
+        type=int,
+        help="the ratio to use in splitting the dataset into training data and validation data",
+    )
+    parser.add_argument(
         "-cl",
         "--convolutional_layer",
         action="store_true",
@@ -387,8 +427,11 @@ if __name__ == "__main__":
         training_result_path=training_result_path,
         num_epochs=args.num_epochs,
         evaluate_only=args.evaluate_only,
+        batch_size=args.batch_size,
+        train_size_ratio=args.train_ratio,
+        seed=args.seed,
         model_creation_function=model_factory(
-            include_second_layer=args.convolutional_layer,
+            include_convolutional_layer=args.convolutional_layer,
             mlp_layers=args.multilayer_perceptron_layers,
             load_model=args.load_model,
         ),

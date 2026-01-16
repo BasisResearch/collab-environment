@@ -7,7 +7,7 @@ import pyarrow.parquet as pq
 from loguru import logger
 
 from collab_env.data.file_utils import get_project_root, expand_path
-from collab_env.sim.boids.run_boids_simulator import run_simulator
+from collab_env.sim.boids.run_simulator import run_simulator_main
 
 
 def remove_run_folder(sim_runs_path=None):
@@ -197,7 +197,7 @@ def sim_check_files(
 ):
     """
     Default parameters test the following scenarios:
-    1. run_boids_simulator successfully runs with command line specified config file.
+    1. run_simulator successfully runs with command line specified config file.
     2. output folder is created.
     3. three episodes of parquet files are created.
     4. three videos are created, one for each episode.
@@ -231,7 +231,7 @@ def sim_check_files(
 
     logger.info(f"\nsim runs path {sim_runs_path}\n")
 
-    # Test to see that the run_boids_simulator runs successfully with test config file
+    # Test to see that the run_simulator runs successfully with test config file
     # result = os.system(f"python {program_path} -cf {config_file}")
     # assert result == 0, f"failed({result}) -- python {program_path} -cf {config_file}"
     """
@@ -240,7 +240,7 @@ def sim_check_files(
     get passed github testing. This needs to be fixed later. 
     """
     # program_path = expand_path(
-    #    "collab_env/sim/boids/run_boids_simulator.py", get_project_root()
+    #    "collab_env/sim/boids/run_simulator.py", get_project_root()
     # )
     # python_executable = sys.executable
     # result = os.system(f"{python_executable} {program_path} -cf {config_file}")
@@ -248,7 +248,7 @@ def sim_check_files(
     #    f"failed({result}) -- {python_executable} {program_path} -cf {config_file}"
     # )
 
-    run_simulator(expand_path(config_file, get_project_root()))
+    run_simulator_main(expand_path(config_file, get_project_root()))
 
     # Test to see that output folder was created. There should be exactly 1 of these.
     if prefix is None:

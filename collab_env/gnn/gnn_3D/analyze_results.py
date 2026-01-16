@@ -1,7 +1,7 @@
 import argparse
 import shutil
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Any, Tuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -67,13 +67,12 @@ def save_attention(attention_weights_list: list[Any], filename: str) -> None:
     pq.write_table(attention_table, file_path)
 
 
-def save_predictions(predictions: np.ndarray, filename: str) -> None:
+def save_predictions(predictions: torch.Tensor, filename: str) -> None:
     """
     Args:
-        predictions (np.ndarray): this is a list of predictions for each episode, shape (num_time_steps, num_agents, label length)
+        predictions (torch.Tensor): this is a list of predictions for each episode, shape (num_time_steps, num_agents, label length)
         filename (str): the name of the file off of the project root to save the predictions to.
     """
-    # print("saving predictions\n", predictions)
     num_time_steps, num_agents, _ = predictions.shape
 
     time_col = np.repeat(np.arange(0, num_time_steps), num_agents)
@@ -90,7 +89,6 @@ def save_predictions(predictions: np.ndarray, filename: str) -> None:
             "type": "agent",
         }
     )
-    # print('df\n', df)
 
     #
     # Dump data to output file
@@ -101,7 +99,74 @@ def save_predictions(predictions: np.ndarray, filename: str) -> None:
     pq.write_table(prediction_table, file_path)
 
 
-def process_training_result(training_result, directory) -> None:
+def save_episode(
+    episode_file_list: list[str],
+    predictions: torch.Tensor,
+    weights,
+    indices: torch.IntTensor,
+    directory: str,
+    prefix: str,
+) -> None:
+    """
+    Args:
+        episode_file_list (list[str]): the list of file names of an episode.
+        predictions (torch.Tensor): the predictions for an episode. Shape will be (num_time_steps, num_agents * batch_size, label length).
+        weights (torch.Tensor): the weights for each episode.
+        indices (torch.IntTensor): the indices indicating the actual episode number used from the simulation data (this
+            is shuffled so the episode number and the episode index may not match).
+        directory (str): the directory to save the episode.
+        prefix (str): the prefix of the save file (e.g. "training", "validation").
+    """
+    num_batches = len(indices)  # there is one index for each episode in the batch.
+
+    # break up the batch into predictions for each episode in the batch.
+    prediction_chunks = torch.chunk(predictions, num_batches, dim=1)
+    for i in range(num_batches):
+        episode_file_name = episode_file_list[indices[i]]  # .split(".pt")[0]
+
+        # save the results labeled with the corresponding episode file name
+        save_predictions(
+            prediction_chunks[i],
+            directory + f"/{prefix}_predictions_{episode_file_name}",  # .parquet",
+        )
+
+    # attention is a little trickier because it has edge_indices in COO format and edge weights separately.
+    # there is probably a cool np array indexing thingamajig that could be used here to make this faster.
+    num_times_steps = len(weights)
+    nodes_per_graph = predictions.shape[1] / num_batches
+    node_ranges = torch.arange(0, (num_batches + 1) * nodes_per_graph, nodes_per_graph)
+
+    split_weight_list: list[list] = [[] for _ in range(num_times_steps)]
+    for time in range(num_times_steps):
+        edge_index, edge_weights = weights[time]
+
+        inner_list: list[Optional[Tuple[Any, Any]]] = [None] * num_batches
+        for episode in range(num_batches):
+            start_index = int(node_ranges[episode])
+            end_index = int(node_ranges[episode + 1]) - 1
+            source, destination = edge_index
+            mask = (source >= start_index) & (source <= end_index)
+
+            edge_index_for_graph = edge_index[:, mask] - start_index
+            edge_weights_for_graph = edge_weights[mask]
+            inner_list[episode] = (edge_index_for_graph, edge_weights_for_graph)
+
+        split_weight_list[time] = inner_list
+
+    for episode in range(num_batches):
+        # need to get all time steps for this episode to pass to save_attention
+        episode_attention_weights = [
+            split_weight_list[time][episode] for time in range(num_times_steps)
+        ]
+
+        save_attention(
+            episode_attention_weights,
+            directory
+            + f"/{prefix}_attention_weights_{episode_file_list[indices[episode]]}",  # .parquet",
+        )
+
+
+def process_training_result(training_result: dict, directory: str) -> None:
     """
     Args:
         training_result (dict): the result of the training process.
@@ -134,42 +199,29 @@ def process_training_result(training_result, directory) -> None:
         episode file list is now a list of names, not paths, so we don't have to get
         the name property anymore. 
         """
-        episode_file_name = episode_file_list[val_indices[episode]]  # .split(".pt")[0]
-
-        # save the results labeled with the corresponding episode file name
-        val_predictions = np.array(training_result["val_predictions"][episode])
-        save_predictions(
-            val_predictions,
-            directory + f"/validation_predictions_{episode_file_name}",  # .parquet",
-        )
-
-        val_attention_weights = training_result["val_attention"][episode]
-        save_attention(
-            val_attention_weights,
-            directory
-            + f"/validation_attention_weights_{episode_file_name}",  # .parquet",
+        save_episode(
+            indices=val_indices[episode],
+            predictions=torch.Tensor(
+                np.array(training_result["val_predictions"][episode])
+            ),
+            weights=training_result["val_attention"][episode],
+            prefix="validation",
+            episode_file_list=episode_file_list,
+            directory=directory,
         )
 
     train_indices = training_result["train_dataset_indices"]
-    # print("train_indices", train_indices)
-    # print("number of train_predictions", len(training_result["train_predictions"]))
-    print("processing training result(): episode file list ", episode_file_list)
-    for episode in range(len(training_result["train_predictions"])):
-        episode_file_name = episode_file_list[
-            train_indices[episode]
-        ]  # .split(".pt")[0]
-        # save the results labeled with the corresponding episode number
-        train_predictions = np.array(training_result["train_predictions"][episode])
-        save_predictions(
-            train_predictions,
-            directory + f"/training_predictions_{episode_file_name}",  # .parquet",
-        )
 
-        train_attention_weights = training_result["train_attention"][episode]
-        save_attention(
-            train_attention_weights,
-            directory
-            + f"/training_attention_weights_{episode_file_name}",  # .parquet",
+    for episode in range(len(training_result["train_predictions"])):
+        save_episode(
+            indices=train_indices[episode],
+            predictions=torch.Tensor(
+                np.array(training_result["train_predictions"][episode])
+            ),
+            weights=training_result["train_attention"][episode],
+            prefix="train",
+            episode_file_list=episode_file_list,
+            directory=directory,
         )
 
     # plot_attention_weights(val_attention_weights[-40:])
