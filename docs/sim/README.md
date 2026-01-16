@@ -7,7 +7,7 @@ See the main [README](../../README.rst) for environment setup instructions.
 To run a boids simulation:
 
 ```sh
-python -m collab_env.sim.boids.run_boids_simulator
+python -m collab_env.sim.boids.run_simulator
 ```
 
 This will start a 3D visualization of the boids simulation using the default configuration file `collab_env/sim/boids/config.yaml`.
@@ -15,7 +15,7 @@ This will start a 3D visualization of the boids simulation using the default con
 To specify a different configuration file:
 
 ```sh
-python -m collab_env.sim.boids.run_boids_simulator -cf <path_to_config_file>
+python -m collab_env.sim.boids.run_simulator -cf <path_to_config_file>
 ```
 
 There are many configurable parameters. See the example configuration file for details.

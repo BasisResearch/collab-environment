@@ -6,7 +6,7 @@ import pyarrow.parquet as pq
 
 # import pyarrow as pa
 from collab_env.data.file_utils import get_project_root, expand_path
-from collab_env.sim.boids.run_boids_simulator import run_simulator
+from collab_env.sim.boids.run_simulator import run_simulator
 
 from tests.sim_test_util import remove_run_folder, create_run_folder
 
