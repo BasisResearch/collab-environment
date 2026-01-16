@@ -230,6 +230,8 @@ def train_3DGNN(
     ],
     num_epochs: int = 1,
     batch_size: int = 1,
+    train_size_ratio: float = 0.8,
+    seed: Optional[int] = None,
     evaluate_only: bool = False,
 ) -> dict:
     """
@@ -239,6 +241,9 @@ def train_3DGNN(
     Args:
         directory (string): the path to the directory containing sim3d dataset
         num_epochs (int): the number of epochs to run
+        batch_size (int): the batch size to use for training and validation
+        train_size_ratio (float): the ratio of training data to validation data.
+        seed (int): the random seed for shuffling the training data. If None, then a seed will be generated randomly.
         evaluate_only (bool): indicates whether this is an evaluation only run or if we should train
 
     Returns:
@@ -253,7 +258,9 @@ def train_3DGNN(
         val_loader,
         val_dataset_indices,
         dataset_metadata,
-    ) = load_dataset(directory, batch_size=batch_size)
+    ) = load_dataset(
+        directory, batch_size=batch_size, train_size_ratio=train_size_ratio, seed=seed
+    )
 
     # create the model and optimizer
     model, optimizer = model_creation_function(dataset_metadata=dataset_metadata)
@@ -363,6 +370,20 @@ if __name__ == "__main__":
         help="the batch size for training",
     )
     parser.add_argument(
+        "-rat",
+        "--train_ratio",
+        default=0.8,
+        type=float,
+        help="the ratio to use in splitting the dataset into training data and validation data",
+    )
+    parser.add_argument(
+        "-seed",
+        "--seed",
+        default=None,
+        type=int,
+        help="the ratio to use in splitting the dataset into training data and validation data",
+    )
+    parser.add_argument(
         "-cl",
         "--convolutional_layer",
         action="store_true",
@@ -407,6 +428,8 @@ if __name__ == "__main__":
         num_epochs=args.num_epochs,
         evaluate_only=args.evaluate_only,
         batch_size=args.batch_size,
+        train_size_ratio=args.train_ratio,
+        seed=args.seed,
         model_creation_function=model_factory(
             include_convolutional_layer=args.convolutional_layer,
             mlp_layers=args.multilayer_perceptron_layers,
