@@ -186,9 +186,18 @@ class EpisodeMetadata:
 class DatabaseConnection:
     """Unified database connection using SQLAlchemy."""
 
-    def __init__(self, config: DBConfig):
+    def __init__(self, config: DBConfig, native_bulk_insert: bool = False):
+        """Initialize database connection.
+
+        Args:
+            config: Database configuration
+            native_bulk_insert: If True, use native bulk insert methods (COPY for
+                PostgreSQL, DataFrame registration for DuckDB) which are faster
+                but less portable. Default False for backward compatibility.
+        """
         self.config = config
         self.engine: Optional[Engine] = None
+        self.native_bulk_insert = native_bulk_insert
 
     def connect(self):
         """Establish database connection using SQLAlchemy."""
@@ -255,7 +264,15 @@ class DatabaseConnection:
             return result.fetchall()
 
     def insert_dataframe(self, df: pd.DataFrame, table_name: str, if_exists: str = 'append', conn=None):
-        """Insert DataFrame using pandas to_sql (much faster for bulk inserts).
+        """Insert DataFrame into database table.
+
+        When native_bulk_insert=True (set in constructor), uses native bulk loading
+        for maximum performance:
+        - DuckDB: Native DataFrame registration + INSERT FROM SELECT
+        - PostgreSQL: COPY command via psycopg2
+
+        When native_bulk_insert=False (default), uses standard pandas to_sql with
+        multi-row INSERT for maximum compatibility.
 
         Args:
             df: DataFrame to insert
@@ -263,12 +280,62 @@ class DatabaseConnection:
             if_exists: What to do if table exists ('append', 'replace', 'fail')
             conn: Optional connection (for transactional usage)
         """
-        if conn is not None:
-            # Use provided connection (transactional mode)
-            df.to_sql(table_name, conn, if_exists=if_exists, index=False, method='multi')
+        from io import StringIO
+
+        # Use standard pandas to_sql if native_bulk_insert is disabled
+        if not self.native_bulk_insert:
+            if conn is not None:
+                df.to_sql(table_name, conn, if_exists=if_exists, index=False, method='multi')
+            else:
+                df.to_sql(table_name, self.engine, if_exists=if_exists, index=False, method='multi')
+            return
+
+        # Native bulk insert methods for maximum performance
+        engine_url = str(self.engine.url)
+
+        if 'duckdb' in engine_url:
+            # DuckDB: Use native DataFrame registration for ~10-50x speedup
+            if conn is not None:
+                raw_conn = conn.connection.dbapi_connection
+            else:
+                raw_conn = self.engine.raw_connection().dbapi_connection
+
+            # Register DataFrame and insert directly
+            raw_conn.register('_temp_insert_df', df)
+            columns = ', '.join(f'"{c}"' for c in df.columns)
+            raw_conn.execute(f'INSERT INTO {table_name} ({columns}) SELECT {columns} FROM _temp_insert_df')
+            raw_conn.unregister('_temp_insert_df')
+
+        elif 'postgresql' in engine_url:
+            # PostgreSQL: Use COPY command for ~10-100x speedup
+            def _psql_copy_insert(table, conn_inner, keys, data_iter):
+                """Fast PostgreSQL insert using COPY command."""
+                raw_conn = conn_inner.connection.dbapi_connection
+                buffer = StringIO()
+                for row in data_iter:
+                    # Handle None values and convert to tab-separated
+                    line = '\t'.join('' if v is None else str(v) for v in row)
+                    buffer.write(line + '\n')
+                buffer.seek(0)
+
+                columns = ', '.join(f'"{k}"' for k in keys)
+                with raw_conn.cursor() as cursor:
+                    cursor.copy_expert(
+                        f"COPY {table.name} ({columns}) FROM STDIN WITH (FORMAT TEXT, NULL '')",
+                        buffer
+                    )
+
+            if conn is not None:
+                df.to_sql(table_name, conn, if_exists=if_exists, index=False, method=_psql_copy_insert)
+            else:
+                df.to_sql(table_name, self.engine, if_exists=if_exists, index=False, method=_psql_copy_insert)
+
         else:
-            # Use engine (non-transactional mode - auto-commits)
-            df.to_sql(table_name, self.engine, if_exists=if_exists, index=False, method='multi')
+            # Unknown backend: fallback to pandas to_sql
+            if conn is not None:
+                df.to_sql(table_name, conn, if_exists=if_exists, index=False, method='multi')
+            else:
+                df.to_sql(table_name, self.engine, if_exists=if_exists, index=False, method='multi')
 
 
 class BaseDataLoader:
