@@ -2,7 +2,7 @@ import argparse
 import json
 import re
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 # from typing import Tuple
 import numpy as np
@@ -358,6 +358,7 @@ def compute_data_list_from_dataframe(
             num_time_steps - label_offset - (time_window_length - 1),
         )  # don't go beyond the labels.
     ]
+    # return Batch.from_data_list(data_list)
     return data_list
 
 
@@ -376,7 +377,7 @@ def sort_using_numbers(path) -> list[int | str]:
 class Sim3DInMemoryDataset(InMemoryDataset):
     def __init__(
         self,
-        root: str,
+        root: Union[str, Path],
         transform=None,
         pre_transform=None,
         node_feature_columns: Optional[list[str]] = None,
@@ -442,8 +443,12 @@ class Sim3DInMemoryDataset(InMemoryDataset):
 
         self.episode_file_list: list[str] = []  # this is created in load_episodes()
         self._input_node_dim = None
+
+        # load the episodes
         self.episodes = self.load_episodes()
+
         # print('self.episodes', self.episodes)
+
         self._input_node_dim = self.episodes[0][0].x.shape[1]
         self._edge_attr_dim = self.episodes[0][0].edge_attr.shape[1]
         self._label_dim = self.episodes[0][0].y.shape[1]

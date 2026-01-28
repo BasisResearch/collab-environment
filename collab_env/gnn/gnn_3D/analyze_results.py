@@ -10,6 +10,8 @@ import torch
 import yaml
 from datetime import datetime
 
+from matplotlib.animation import FuncAnimation
+
 from collab_env.gnn.gnn_3D.gnn_agent import GNN_Agents
 from collab_env.sim.boids.run_simulator import create_environment, run_simulator
 
@@ -240,7 +242,7 @@ def plot_losses(train_loss_list: list[Any], val_loss_list: list[Any]) -> None:
     plt.show()
 
 
-def animate_attention_weights(attention_weights_list: list[Any]) -> None:
+def animate_attention_weights(attention_weights_list: list[Any]) -> FuncAnimation:
     """
     Args:
         attention_weights_list (list): list of attention weights of shape (time, num agents, num agents)
@@ -274,10 +276,7 @@ def animate_attention_weights(attention_weights_list: list[Any]) -> None:
         title.set_text(f"Frame: {frame:10.0f}")
         return (im, title)
 
-    # lint doesn't like when this is a named variable, but I get a warning in the jupyter notebook  when I don't name it,
-    # though even when I do name it, the animation doesn't work in the jupyter notebook but that might be a matplotlib
-    # configuration issue on OS X.
-    _ = animation.FuncAnimation(
+    anim = animation.FuncAnimation(
         fig,
         update,
         frames=len(attention_matrices),
@@ -285,7 +284,9 @@ def animate_attention_weights(attention_weights_list: list[Any]) -> None:
         interval=100,
         blit=False,
     )
+
     plt.show()
+    return anim
 
 
 def plot_attention_weights(attention_weight_list: list[Any], num_cols: int = 2) -> None:
@@ -323,7 +324,7 @@ def plot_attention_weights(attention_weight_list: list[Any], num_cols: int = 2) 
 
 
 def convert_attention_weights_to_adj_matrix(
-    attention_weights: list[Any],
+    attention_weights: tuple[torch.Tensor, torch.Tensor],
 ) -> torch.Tensor:
     """
     converts the attention weights from COO format to an adjacency matrix
@@ -341,7 +342,7 @@ def convert_attention_weights_to_adj_matrix(
     """
     edge_index, alpha = attention_weights
 
-    num_nodes = edge_index.max().item() + 1
+    num_nodes = int(edge_index.max().item()) + 1
     alpha = alpha.view(-1)
 
     src = edge_index[0]

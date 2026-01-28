@@ -1,6 +1,6 @@
 import argparse
 from pathlib import Path
-from typing import Optional, Tuple, Any, ContextManager, Sequence, Callable
+from typing import Optional, Tuple, Any, ContextManager, Sequence, Callable, Union
 
 import torch
 import numpy as np
@@ -31,6 +31,7 @@ def train_epoch(
     loader: DataLoader,
     optimizer: torch.optim.Optimizer,
     train: bool = True,
+    device: torch.device = torch.device("cpu"),
 ) -> Tuple[float, list[Any], list[Any], list[Any]]:
     """
     Trains the given model for one epoch or evaluates the model for one epoch.
@@ -38,7 +39,8 @@ def train_epoch(
         model (torch.nn.Module): pytorch model to train
         loader (DataLoader): dataset loader
         optimizer (torch.optim.Optimizer): pytorch optimizer
-        train (bool): indicates whether this is an evaluation only run or if we should train):
+        train (bool): indicates whether this is an evaluation only run or if we should train)
+        device (torch.device): pytorch device for GPU support
 
     Returns:
         total_loss (float): the total loss per time step for this epoch
@@ -72,6 +74,10 @@ def train_epoch(
         episode_index_list = []
         total_loss = 0.0
         for episode, index in episode_bar:
+            # move the episode to the specified device
+            # print("episode type ", type(episode))
+            # episode.to_device(device)
+
             episode_index_list.append(index)
             episode_loss = 0.0
 
@@ -81,6 +87,8 @@ def train_epoch(
 
             # there is a graph for every time step.
             for graph in episode:
+                # print(type(graph))
+                # graph.to(device)
                 prediction, attention_weights = model(graph)
 
                 # store the predictions and attention weights for this time step
@@ -125,10 +133,11 @@ def train_epoch(
 
 
 def load_dataset(
-    directory: str,
+    directory: Union[Path, str],
     batch_size: int = 1,
     train_size_ratio: float = 0.8,
     seed: Optional[int] = None,
+    device: torch.device = torch.device("cpu"),
 ) -> Tuple[
     torch_geometric.data.DataLoader,
     Sequence[int],
@@ -223,7 +232,7 @@ def model_factory(
 
 
 def train_3DGNN(
-    directory: str,
+    directory: Union[Path, str],
     training_result_path: Path,
     model_creation_function: Callable[
         ..., Tuple[torch.nn.Module, torch.optim.Optimizer]
