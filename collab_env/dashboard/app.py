@@ -224,6 +224,11 @@ class DataDashboard(param.Parameterized):
         self.clear_cache_button = pn.widgets.Button(name="Clear Cache", width=100)
         self.cache_info_pane = pn.pane.HTML("", width=300)
 
+        # Data browser refresh button
+        self.refresh_browser_button = pn.widgets.Button(
+            name="🔄 Refresh", button_type="primary", width=100
+        )
+
         # PLY viewer state
         self.current_ply_viewer = None
 
@@ -235,6 +240,7 @@ class DataDashboard(param.Parameterized):
         self.save_button.on_click(self._save_edit)
         self.cancel_edit_button.on_click(self._cancel_edit)
         self.clear_cache_button.on_click(self._clear_cache)
+        self.refresh_browser_button.on_click(self._refresh_data_browser)
         self.convert_video_button.on_click(self._convert_video)
         self.bbox_viewer_button.on_click(self._open_bbox_viewer)
         self.mesh_3d_viewer_button.on_click(self._open_mesh_3d_viewer)
@@ -269,6 +275,43 @@ class DataDashboard(param.Parameterized):
             logger.error(f"Error loading sessions: {e}")
             self.status_pane.object = (
                 f"<p style='color:red'>Error loading sessions: {e}</p>"
+            )
+
+    def _refresh_data_browser(self, event=None):
+        """Refresh data browser by re-reading buckets and resetting app state."""
+        try:
+            logger.info("Refreshing data browser...")
+            self.status_pane.object = "<p>🔄 Refreshing data browser...</p>"
+
+            # Reset app state
+            self.selected_session = ""
+            self.selected_file = ""
+            self.current_bucket_type = "curated"
+            self.session_select.value = ""
+
+            # Clear current session data
+            self.current_session_files = []
+            self.current_file_content = None
+            self.current_file_info = {}
+            self.display_to_path_map = {}
+
+            # Hide UI elements
+            self.bucket_type_toggle.visible = False
+            self.file_tree.visible = False
+            self.file_tree.options = []
+            self.file_viewer.object = "<p>Select a file to view its contents</p>"
+            self.file_name_header.object = "<h3>No file selected</h3>"
+            self.file_management_controls.visible = False
+
+            # Re-load sessions from both buckets
+            self._load_sessions()
+
+            logger.info("Data browser refreshed successfully")
+
+        except Exception as e:
+            logger.error(f"Error refreshing data browser: {e}")
+            self.status_pane.object = (
+                f"<p style='color:red'>Error refreshing: {e}</p>"
             )
 
     def _on_session_change(self, event):
@@ -2110,7 +2153,7 @@ class DataDashboard(param.Parameterized):
         cache_controls = pn.Column(self.cache_info_pane, self.clear_cache_button)
 
         nav_panel = pn.Column(
-            "## Data Browser",
+            pn.Row("## Data Browser", pn.Spacer(width=100), self.refresh_browser_button),
             self.session_select,
             self.bucket_type_toggle,
             self.file_tree,
