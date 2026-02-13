@@ -1,0 +1,37 @@
+{
+  "track_high_thresh": {
+    "type": "float",
+    "default": 0.25,
+    "range": [0.0, 1.0],
+    "description": "Detection confidence threshold that separates high-confidence and low-confidence detections. Detections above this score enter Stage 1 (primary IoU matching). Detections between track_low_thresh and this value enter Stage 2 (secondary matching to rescue lost tracks). Raise to restrict primary matching to only the most confident detections; lower to feed more detections into Stage 1."
+  },
+  "track_low_thresh": {
+    "type": "float",
+    "default": 0.1,
+    "range": [0.0, 1.0],
+    "description": "Absolute minimum detection confidence. Detections below this score are discarded entirely and never participate in any matching stage. Lower to recover very marginal detections at the cost of more noise; raise to filter out weak false positives."
+  },
+  "new_track_thresh": {
+    "type": "float",
+    "default": 0.25,
+    "range": [0.0, 1.0],
+    "description": "Minimum detection confidence required to initialize a new track. Unmatched detections from Stage 1 must exceed this score to spawn a new track ID. Higher values prevent spurious tracks from false positives; lower values allow tracks to start from weaker detections."
+  },
+  "track_buffer": {
+    "type": "int",
+    "default": 30,
+    "range": [1, null],
+    "description": "Number of frames a lost track is kept alive before permanent deletion. Internally scaled by frame rate: max_time_lost = int(fps / 30.0 * track_buffer). Higher values let tracks survive longer occlusions but increase ID switch risk when the object reappears far from its last position. Lower values remove lost tracks faster."
+  },
+  "match_thresh": {
+    "type": "float",
+    "default": 0.8,
+    "range": [0.0, 1.0],
+    "description": "IoU-distance gating threshold for Stage 1 (high-confidence) association. Passed as cost_limit to the linear assignment solver. Since cost = 1 - IoU, a threshold of 0.8 accepts matches with IoU >= 0.2. Higher values are more lenient (easier to match); lower values require stronger spatial overlap. Tune with detector quality."
+  },
+  "fuse_score": {
+    "type": "bool",
+    "default": true,
+    "description": "When enabled, IoU similarity is multiplied by the detection confidence score before matching: fused_cost = 1 - (iou_similarity * detection_score). This biases matching toward high-confidence detections. Disable if your detector's confidence scores are poorly calibrated or inconsistent."
+  }
+}

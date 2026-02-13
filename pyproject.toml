@@ -54,7 +54,10 @@ dependencies = [
   "rich",
   "pyarrow",
   "starbars",
-  "importlib-metadata"
+  "importlib-metadata",
+  "nicegui>=1.4.0",
+  "supervision>=0.18.0",
+  "inference>=0.28.0"  # Upgraded for yolo26n-seg support
 ]
 
 [tool.setuptools]                         # NEW
@@ -70,6 +73,7 @@ packages = [
     "collab_env.sim.util",
     "collab_env.tracking",
     "collab_env.tracking.model",
+    "collab_env.tracking_studio",
     "collab_env.utils"
 ]  
 

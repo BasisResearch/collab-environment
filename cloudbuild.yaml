@@ -1,0 +1,41 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/tracking-studio:$SHORT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/tracking-studio:latest'
+      - '-f'
+      - 'Dockerfile.tracking-studio'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/tracking-studio:$SHORT_SHA']
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/$PROJECT_ID/tracking-studio:latest']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'tracking-studio'
+      - '--image=gcr.io/$PROJECT_ID/tracking-studio:$SHORT_SHA'
+      - '--platform=managed'
+      - '--region=us-central1'
+      - '--memory=4Gi'
+      - '--cpu=2'
+      - '--timeout=900'
+      - '--concurrency=1'
+      - '--max-instances=5'
+      - '--set-env-vars=ROBOFLOW_API_KEY=${_ROBOFLOW_API_KEY}'
+      - '--allow-unauthenticated'
+
+images:
+  - 'gcr.io/$PROJECT_ID/tracking-studio:$SHORT_SHA'
+  - 'gcr.io/$PROJECT_ID/tracking-studio:latest'
+
+options:
+  machineType: 'N1_HIGHCPU_8'

@@ -1,0 +1,21 @@
+# Custom BoT-SORT config optimized for thermal rat tracking
+# BoT-SORT handles camera motion better than ByteTrack
+
+tracker_type: botsort
+
+# Detection thresholds
+track_high_thresh: 0.3      # High confidence threshold
+track_low_thresh: 0.1       # Low confidence threshold
+new_track_thresh: 0.2       # Threshold for creating new tracks
+
+# Track management
+track_buffer: 120           # Frames to keep lost tracks alive
+match_thresh: 0.7           # IoU threshold for matching
+
+# BoT-SORT specific
+cmc_method: sparseOptFlow   # Camera motion compensation method
+with_reid: False            # ReID features
+
+# Kalman filter settings (for motion prediction)
+std_weight_position: 0.05
+std_weight_velocity: 0.00625

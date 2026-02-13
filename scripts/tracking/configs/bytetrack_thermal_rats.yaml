@@ -1,0 +1,16 @@
+# Custom ByteTrack config optimized for thermal rat tracking
+# Lower thresholds to reduce dropped detections
+
+tracker_type: bytetrack
+
+# Detection thresholds
+track_high_thresh: 0.3      # High confidence threshold (lowered from default 0.5)
+track_low_thresh: 0.1       # Low confidence threshold for re-identification (lowered from 0.1)
+new_track_thresh: 0.2       # Threshold for creating new tracks (lowered from 0.4)
+
+# Track management
+track_buffer: 120           # Frames to keep lost tracks alive (increased from 30)
+match_thresh: 0.7           # IoU threshold for matching (lowered from 0.8 for more lenient matching)
+
+# Optional features
+with_reid: False            # ReID features (not needed for rats)
