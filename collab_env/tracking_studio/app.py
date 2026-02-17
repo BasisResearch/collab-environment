@@ -14,6 +14,7 @@ from pathlib import Path
 import uuid
 import os
 import io
+import base64
 from loguru import logger
 
 from .gcs_browser import GCSVideoBrowser
@@ -395,9 +396,9 @@ async def index():
 
                     # GUI refresh rate (display updates, not a ByteTrack param)
                     with ui.row().classes("w-full items-center gap-2 mt-1"):
-                        display_update_label = ui.label("Display Update: 10 frames").classes("text-xs")
-                        display_update_slider = ui.slider(min=1, max=30, step=1, value=10).style("width: 100px")
-                        display_update_slider.tooltip("Update display every Nth frame (lower = smoother, more network traffic)")
+                        display_update_label = ui.label("Display Update: every frame").classes("text-xs")
+                        display_update_slider = ui.slider(min=1, max=30, step=1, value=1).style("width: 100px")
+                        display_update_slider.tooltip("Update display every Nth frame (1 = smoothest, higher = skip display frames)")
                         display_update_slider.on("update:model-value", lambda e: display_update_label.set_text(f"Display Update: {int(e.args)} {'frame' if int(e.args) == 1 else 'frames'}"))
 
             # RIGHT: Controls + Preview (stacked vertically)
@@ -430,50 +431,71 @@ async def index():
 
                         ui.separator().props("vertical")
 
-                        with ui.column().classes("flex-grow gap-1"):
-                            progress_label = ui.label("Ready").classes("text-xs")
-                            progress = ui.linear_progress(value=0).props("size=15px color=primary")
+                        status_indicator = ui.label("Ready").classes("text-xs flex-grow")
 
                     # Time slider for seeking
                     with ui.column().classes("w-full gap-1 mt-2"):
                         time_label = ui.label("Frame: 0 / 0").classes("text-xs text-gray-600")
-                        time_slider = ui.slider(min=0, max=100, value=0).props("lazy").classes("w-full")
+                        time_slider = ui.slider(min=0, max=100, value=0).classes("w-full")
                         time_slider.disable()
 
+                        _preview_pending = [False]
+
                         async def preview_frame_on_drag(e):
-                            """Show video frame preview during drag (no detection/tracking)"""
-                            if not state.get("video_path"):
+                            """Preview frame during slider drag — reads frame via cv2"""
+                            if _preview_pending[0] or not state.get("video_path"):
                                 return
-
-                            target_frame = int(e.args)
+                            _preview_pending[0] = True
                             try:
-                                # Open video for preview (separate from processing thread)
                                 import cv2
-                                import base64
-                                cap = cv2.VideoCapture(str(state["video_path"]))
-                                cap.set(cv2.CAP_PROP_POS_FRAMES, target_frame)
-                                ret, frame = cap.read()
-                                cap.release()
-
-                                if ret:
-                                    # Show raw frame without annotations
-                                    _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                                    img_base64 = base64.b64encode(buffer).decode('utf-8')
-                                    video_display.set_source(f"data:image/jpeg;base64,{img_base64}")
-                                    total_frames = state.get("total_frames", target_frame)
-                                    time_label.text = f"Frame: {target_frame} / {total_frames}"
-                            except Exception as err:
-                                logger.warning(f"Preview failed: {err}")
-
-                        def seek_to_frame(e):
-                            """Seek to specific frame when slider is released"""
-                            if state.get("processing") and state.get("skip_frames_event"):
                                 target_frame = int(e.args)
+                                video_display.content = ''  # Clear SVG overlay
+                                if not state.get("processing"):
+                                    reset_tracker_state()
+
+                                def read_frame(path, idx):
+                                    cap = cv2.VideoCapture(str(path))
+                                    cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+                                    ret, f = cap.read()
+                                    cap.release()
+                                    return f if ret else None
+
+                                frame = await asyncio.to_thread(
+                                    read_frame, state["video_path"], target_frame
+                                )
+                                if frame is not None:
+                                    _, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+                                    b64 = base64.b64encode(buf).decode()
+                                    video_display.set_source(f'data:image/jpeg;base64,{b64}')
+
+                                total_frames = state.get("total_frames", target_frame)
+                                time_label.text = f"Frame: {target_frame} / {total_frames}"
+                            finally:
+                                _preview_pending[0] = False
+
+                        async def seek_to_frame(e):
+                            """Seek to specific frame when slider is released"""
+                            target_frame = int(e.args)
+                            if state.get("processing") and state.get("skip_frames_event"):
                                 current_frame = state.get("current_frame", 0)
                                 if target_frame != current_frame:
-                                    # Clear any pending seeks
                                     state["skip_frames_event"]["skip_amount"] = target_frame - current_frame
                                     ui.notify(f"Seeking to frame {target_frame}...", type="info")
+                            elif state.get("video_path"):
+                                # Not processing: show the frame at release position
+                                def read_frame(path, idx):
+                                    import cv2
+                                    cap = cv2.VideoCapture(str(path))
+                                    cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
+                                    ret, f = cap.read()
+                                    cap.release()
+                                    return f if ret else None
+                                frame = await asyncio.to_thread(read_frame, state["video_path"], target_frame)
+                                if frame is not None:
+                                    import cv2
+                                    _, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 70])
+                                    b64 = base64.b64encode(buf).decode()
+                                    video_display.set_source(f'data:image/jpeg;base64,{b64}')
 
                         # Live preview during drag
                         time_slider.on("update:model-value", preview_frame_on_drag)
@@ -487,7 +509,9 @@ async def index():
                         "max-width: 100%; resize: horizontal; overflow: hidden;"
                     )
                     with video_container:
-                        video_display = ui.interactive_image().style("width: 100%; height: 100%; object-fit: contain;")
+                        video_display = ui.interactive_image('').style(
+                            "width: 100%;"
+                        )
 
         # Results (initially hidden, separate row)
         results_container = ui.card().classes("w-full shadow-md p-3 hidden")
@@ -498,6 +522,13 @@ async def index():
                 download_track_btn = ui.button("Download CSV").props("color=primary icon=download size=sm")
 
     # Event handlers
+    def reset_tracker_state():
+        """Reset YOLO model's internal tracker so track IDs start fresh."""
+        model = state.get("loaded_model")
+        if model and hasattr(model, 'predictor') and model.predictor is not None:
+            # Full predictor reset — Ultralytics will create a fresh one on next call
+            model.predictor = None
+
     async def load_video():
         """Load and prepare video for viewing/tracking"""
         from nicegui import context
@@ -530,11 +561,28 @@ async def index():
             else:
                 raise ValueError("No video selected. Please select or upload a video.")
 
-            # Convert to H.264 if needed
+            # Ensure browser-compatible H.264 MP4
             if await asyncio.to_thread(needs_conversion, local_video):
-                status_label.text = "Converting to H.264..."
                 converted_video = local_video.parent / f"{local_video.stem}_h264.mp4"
-                await asyncio.to_thread(convert_to_h264, local_video, converted_video)
+                # Check if codec is already h264 (just needs container remux)
+                import subprocess
+                try:
+                    probe = subprocess.run(
+                        ["ffprobe", "-v", "error", "-select_streams", "v:0",
+                         "-show_entries", "stream=codec_name",
+                         "-of", "default=noprint_wrappers=1:nokey=1", str(local_video)],
+                        capture_output=True, text=True, check=True
+                    )
+                    is_h264 = probe.stdout.strip() == "h264"
+                except Exception:
+                    is_h264 = False
+
+                if is_h264:
+                    status_label.text = "Remuxing to MP4..."
+                    await asyncio.to_thread(convert_to_h264, local_video, converted_video, remux_only=True)
+                else:
+                    status_label.text = "Converting to H.264..."
+                    await asyncio.to_thread(convert_to_h264, local_video, converted_video)
                 local_video = converted_video
                 with client:
                     ui.notify("Video converted to H.264")
@@ -545,29 +593,35 @@ async def index():
                 state["video_path"] = local_video
                 state["video_loaded"] = True
 
-                # Set up video display and time slider
+                # Read video metadata and first frame
                 import cv2
-                import base64
                 cap = cv2.VideoCapture(str(local_video))
                 total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-                state["total_frames"] = total_frames
-
-                # Display first frame
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                ret, frame = cap.read()
-                if ret:
-                    # Size container to video's native dimensions, lock aspect ratio for resize
-                    h, w = frame.shape[:2]
-                    video_container.style(
-                        f"width: {w}px; max-width: 100%; aspect-ratio: {w}/{h};"
-                        f" resize: horizontal; overflow: hidden;"
-                    )
-
-                    _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                    img_base64 = base64.b64encode(buffer).decode('utf-8')
-                    video_display.set_source(f"data:image/jpeg;base64,{img_base64}")
-
+                fps = cap.get(cv2.CAP_PROP_FPS) or 30
+                w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                ret, first_frame = cap.read()
                 cap.release()
+
+                state["total_frames"] = total_frames
+                state["video_fps"] = fps
+                state["video_width"] = w
+                state["video_height"] = h
+
+                # Size container to video dimensions
+                video_container.style(
+                    f"width: {w}px; max-width: 100%; aspect-ratio: {w}/{h};"
+                    f" resize: horizontal; overflow: hidden;"
+                )
+
+                # Show first frame
+                video_display.content = ''
+                reset_tracker_state()
+                if ret:
+                    _, buf = cv2.imencode('.jpg', first_frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                    b64 = base64.b64encode(buf).decode()
+                    video_display.set_source(f'data:image/jpeg;base64,{b64}')
+                    logger.info(f"Displayed first frame ({w}x{h})")
 
                 # Enable time slider for playback
                 time_slider.enable()
@@ -676,14 +730,14 @@ async def index():
                 state["pause_event"].clear()
                 pause_btn.props("icon=pause")
                 pause_btn.text = "Pause"
-                progress_label.text = "Resuming..."
+                status_indicator.text = "Resuming..."
                 ui.notify("Resumed", type="info")
             else:
                 # Currently running, pause
                 state["pause_event"].set()
                 pause_btn.props("icon=play_arrow")
                 pause_btn.text = "Resume"
-                progress_label.text = "Paused"
+                status_indicator.text = "Paused"
                 ui.notify("Paused", type="warning")
 
 
@@ -691,7 +745,7 @@ async def index():
         """Hard stop - terminates processing"""
         if state["stop_event"]:
             state["stop_event"].set()
-            progress_label.text = "Stopping..."
+            status_indicator.text = "Stopping..."
             ui.notify("Stopping tracking...", type="negative")
     async def start_tracking():
         """Start tracking on already-loaded video with already-loaded model"""
@@ -700,6 +754,7 @@ async def index():
             return
 
         state["processing"] = True
+        reset_tracker_state()
         state["stop_event"] = threading.Event()  # Hard stop
         state["pause_event"] = threading.Event()  # Pause (starts clear = not paused)
         state["skip_frames_event"] = {"skip_amount": 0}  # Skip forward
@@ -715,40 +770,60 @@ async def index():
         try:
             # Show mode in progress label
             if detection_only_checkbox.value:
-                progress_label.text = "Starting detection..."
+                status_indicator.text = "Starting detection..."
             else:
                 tracker_type = state.get("tracker_type", "Unknown")
-                progress_label.text = f"Starting tracking ({tracker_type})..."
-            progress.value = 0
+                status_indicator.text = f"Starting tracking ({tracker_type})..."
 
             # Use already-loaded video and model from state
             local_video = state["video_path"]
             model = state["loaded_model"]
 
             # Frame callback for real-time UI updates
-            # Capture display update interval from slider
             display_interval = int(display_update_slider.value)
+            _track_colors = [
+                '#00FF00', '#FF0000', '#0080FF', '#FFFF00',
+                '#FF00FF', '#00FFFF', '#FF8000', '#8000FF',
+                '#00FF80', '#FF0080', '#80FF00', '#0040FF',
+            ]
 
-            async def frame_callback(annotated_frame, frame_idx, total_frames):
-                """Update UI with current frame (throttled for performance)"""
+            async def frame_callback(frame, detections, frame_idx, total_frames):
+                """Update UI: JPEG frame + SVG bbox overlay on every callback."""
+                import cv2
                 state["current_frame"] = frame_idx
 
-                # Update every N frames based on slider setting
-                if frame_idx % display_interval != 0 and frame_idx != total_frames - 1:
-                    return
+                # Update base JPEG image (rate controlled by Display Update slider)
+                _, buf = cv2.imencode('.jpg', frame, [cv2.IMWRITE_JPEG_QUALITY, 50])
+                b64 = base64.b64encode(buf).decode()
+                video_display.set_source(f'data:image/jpeg;base64,{b64}')
 
-                # Convert frame to bytes for display
-                import cv2
-                import base64
-                _, buffer = cv2.imencode(".jpg", annotated_frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
-                img_base64 = base64.b64encode(buffer).decode('utf-8')
-                video_display.set_source(f"data:image/jpeg;base64,{img_base64}")
+                # Update SVG overlay with detection bboxes
+                svg_rects = []
+                det_only = detection_only_checkbox.value
+                if len(detections) > 0:
+                    for i, bbox in enumerate(detections.xyxy):
+                        x1, y1, x2, y2 = bbox
+                        bw, bh = x2 - x1, y2 - y1
+                        conf = detections.confidence[i]
 
-                # Update progress
-                progress.value = 0.1 + 0.8 * (frame_idx / total_frames)
-                progress_label.text = f"Tracking: Frame {frame_idx + 1}/{total_frames}"
+                        if det_only:
+                            color = _track_colors[0]
+                            label = f"{conf:.2f}"
+                        else:
+                            tid = int(detections.tracker_id[i]) if detections.tracker_id is not None else 0
+                            color = _track_colors[tid % len(_track_colors)]
+                            label = f"#{tid} {conf:.2f}"
 
-                # Update time slider
+                        svg_rects.append(
+                            f'<rect x="{x1:.0f}" y="{y1:.0f}" width="{bw:.0f}" height="{bh:.0f}" '
+                            f'stroke="{color}" stroke-width="2" fill="none"/>'
+                            f'<text x="{x1:.0f}" y="{y1 - 4:.0f}" fill="{color}" '
+                            f'font-size="14" font-family="monospace" '
+                            f'stroke="black" stroke-width="0.3">{label}</text>'
+                        )
+
+                video_display.content = '\n'.join(svg_rects)
+
                 time_slider.set_value(frame_idx)
                 time_label.text = f"Frame: {frame_idx} / {total_frames}"
 
@@ -767,6 +842,7 @@ async def index():
                 tracker_config=tracker_config,
                 confidence=conf_slider.value,
                 detection_only=detection_only_checkbox.value,
+                display_interval=display_interval,
                 frame_callback=frame_callback,
                 stop_event=state["stop_event"],
                 pause_event=state["pause_event"],
@@ -777,8 +853,7 @@ async def index():
             results = await tracker.process_video_realtime(str(local_video), output_dir)
 
             # Show results
-            progress.value = 1.0
-            progress_label.text = "Complete!"
+            status_indicator.text = "Complete!"
 
             state["results"] = results
 
@@ -802,12 +877,12 @@ async def index():
         except Exception as e:
             logger.error(f"Tracking failed: {e}", exc_info=True)
             try:
-                progress_label.text = f"Error: {str(e)}"
+                status_indicator.text = f"Error: {str(e)}"
                 ui.notify(f"Error: {str(e)}", type="negative")
             except Exception as notify_error:
                 logger.error(f"Failed to show error notification: {notify_error}")
                 try:
-                    progress_label.text = f"Error: {str(e)}"
+                    status_indicator.text = f"Error: {str(e)}"
                 except:
                     pass
 

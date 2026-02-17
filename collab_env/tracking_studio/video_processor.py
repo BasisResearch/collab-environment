@@ -27,6 +27,7 @@ class VideoTracker:
         tracker_config: Dict,  # ByteTrack parameters
         confidence: float = 0.5,
         detection_only: bool = False,
+        display_interval: int = 10,
         frame_callback: Callable[[np.ndarray, int, int], None] = None,
         stop_event: threading.Event = None,
         pause_event: threading.Event = None,
@@ -40,6 +41,7 @@ class VideoTracker:
             tracker_config: Tracker configuration dict
             confidence: Detection confidence threshold
             detection_only: If True, run detection without tracking (no track IDs)
+            display_interval: Update display every Nth frame (1 = every frame)
             frame_callback: Async callback for frame updates (frame, frame_idx, total_frames)
             stop_event: Threading event to signal hard stop
             pause_event: Threading event to signal pause/resume
@@ -48,10 +50,12 @@ class VideoTracker:
         self.model = model
         self.confidence = confidence
         self.detection_only = detection_only
+        self.display_interval = max(1, display_interval)
         self.frame_callback = frame_callback
         self.stop_event = stop_event or threading.Event()
         self.pause_event = pause_event or threading.Event()
         self.skip_frames_event = skip_frames_event or {"skip_amount": 0}
+        self._pending_update = None  # Track in-flight UI update
 
         # Store tracker config for use with model.track()
         self.tracker_config = tracker_config
@@ -82,10 +86,6 @@ class VideoTracker:
 
         # Fast-forward: Skip frames for faster preview
         self.skip_frames = tracker_config.get("skip_frames", 1)  # 1 = process every frame
-
-        # Annotators for visualization
-        self.box_annotator = sv.BoxAnnotator()
-        self.label_annotator = sv.LabelAnnotator()
 
         logger.info(
             f"VideoTracker initialized (confidence: {self.confidence}, native_tracking: {self.use_native_tracking})"
@@ -278,42 +278,19 @@ class VideoTracker:
                         }
                     )
 
-            # 4. Annotate frame for display
-            annotated_frame = frame.copy()
-            annotated_frame = self.box_annotator.annotate(
-                annotated_frame, tracked_detections
-            )
+            # 4. Send frame + detections to UI for display
+            is_last = (frame_idx >= total_frames - 1)
+            should_display = (frame_idx % self.display_interval == 0) or is_last
 
-            if self.detection_only:
-                # Labels with confidence only
-                labels = [
-                    f"{conf:.2f}"
-                    for conf in tracked_detections.confidence
-                ]
-            else:
-                # Labels with track IDs
-                labels = [
-                    f"#{track_id} {conf:.2f}"
-                    for track_id, conf in zip(
-                        tracked_detections.tracker_id, tracked_detections.confidence
+            if should_display and self.frame_callback and event_loop:
+                # Skip if previous UI update is still in-flight (prevents queue buildup)
+                if self._pending_update is None or self._pending_update.done():
+                    self._pending_update = asyncio.run_coroutine_threadsafe(
+                        self.frame_callback(
+                            frame, tracked_detections, frame_idx, total_frames
+                        ),
+                        event_loop
                     )
-                ]
-            annotated_frame = self.label_annotator.annotate(
-                annotated_frame, tracked_detections, labels=labels
-            )
-
-            # 6. Send frame to UI (schedule callback in main event loop)
-            if self.frame_callback and event_loop:
-                # Schedule callback in main event loop from background thread
-                future = asyncio.run_coroutine_threadsafe(
-                    self.frame_callback(annotated_frame, frame_idx, total_frames),
-                    event_loop
-                )
-                # Wait for UI update to complete (with timeout to prevent blocking)
-                try:
-                    future.result(timeout=2.0)
-                except Exception as e:
-                    logger.warning(f"Frame callback failed: {e}")
 
             # Increment frame counter for next iteration
             frame_idx += 1
