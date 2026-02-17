@@ -35,11 +35,14 @@ bytetrack_params_schema = load_bytetrack_params()
 
 # Initialize services
 def get_credentials_path():
-    """Get GCS credentials path from environment or default"""
-    return os.getenv(
-        "GCS_CREDENTIALS",
-        "/workspace/config/collab-data-463313-c340ad86b28e.json",
-    )
+    """Get GCS credentials path from environment or default. Returns None for ADC."""
+    env_path = os.getenv("GCS_CREDENTIALS")
+    if env_path:
+        return env_path
+    default = "/workspace/config/collab-data-463313-c340ad86b28e.json"
+    if os.path.exists(default):
+        return default
+    return None  # GCSClient will use Application Default Credentials
 
 
 try:
@@ -797,6 +800,6 @@ async def index():
 ui.run(
     host="0.0.0.0",
     port=int(os.getenv("PORT", 8080)),
-    reload=True,  # Enable auto-reload for development
+    reload=os.getenv("NICEGUI_RELOAD", "true").lower() == "true",
     title="Tracking Studio",
 )

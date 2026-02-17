@@ -10,17 +10,23 @@ RUN apt-get update && apt-get install -y \
     libxrender-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Install uv for fast dependency resolution
+RUN pip install uv
+
 WORKDIR /workspace
 
-# Copy and install Python dependencies
+# Install CPU-only PyTorch first (prevents ultralytics pulling 900MB CUDA version)
+RUN uv pip install --system --no-cache \
+    torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# Install Python dependencies (Roboflow models load via .pt download, no inference SDK needed)
 COPY pyproject.toml .
-RUN pip install --no-cache-dir \
+RUN uv pip install --system --no-cache \
     nicegui \
     ultralytics \
     supervision \
     google-cloud-storage \
     gcsfs \
-    inference \
     opencv-python-headless \
     pandas \
     numpy \
@@ -30,30 +36,13 @@ RUN pip install --no-cache-dir \
 COPY collab_env/ collab_env/
 COPY scripts/ scripts/
 
-# Copy GCS credentials
-COPY config-local/ config/
-
-# Pre-download YOLO models (YOLO11 and YOLO26 variants)
-RUN mkdir -p /workspace/models && \
-    python -c "from ultralytics import YOLO; \
-               print('Downloading YOLO11 models...'); \
-               YOLO('yolo11n.pt'); \
-               YOLO('yolo11s.pt'); \
-               YOLO('yolo11m.pt');" && \
-    mv ~/.cache/ultralytics/*.pt /workspace/models/ 2>/dev/null || true
-
-# Note: YOLO26 models might not be available yet, will download on first use
-# RUN python -c "from ultralytics import YOLO; \
-#                print('Downloading YOLO26 models...'); \
-#                YOLO('yolo26n-fast.pt'); \
-#                YOLO('yolo26s-fast.pt'); \
-#                YOLO('yolo26m-fast.pt');" && \
-#     mv ~/.cache/ultralytics/*.pt /workspace/models/ 2>/dev/null || true
-
-# Create tmp directories
+# Create model cache and tmp directories
+RUN mkdir -p /workspace/models
 RUN mkdir -p /tmp/videos /tmp/outputs /tmp/uploads
 
 ENV PORT=8080
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/workspace
+ENV NICEGUI_RELOAD=false
 
-CMD ["python", "scripts/run_tracking_studio.py"]
+CMD ["python", "scripts/tracking/run_tracking_studio.py"]

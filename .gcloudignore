@@ -1,0 +1,13 @@
+# Upload only what the Docker build needs
+# .gcloudignore controls what gcloud builds submit uploads
+
+# Start by ignoring everything
+*
+
+# Allow only what Dockerfile.tracking-studio needs
+!collab_env/
+!scripts/
+!pyproject.toml
+!Dockerfile.tracking-studio
+!cloudbuild.yaml
+!.dockerignore

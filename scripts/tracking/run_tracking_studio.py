@@ -2,7 +2,7 @@
 """
 Entry point for the Tracking Studio NiceGUI application.
 
-Run with: python scripts/run_tracking_studio.py
+Run with: python scripts/tracking/run_tracking_studio.py
 """
 
 # Simply import the app module - ui.run() is called at module level
