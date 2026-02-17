@@ -26,6 +26,7 @@ class VideoTracker:
         model: Union[YOLO, Any],  # YOLO or Roboflow model
         tracker_config: Dict,  # ByteTrack parameters
         confidence: float = 0.5,
+        detection_only: bool = False,
         frame_callback: Callable[[np.ndarray, int, int], None] = None,
         stop_event: threading.Event = None,
         pause_event: threading.Event = None,
@@ -38,6 +39,7 @@ class VideoTracker:
             model: Detection model (YOLO or Roboflow)
             tracker_config: Tracker configuration dict
             confidence: Detection confidence threshold
+            detection_only: If True, run detection without tracking (no track IDs)
             frame_callback: Async callback for frame updates (frame, frame_idx, total_frames)
             stop_event: Threading event to signal hard stop
             pause_event: Threading event to signal pause/resume
@@ -45,6 +47,7 @@ class VideoTracker:
         """
         self.model = model
         self.confidence = confidence
+        self.detection_only = detection_only
         self.frame_callback = frame_callback
         self.stop_event = stop_event or threading.Event()
         self.pause_event = pause_event or threading.Event()
@@ -56,8 +59,12 @@ class VideoTracker:
         # Check if model supports native tracking
         self.use_native_tracking = isinstance(model, YOLO)
 
-        # For Roboflow inference models (fallback), initialize supervision tracker
-        if not self.use_native_tracking:
+        if detection_only:
+            logger.info("Detection-only mode (no tracking)")
+            self.tracker = None
+            self.tracker_yaml_path = None
+        elif not self.use_native_tracking:
+            # For Roboflow inference models (fallback), initialize supervision tracker
             logger.info("Using supervision ByteTrack (Roboflow inference model fallback)")
             self.tracker = sv.ByteTrack(
                 track_activation_threshold=tracker_config.get("track_high_thresh", 0.25),
@@ -188,9 +195,23 @@ class VideoTracker:
                 frame_idx += 1
                 continue
 
-            # 1. Run detection and tracking
+            # 1. Run detection (and optionally tracking)
             try:
-                if self.use_native_tracking:
+                if self.detection_only:
+                    # Detection only - no tracking
+                    if self.use_native_tracking:
+                        results = self.model(
+                            source=frame,
+                            conf=self.confidence,
+                            verbose=False,
+                        )[0]
+                        detections = sv.Detections.from_ultralytics(results)
+                    else:
+                        results = self.model.infer(frame, confidence=self.confidence)[0]
+                        detections = sv.Detections.from_inference(results)
+                    tracked_detections = detections
+
+                elif self.use_native_tracking:
                     # Use Ultralytics native tracking (supports all ByteTrack parameters)
                     results = self.model.track(
                         source=frame,
@@ -220,7 +241,7 @@ class VideoTracker:
                 detections = sv.Detections.empty()
                 tracked_detections = sv.Detections.empty()
 
-            # 2. Save raw detections (for stats only, not exported)
+            # 2. Save detections
             for i, (bbox, conf, class_id) in enumerate(
                 zip(detections.xyxy, detections.confidence, detections.class_id)
             ):
@@ -236,11 +257,8 @@ class VideoTracker:
                     }
                 )
 
-            # 3. Tracked detections now have track IDs (from native tracking or supervision)
-
-            # 4. Save tracking with IDs (matches output_tracked_bboxes_csv format)
-            # Only save if we have track IDs (handles cases where no detections exist)
-            if tracked_detections.tracker_id is not None and len(tracked_detections) > 0:
+            # 3. Save tracking data (with track IDs if tracking is enabled)
+            if not self.detection_only and tracked_detections.tracker_id is not None and len(tracked_detections) > 0:
                 for bbox, track_id, conf, class_id in zip(
                     tracked_detections.xyxy,
                     tracked_detections.tracker_id,
@@ -260,19 +278,26 @@ class VideoTracker:
                         }
                     )
 
-            # 5. Annotate frame for display
+            # 4. Annotate frame for display
             annotated_frame = frame.copy()
             annotated_frame = self.box_annotator.annotate(
                 annotated_frame, tracked_detections
             )
 
-            # Create labels with track IDs
-            labels = [
-                f"#{track_id} {conf:.2f}"
-                for track_id, conf in zip(
-                    tracked_detections.tracker_id, tracked_detections.confidence
-                )
-            ]
+            if self.detection_only:
+                # Labels with confidence only
+                labels = [
+                    f"{conf:.2f}"
+                    for conf in tracked_detections.confidence
+                ]
+            else:
+                # Labels with track IDs
+                labels = [
+                    f"#{track_id} {conf:.2f}"
+                    for track_id, conf in zip(
+                        tracked_detections.tracker_id, tracked_detections.confidence
+                    )
+                ]
             annotated_frame = self.label_annotator.annotate(
                 annotated_frame, tracked_detections, labels=labels
             )
@@ -304,43 +329,49 @@ class VideoTracker:
             except Exception as e:
                 logger.warning(f"Failed to cleanup tracker config: {e}")
 
+        unique_tracks = len(set(t['track_id'] for t in tracking_list)) if tracking_list else 0
         logger.info(
             f"Processing complete: {total_frames} frames, "
             f"{len(detections_list)} detections, "
-            f"{len(set(t['track_id'] for t in tracking_list))} unique tracks"
+            f"{unique_tracks} unique tracks"
         )
-
-        # 7. Save tracking CSV (matches output_tracked_bboxes_csv format)
-        tracking_df = pd.DataFrame(tracking_list)
 
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
-        # Only save tracking CSV (not detections - user doesn't need them)
-        tracking_csv = output_path / "tracking.csv"
-
-        if len(tracking_list) > 0:
-            # Ensure column order matches: track_id,frame,x1,y1,x2,y2,confidence,class
-            tracking_df = tracking_df[
-                ["track_id", "frame", "x1", "y1", "x2", "y2", "confidence", "class"]
-            ]
-            tracking_df.to_csv(tracking_csv, index=False)
-            logger.info(f"Saved tracking CSV to {tracking_csv}")
+        if self.detection_only:
+            # Save detections CSV (no track IDs)
+            output_csv = output_path / "detections.csv"
+            if len(detections_list) > 0:
+                det_df = pd.DataFrame(detections_list)
+                det_df = det_df[["frame", "x1", "y1", "x2", "y2", "confidence", "class"]]
+                det_df.to_csv(output_csv, index=False)
+            else:
+                pd.DataFrame(
+                    columns=["frame", "x1", "y1", "x2", "y2", "confidence", "class"]
+                ).to_csv(output_csv, index=False)
+            logger.info(f"Saved detections CSV to {output_csv}")
         else:
-            # Create empty CSV with correct headers
-            pd.DataFrame(
-                columns=["track_id", "frame", "x1", "y1", "x2", "y2", "confidence", "class"]
-            ).to_csv(tracking_csv, index=False)
-            logger.warning("No tracks found, saved empty CSV")
+            # Save tracking CSV (with track IDs)
+            output_csv = output_path / "tracking.csv"
+            if len(tracking_list) > 0:
+                tracking_df = pd.DataFrame(tracking_list)
+                tracking_df = tracking_df[
+                    ["track_id", "frame", "x1", "y1", "x2", "y2", "confidence", "class"]
+                ]
+                tracking_df.to_csv(output_csv, index=False)
+            else:
+                pd.DataFrame(
+                    columns=["track_id", "frame", "x1", "y1", "x2", "y2", "confidence", "class"]
+                ).to_csv(output_csv, index=False)
+            logger.info(f"Saved tracking CSV to {output_csv}")
 
         return {
-            "tracking_csv": str(tracking_csv),
+            "tracking_csv": str(output_csv),
             "stats": {
                 "total_frames": total_frames,
                 "total_detections": len(detections_list),
-                "unique_tracks": (
-                    tracking_df["track_id"].nunique() if len(tracking_list) > 0 else 0
-                ),
+                "unique_tracks": unique_tracks,
                 "fps": fps,
             },
         }

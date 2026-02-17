@@ -378,6 +378,13 @@ async def index():
                                 param_select.tooltip(param_config["description"])
                                 param_widgets[param_name] = param_select
 
+                    # Detection-only mode toggle
+                    detection_only_checkbox = ui.checkbox(
+                        "Detection only (no tracking)",
+                        value=False,
+                    ).classes("text-xs mt-2")
+                    detection_only_checkbox.tooltip("Run detection without ByteTrack — shows raw detections per frame")
+
                     # Skip frames (for fast-forward, not a ByteTrack param)
                     with ui.row().classes("w-full items-center gap-2 mt-2"):
                         skip_frames_label = ui.label("Skip Frames: 1 frame").classes("text-xs")
@@ -691,9 +698,12 @@ async def index():
         results_container.classes(add="hidden")
 
         try:
-            # Show tracker type in progress label
-            tracker_type = state.get("tracker_type", "Unknown")
-            progress_label.text = f"Starting tracking ({tracker_type})..."
+            # Show mode in progress label
+            if detection_only_checkbox.value:
+                progress_label.text = "Starting detection..."
+            else:
+                tracker_type = state.get("tracker_type", "Unknown")
+                progress_label.text = f"Starting tracking ({tracker_type})..."
             progress.value = 0
 
             # Use already-loaded video and model from state
@@ -741,6 +751,7 @@ async def index():
                 model=model,
                 tracker_config=tracker_config,
                 confidence=conf_slider.value,
+                detection_only=detection_only_checkbox.value,
                 frame_callback=frame_callback,
                 stop_event=state["stop_event"],
                 pause_event=state["pause_event"],
@@ -756,11 +767,17 @@ async def index():
 
             state["results"] = results
 
-            stats_label.text = (
-                f"Processed {results['stats']['total_frames']} frames | "
-                f"{results['stats']['total_detections']} detections | "
-                f"{results['stats']['unique_tracks']} unique tracks"
-            )
+            if detection_only_checkbox.value:
+                stats_label.text = (
+                    f"Processed {results['stats']['total_frames']} frames | "
+                    f"{results['stats']['total_detections']} detections"
+                )
+            else:
+                stats_label.text = (
+                    f"Processed {results['stats']['total_frames']} frames | "
+                    f"{results['stats']['total_detections']} detections | "
+                    f"{results['stats']['unique_tracks']} unique tracks"
+                )
 
             # Setup download button (only tracking CSV)
             download_track_btn.on_click(lambda: ui.download(results["tracking_csv"]))
