@@ -52,16 +52,6 @@ python scripts/tracking/run_tracking_studio.py
 
 The application will start on `http://localhost:8080`
 
-### Cloud Run Deployment
-
-The tracking studio is deployed to Cloud Run via `cloudbuild.yaml`:
-```bash
-gcloud builds submit --config=cloudbuild.yaml
-```
-
-The Roboflow API key is stored in GCP Secret Manager (`roboflow-api-key`).
-GCS access uses the Cloud Run service account (Application Default Credentials).
-
 ## Workflow
 
 ### 1. Load Video
@@ -317,21 +307,6 @@ Videos not in H.264 format are automatically converted on load:
 - YOLO: Check model name spelling and internet connection
 - Roboflow: Verify `ROBOFLOW_API_KEY` is set and has access
 - Custom: Ensure `.pt` file is YOLO-compatible format
-
-## Advanced Usage
-
-### Running with Docker
-
-```bash
-# Build image
-docker build -t tracking-studio .
-
-# Run with GCS credentials
-docker run -p 8080:8080 \
-  -v /path/to/credentials.json:/workspace/config/credentials.json \
-  -e GCS_CREDENTIALS=/workspace/config/credentials.json \
-  tracking-studio
-```
 
 ### Batch Processing
 
