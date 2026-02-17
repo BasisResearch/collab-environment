@@ -13,29 +13,54 @@ The Tracking Studio provides a user-friendly interface for:
 
 ## Quick Start
 
+### Prerequisites
+
+1. **Python 3.10** with the project installed:
+
+   ```bash
+   pip install -e .
+   ```
+
+2. **FFmpeg** (for video format conversion):
+
+   ```bash
+   # macOS
+   brew install ffmpeg
+   # Ubuntu/Debian
+   sudo apt install ffmpeg
+   ```
+
+3. **GCS credentials** (for browsing videos in Google Cloud Storage):
+   - Place your service account JSON at `config-local/collab-data-463313-c340ad86b28e.json`
+   - Or set the env var: `export GCS_CREDENTIALS=/path/to/credentials.json`
+   - If neither is set, GCS browsing is disabled (video upload still works)
+
+4. **Roboflow API key** (only needed for Roboflow models):
+
+   ```bash
+   export ROBOFLOW_API_KEY=your_api_key_here
+   ```
+
+   Get your key from [Roboflow settings](https://app.roboflow.com/settings/api)
+
 ### Running the Application
 
 ```bash
 # From the repository root
-python scripts/run_tracking_studio.py
-
-# Or directly
-python -m collab_env.tracking_studio.app
+python scripts/tracking/run_tracking_studio.py
 ```
 
 The application will start on `http://localhost:8080`
 
-### Environment Setup
+### Cloud Run Deployment
 
-**Optional: For Google Cloud Storage integration**
+The tracking studio is deployed to Cloud Run via `cloudbuild.yaml`:
 ```bash
-export GCS_CREDENTIALS=/path/to/credentials.json
+gcloud builds submit --config=cloudbuild.yaml
 ```
 
-**Optional: For Roboflow models**
-```bash
-export ROBOFLOW_API_KEY=your_api_key_here
-```
+The Roboflow API key is stored in GCP Secret Manager (`roboflow-api-key`).
+GCS access uses the Cloud Run service account (Application Default Credentials).
 
 ## Workflow
 

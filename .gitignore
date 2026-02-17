@@ -87,6 +87,9 @@ venv/
 # VSCode
 /.vscode
 
+# Claude Code
+.claude/
+
 # Automatically generated files
 docs/source/lightning_logs
 docs/preconvert

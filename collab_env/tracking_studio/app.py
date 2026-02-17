@@ -295,7 +295,8 @@ async def index():
                     rf_version_select.on("update:model-value", enable_load_model_btn)
 
                 # Parameters card
-                with ui.card().classes("w-full shadow-md p-3"):
+                params_card = ui.card().classes("w-full shadow-md p-3")
+                with params_card:
                     ui.label("⚙️ Parameters").classes("text-sm font-semibold mb-2")
 
                     # Detection confidence (not in ByteTrack params)
@@ -482,7 +483,11 @@ async def index():
                 # Preview card
                 with ui.card().classes("w-full shadow-md p-3"):
                     ui.label("Live Preview").classes("text-sm font-semibold mb-2")
-                    video_display = ui.interactive_image().classes("w-full border-2 border-gray-200 rounded bg-gray-50").style("max-height: 500px; object-fit: contain;")
+                    video_container = ui.element("div").classes("border-2 border-gray-200 rounded bg-gray-50").style(
+                        "max-width: 100%; resize: horizontal; overflow: hidden;"
+                    )
+                    with video_container:
+                        video_display = ui.interactive_image().style("width: 100%; height: 100%; object-fit: contain;")
 
         # Results (initially hidden, separate row)
         results_container = ui.card().classes("w-full shadow-md p-3 hidden")
@@ -551,6 +556,13 @@ async def index():
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                 ret, frame = cap.read()
                 if ret:
+                    # Size container to video's native dimensions, lock aspect ratio for resize
+                    h, w = frame.shape[:2]
+                    video_container.style(
+                        f"width: {w}px; max-width: 100%; aspect-ratio: {w}/{h};"
+                        f" resize: horizontal; overflow: hidden;"
+                    )
+
                     _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 85])
                     img_base64 = base64.b64encode(buffer).decode('utf-8')
                     video_display.set_source(f"data:image/jpeg;base64,{img_base64}")
@@ -693,8 +705,11 @@ async def index():
         state["skip_frames_event"] = {"skip_amount": 0}  # Skip forward
         state["current_frame"] = 0
         start_btn.disable()
+        pause_btn.text = "Pause"
+        pause_btn.props("icon=pause")
         pause_btn.enable()
         stop_btn.enable()
+        params_card.style("opacity: 0.5; pointer-events: none;")
         results_container.classes(add="hidden")
 
         try:
@@ -802,8 +817,11 @@ async def index():
             state["pause_event"] = None
             state["skip_frames_event"] = None
             start_btn.enable()
+            pause_btn.text = "Pause"
+            pause_btn.props("icon=pause")
             pause_btn.disable()
             stop_btn.disable()
+            params_card.style(remove="opacity: 0.5; pointer-events: none;")
 
     # Wire up buttons to event handlers (after functions are defined)
     load_video_btn.on_click(load_video)
