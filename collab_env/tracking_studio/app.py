@@ -264,8 +264,6 @@ async def index():
                                         if v['name']:
                                             parts.append(v['name'])
                                         parts.append(f"{v['images']} imgs")
-                                        if v['map']:
-                                            parts.append(f"mAP {v['map']}")
                                         options[v['version']] = " | ".join(parts)
                                         _rf_versions_raw[v['version']] = v.get('raw', {})
                                     rf_version_select.options = options
