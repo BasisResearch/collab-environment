@@ -26,7 +26,7 @@ steps:
       - '--concurrency=1'
       - '--max-instances=5'
       - '--set-secrets=ROBOFLOW_API_KEY=roboflow-api-key:latest'
-      - '--allow-unauthenticated'
+      - '--no-allow-unauthenticated'
 
 images:
   - 'gcr.io/$PROJECT_ID/tracking-studio:latest'

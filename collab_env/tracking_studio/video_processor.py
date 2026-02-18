@@ -129,7 +129,7 @@ class VideoTracker:
         return temp_file.name
 
     def _process_video_sync(
-        self, video_path: str, output_dir: str, event_loop
+        self, video_path: str, output_dir: str, event_loop, start_frame: int = 0
     ) -> Dict[str, Any]:
         """
         Synchronous video processing function (runs in background thread).
@@ -138,6 +138,7 @@ class VideoTracker:
             video_path: Path to input video
             output_dir: Directory for output CSV
             event_loop: Main asyncio event loop for scheduling UI updates
+            start_frame: Frame index to start processing from (0-based)
 
         Returns:
             Dict with tracking_csv path and stats
@@ -160,7 +161,10 @@ class VideoTracker:
         detections_list = []
         tracking_list = []
 
-        frame_idx = 0
+        frame_idx = start_frame
+        if start_frame > 0:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+            logger.info(f"Starting from frame {start_frame}")
         while frame_idx < total_frames:
             # Check if stop was requested (hard stop)
             if self.stop_event.is_set():
@@ -354,7 +358,7 @@ class VideoTracker:
         }
 
     async def process_video_realtime(
-        self, video_path: str, output_dir: str
+        self, video_path: str, output_dir: str, start_frame: int = 0
     ) -> Dict[str, Any]:
         """
         Process video frame-by-frame with real-time UI updates.
@@ -365,6 +369,7 @@ class VideoTracker:
         Args:
             video_path: Path to input video
             output_dir: Directory for output CSV
+            start_frame: Frame index to start processing from (0-based)
 
         Returns:
             Dict with tracking_csv path and stats
@@ -373,9 +378,9 @@ class VideoTracker:
         loop = asyncio.get_running_loop()
 
         # Run processing in background thread
-        logger.info("Starting video processing in background thread...")
+        logger.info(f"Starting video processing in background thread (frame {start_frame})...")
         result = await asyncio.to_thread(
-            self._process_video_sync, video_path, output_dir, loop
+            self._process_video_sync, video_path, output_dir, loop, start_frame
         )
 
         logger.info("Video processing complete")

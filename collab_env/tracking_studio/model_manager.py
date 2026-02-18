@@ -300,7 +300,7 @@ class ModelManager:
             logger.error(error_msg)
             raise ValueError(error_msg) from e
 
-    def list_roboflow_project_models(self, project_id: str) -> List[str]:
+    def list_roboflow_project_models(self, project_id: str) -> List[dict]:
         """
         Query Roboflow API for available model versions in a project.
 
@@ -308,9 +308,10 @@ class ModelManager:
             project_id: Project ID in format "workspace/project" (e.g., "dima-sdrkv/ratsmerged20260211")
 
         Returns:
-            List of version numbers (e.g., ["1", "2", "3"])
+            List of dicts with keys: version, name, images, map
         """
         import requests
+        from datetime import datetime
 
         if not self.roboflow_api_key:
             raise ValueError("ROBOFLOW_API_KEY not set")
@@ -334,26 +335,34 @@ class ModelManager:
 
             data = response.json()
 
-            # Extract version numbers from response
             versions = []
             if 'versions' in data:
-                for version_data in data['versions']:
-                    # Try different fields that might contain the version number
-                    version_num = version_data.get('id')
-
-                    # If id is a full path (workspace/project/version), extract just the version
-                    if version_num and isinstance(version_num, str) and '/' in version_num:
-                        version_num = version_num.split('/')[-1]  # Get last part
-
-                    # Also check for a 'version' field
+                for vd in data['versions']:
+                    version_num = vd.get('id', '')
+                    if isinstance(version_num, str) and '/' in version_num:
+                        version_num = version_num.split('/')[-1]
                     if not version_num:
-                        version_num = version_data.get('version')
+                        version_num = vd.get('version')
+                    if not version_num:
+                        continue
 
-                    if version_num:
-                        versions.append(str(version_num))
+                    map_val = vd.get('model', {}).get('map', '')
+                    if map_val and str(map_val) != 'NaN':
+                        map_str = f"{float(map_val):.1f}%"
+                    else:
+                        map_str = ""
 
-            logger.info(f"Found {len(versions)} versions: {versions}")
-            return sorted(versions, key=lambda x: int(x) if x.isdigit() else 0, reverse=True)
+                    versions.append({
+                        "version": str(version_num),
+                        "name": vd.get('name', ''),
+                        "images": vd.get('images', 0),
+                        "map": map_str,
+                        "raw": vd,
+                    })
+
+            versions.sort(key=lambda x: int(x['version']) if x['version'].isdigit() else 0, reverse=True)
+            logger.info(f"Found {len(versions)} versions: {[v['version'] for v in versions]}")
+            return versions
 
         except requests.exceptions.HTTPError as e:
             error_msg = f"Failed to query Roboflow project: HTTP {e.response.status_code}"

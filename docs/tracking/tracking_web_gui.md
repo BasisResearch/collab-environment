@@ -337,6 +337,20 @@ results = await tracker.process_video_realtime("input.mp4", "/tmp/output")
 print(f"Saved to: {results['tracking_csv']}")
 ```
 
+## Cloud Deployment
+
+The Tracking Studio can be deployed to Google Cloud Run using the provided `Dockerfile.tracking-studio` and `cloudbuild.yaml`:
+
+```bash
+gcloud builds submit --config=cloudbuild.yaml
+```
+
+This builds a CPU-only Docker image and deploys to Cloud Run with 4GB RAM and 2 vCPUs.
+
+**Not recommended for interactive use.** The real-time frame preview relies on WebSocket streaming between the browser and server. Cloud Run's request-based scaling, cold starts, and network latency make the interactive experience significantly worse than running locally. For best results, run the studio on a local machine or a persistent VM with a GPU.
+
+Cloud Run deployment is better suited for batch processing or short demo sessions where latency is acceptable.
+
 ## References
 
 - [ByteTrack Paper](https://arxiv.org/abs/2110.06864)

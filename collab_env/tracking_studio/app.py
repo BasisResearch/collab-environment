@@ -172,24 +172,26 @@ async def index():
             with ui.column().classes("gap-3").style("flex: 0 0 280px; min-width: 280px"):
                 # Model card
                 with ui.card().classes("w-full shadow-md p-3"):
-                    ui.label("🤖 Model").classes("text-sm font-semibold mb-2")
+                    ui.label("Model").classes("text-sm font-semibold mb-2")
 
-                    # Radio with three options
-                    with ui.row().classes("gap-2"):
-                        model_source = ui.radio(["YOLO", "Roboflow", "Custom"], value="YOLO").classes("text-xs")
+                    model_source = ui.select(
+                        label="Source",
+                        options=["YOLO", "Roboflow", "Custom"],
+                        value="Roboflow",
+                    ).classes("w-full")
 
-                    # YOLO model selection (default visible)
+                    # YOLO model selection
                     yolo_container = ui.column().classes("w-full mt-2")
+                    yolo_container.visible = False
                     with yolo_container:
                         yolo_model_input = ui.input(
                             label="Model Name",
                             placeholder="e.g., yolo11n.pt",
                             value="yolo11n.pt"
-                        ).classes("w-full").tooltip("Enter any YOLO model name (will auto-download if available)")
+                        ).classes("w-full").tooltip("Enter any YOLO model name (will auto-download)")
 
-                    # Roboflow model selection (hidden by default)
+                    # Roboflow model selection (default visible)
                     rf_container = ui.column().classes("w-full mt-2 gap-2")
-                    rf_container.visible = False
                     with rf_container:
                         rf_project_input = ui.input(
                             label="Project ID",
@@ -197,22 +199,34 @@ async def index():
                             value="dima-sdrkv/ratsmerged20260211"
                         ).classes("w-full")
 
-                        # Define the function BEFORE referencing it in the button
+                        # Store raw version data for detail dialog
+                        _rf_versions_raw = {}
+
                         async def list_rf_models():
                             """Query Roboflow for available model versions"""
                             project_id = rf_project_input.value
                             if not project_id:
                                 ui.notify("Please enter project ID", type="warning")
                                 return
-
                             try:
                                 rf_list_btn.disable()
-                                # Call directly (synchronous HTTP request, no need for threading)
                                 versions = model_manager.list_roboflow_project_models(project_id)
                                 if versions:
-                                    rf_version_select.options = versions
-                                    rf_version_select.value = versions[0]
+                                    options = {}
+                                    _rf_versions_raw.clear()
+                                    for v in versions:
+                                        parts = [f"v{v['version']}"]
+                                        if v['name']:
+                                            parts.append(v['name'])
+                                        parts.append(f"{v['images']} imgs")
+                                        if v['map']:
+                                            parts.append(f"mAP {v['map']}")
+                                        options[v['version']] = " | ".join(parts)
+                                        _rf_versions_raw[v['version']] = v.get('raw', {})
+                                    rf_version_select.options = options
+                                    rf_version_select.value = versions[0]['version']
                                     rf_version_select.enable()
+                                    rf_detail_btn.visible = True
                                     ui.notify(f"Found {len(versions)} versions", type="positive")
                                 else:
                                     ui.notify("No versions found", type="warning")
@@ -222,9 +236,26 @@ async def index():
                             finally:
                                 rf_list_btn.enable()
 
-                        # Now create the button and version select (after function definition)
-                        with ui.row().classes("w-full gap-2"):
+                        def show_version_detail():
+                            """Show full JSON for the selected version in a dialog"""
+                            import json
+                            ver = rf_version_select.value
+                            raw = _rf_versions_raw.get(ver, {})
+                            if not raw:
+                                ui.notify("No version data available", type="warning")
+                                return
+                            with ui.dialog() as dlg, ui.card().style("min-width: 500px; max-height: 80vh;"):
+                                ui.label(f"Version {ver} Details").classes("text-sm font-semibold")
+                                ui.code(json.dumps(raw, indent=2, default=str)).classes(
+                                    "w-full text-xs"
+                                ).style("max-height: 60vh; overflow: auto;")
+                                ui.button("Close", on_click=dlg.close).props("size=sm flat")
+                            dlg.open()
+
+                        with ui.row().classes("w-full gap-2 items-center"):
                             rf_list_btn = ui.button("List Models", on_click=list_rf_models).props("size=sm color=primary")
+                            rf_detail_btn = ui.button("Details", on_click=show_version_detail).props("size=sm flat")
+                            rf_detail_btn.visible = False
 
                         rf_version_select = ui.select(
                             label="Version",
@@ -232,11 +263,10 @@ async def index():
                         ).classes("w-full")
                         rf_version_select.disable()
 
-                    # Custom model upload (hidden by default)
+                    # Custom model upload
                     custom_container = ui.column().classes("w-full mt-2")
                     custom_container.visible = False
                     with custom_container:
-                        # Upload widget for model weights
                         async def handle_model_upload(e):
                             """Handle model .pt file upload"""
                             try:
@@ -247,7 +277,7 @@ async def index():
                                 state["uploaded_model"] = uploaded_model_file
                                 ui.notify(f"Model uploaded: {e.name}", type="positive")
                                 logger.info(f"Model uploaded to: {uploaded_model_file}")
-                                load_model_btn.enable()  # Enable Load Model button
+                                load_model_btn.enable()
                             except Exception as error:
                                 logger.error(f"Model upload failed: {error}")
                                 ui.notify(f"Model upload failed: {error}", type="negative")
@@ -260,27 +290,10 @@ async def index():
                     # Toggle visibility based on model source
                     def toggle_model_ui(e=None):
                         value = model_source.value
-                        if value == "YOLO":
-                            yolo_container.visible = True
-                            rf_container.visible = False
-                            custom_container.visible = False
-                            # Enable load button if YOLO model name is entered
-                            if yolo_model_input.value:
-                                load_model_btn.enable()
-                        elif value == "Roboflow":
-                            yolo_container.visible = False
-                            rf_container.visible = True
-                            custom_container.visible = False
-                            # Enable load button if Roboflow model is selected
-                            if rf_version_select.value:
-                                load_model_btn.enable()
-                        else:  # Custom
-                            yolo_container.visible = False
-                            rf_container.visible = False
-                            custom_container.visible = True
-                            # Enable load button if custom model uploaded
-                            if state.get("uploaded_model"):
-                                load_model_btn.enable()
+                        yolo_container.visible = (value == "YOLO")
+                        rf_container.visible = (value == "Roboflow")
+                        custom_container.visible = (value == "Custom")
+                        enable_load_model_btn()
 
                     def enable_load_model_btn(e=None):
                         """Enable Load Model button when model is selected"""
@@ -389,17 +402,21 @@ async def index():
 
                     # Skip frames (for fast-forward, not a ByteTrack param)
                     with ui.row().classes("w-full items-center gap-2 mt-2"):
-                        skip_frames_label = ui.label("Skip Frames: 1 frame").classes("text-xs")
+                        skip_frames_label = ui.label("Skip: every frame").classes("text-xs")
                         skip_frames_slider = ui.slider(min=1, max=30, step=1, value=1).style("width: 100px")
                         skip_frames_slider.tooltip("Process every Nth frame (1 = all frames)")
-                        skip_frames_slider.on("update:model-value", lambda e: skip_frames_label.set_text(f"Skip Frames: {int(e.args)} {'frame' if int(e.args) == 1 else 'frames'}"))
+                        skip_frames_slider.on("update:model-value", lambda e: skip_frames_label.set_text(
+                            "Skip: every frame" if int(e.args) == 1 else f"Skip: every {int(e.args)} frames"
+                        ))
 
                     # GUI refresh rate (display updates, not a ByteTrack param)
                     with ui.row().classes("w-full items-center gap-2 mt-1"):
-                        display_update_label = ui.label("Display Update: every frame").classes("text-xs")
+                        display_update_label = ui.label("Display: every frame").classes("text-xs")
                         display_update_slider = ui.slider(min=1, max=30, step=1, value=1).style("width: 100px")
-                        display_update_slider.tooltip("Update display every Nth frame (1 = smoothest, higher = skip display frames)")
-                        display_update_slider.on("update:model-value", lambda e: display_update_label.set_text(f"Display Update: {int(e.args)} {'frame' if int(e.args) == 1 else 'frames'}"))
+                        display_update_slider.tooltip("Update display every Nth frame (1 = every frame, higher = skip display frames)")
+                        display_update_slider.on("update:model-value", lambda e: display_update_label.set_text(
+                            "Display: every frame" if int(e.args) == 1 else f"Display: every {int(e.args)} frames"
+                        ))
 
             # RIGHT: Controls + Preview (stacked vertically)
             with ui.column().classes("flex-grow gap-3"):
@@ -512,6 +529,12 @@ async def index():
                         video_display = ui.interactive_image('').style(
                             "width: 100%;"
                         )
+
+        # Debug: actual parameters passed to detector/tracker
+        debug_params_card = ui.card().classes("w-full shadow-md p-3 hidden")
+        with debug_params_card:
+            ui.label("Active Parameters").classes("text-xs font-semibold mb-1")
+            debug_params_label = ui.label("").classes("text-xs font-mono text-gray-600").style("white-space: pre-wrap;")
 
         # Results (initially hidden, separate row)
         results_container = ui.card().classes("w-full shadow-md p-3 hidden")
@@ -758,7 +781,9 @@ async def index():
         state["stop_event"] = threading.Event()  # Hard stop
         state["pause_event"] = threading.Event()  # Pause (starts clear = not paused)
         state["skip_frames_event"] = {"skip_amount": 0}  # Skip forward
-        state["current_frame"] = 0
+        # Resume from current slider position (preserved after stop)
+        start_frame = int(time_slider.value) if time_slider.value else 0
+        state["current_frame"] = start_frame
         start_btn.disable()
         pause_btn.text = "Pause"
         pause_btn.props("icon=pause")
@@ -836,6 +861,18 @@ async def index():
                 if hasattr(widget, 'value'):
                     tracker_config[param_name] = widget.value
 
+            # Log and display actual parameters
+            active_params = {
+                "start_frame": start_frame,
+                "confidence": conf_slider.value,
+                "detection_only": detection_only_checkbox.value,
+                "display_interval": display_interval,
+                **tracker_config,
+            }
+            logger.info(f"Tracking params: {active_params}")
+            debug_params_label.text = "  ".join(f"{k}={v}" for k, v in active_params.items())
+            debug_params_card.classes(remove="hidden")
+
             # Initialize tracker with dynamic parameters
             tracker = VideoTracker(
                 model=model,
@@ -850,7 +887,9 @@ async def index():
             )
 
             output_dir = f"/tmp/outputs/{session_id}"
-            results = await tracker.process_video_realtime(str(local_video), output_dir)
+            results = await tracker.process_video_realtime(
+                str(local_video), output_dir, start_frame=start_frame
+            )
 
             # Show results
             status_indicator.text = "Complete!"
