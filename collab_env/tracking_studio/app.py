@@ -94,7 +94,6 @@ async def index():
         "selected_model": None,
         "processing": False,
         "results": None,
-        "uploaded_video": None,
         "uploaded_model": None,  # Uploaded model .pt file
         "stop_event": None,  # Hard stop
         "pause_event": None,  # Pause/resume
@@ -161,8 +160,8 @@ async def index():
                             logger.error(f"Failed to list videos: {error}")
 
                     def enable_load_video_btn(e=None):
-                        """Enable Load Video button when video is selected"""
-                        if video_select.value or state.get("uploaded_video"):
+                        """Enable Load Video button when a GCS video is selected"""
+                        if video_select.value:
                             load_video_btn.enable()
 
                     bucket_select.on("update:model-value", update_folders)
@@ -189,15 +188,14 @@ async def index():
 
                 # Upload widget
                 async def handle_upload(e):
-                    """Handle user video upload"""
+                    """Handle user video upload and auto-load it"""
                     try:
                         upload_path = Path(f"/tmp/uploads/{session_id}")
                         upload_path.mkdir(parents=True, exist_ok=True)
                         uploaded_file = upload_path / e.name
                         uploaded_file.write_bytes(e.content.read())
-                        state["uploaded_video"] = uploaded_file
                         ui.notify(f"Uploaded: {e.name}")
-                        load_video_btn.enable()  # Enable Load Video button
+                        await load_video(local_video=uploaded_file)
                     except Exception as error:
                         logger.error(f"Upload failed: {error}")
                         ui.notify(f"Upload failed: {error}", type="negative")
@@ -252,6 +250,11 @@ async def index():
                                 return
                             try:
                                 rf_list_btn.disable()
+                                rf_version_select.options = {}
+                                rf_version_select.value = None
+                                rf_version_select.disable()
+                                rf_detail_btn.visible = False
+                                _rf_versions_raw.clear()
                                 versions = model_manager.list_roboflow_project_models(project_id)
                                 if versions:
                                     options = {}
@@ -360,7 +363,7 @@ async def index():
                                 enable_load_model_btn()
                         ui.timer(0.1, _restore_rf_version, once=True)
                     elif prefs.get("model_source") == "YOLO":
-                        enable_load_model_btn()
+                        ui.timer(0.1, enable_load_model_btn, once=True)
 
                 # Parameters card
                 params_card = ui.card().classes("w-full shadow-md p-3")
@@ -606,8 +609,13 @@ async def index():
             # Full predictor reset — Ultralytics will create a fresh one on next call
             model.predictor = None
 
-    async def load_video():
-        """Load and prepare video for viewing/tracking"""
+    async def load_video(local_video=None):
+        """Load and prepare video for viewing/tracking.
+
+        Args:
+            local_video: Path to a local video file (e.g. from upload).
+                         If None, downloads the video selected in the GCS dropdowns.
+        """
         from nicegui import context
 
         try:
@@ -617,26 +625,22 @@ async def index():
             # Capture client context before threading
             client = context.client
 
-            # Get video (either download from GCS or use uploaded)
-            if state.get("uploaded_video"):
-                # Use uploaded video
-                local_video = state["uploaded_video"]
-                status_label.text = "Using uploaded video..."
-            elif gcs_browser and bucket_select.value and video_select.value:
-                # Download from GCS
-                status_label.text = "Downloading video..."
-                bucket = bucket_select.value
-                folder = folder_select.value or ""
-                video_name = video_select.value
-                gcs_path = f"{bucket}/{video_name}"
+            if local_video is None:
+                # Download from GCS dropdowns
+                if gcs_browser and bucket_select.value and video_select.value:
+                    status_label.text = "Downloading video..."
+                    bucket = bucket_select.value
+                    folder = folder_select.value or ""
+                    video_name = video_select.value
+                    gcs_path = f"{bucket}/{video_name}"
 
-                local_video_dir = Path(f"/tmp/videos/{session_id}")
-                local_video_dir.mkdir(parents=True, exist_ok=True)
-                local_video = local_video_dir / Path(video_name).name
+                    local_video_dir = Path(f"/tmp/videos/{session_id}")
+                    local_video_dir.mkdir(parents=True, exist_ok=True)
+                    local_video = local_video_dir / Path(video_name).name
 
-                await asyncio.to_thread(gcs_browser.download_video, gcs_path, str(local_video))
-            else:
-                raise ValueError("No video selected. Please select or upload a video.")
+                    await asyncio.to_thread(gcs_browser.download_video, gcs_path, str(local_video))
+                else:
+                    raise ValueError("No video selected. Please select a video from the dropdowns.")
 
             # Ensure browser-compatible H.264 MP4
             if await asyncio.to_thread(needs_conversion, local_video):
@@ -1009,7 +1013,7 @@ async def index():
             params_card.style(remove="opacity: 0.5; pointer-events: none;")
 
     # Wire up buttons to event handlers (after functions are defined)
-    load_video_btn.on_click(load_video)
+    load_video_btn.on_click(lambda: load_video())
     load_model_btn.on_click(load_model)
     start_btn.on_click(start_tracking)
     pause_btn.on_click(lambda: pause_tracking())
