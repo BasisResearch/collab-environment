@@ -17,10 +17,35 @@ import io
 import base64
 from loguru import logger
 
+import json as _json
+
 from .gcs_browser import GCSVideoBrowser
 from .model_manager import ModelManager
 from .video_processor import VideoTracker
 from .video_converter import convert_to_h264, needs_conversion
+
+# Persistent preferences file (last used model/video settings)
+_PREFS_FILE = Path.home() / ".tracking_studio.json"
+
+
+def load_preferences() -> dict:
+    """Load saved preferences from dot file."""
+    try:
+        if _PREFS_FILE.exists():
+            return _json.loads(_PREFS_FILE.read_text())
+    except Exception as e:
+        logger.warning(f"Failed to load preferences: {e}")
+    return {}
+
+
+def save_preferences(prefs: dict):
+    """Save preferences to dot file (merges with existing)."""
+    try:
+        existing = load_preferences()
+        existing.update(prefs)
+        _PREFS_FILE.write_text(_json.dumps(existing, indent=2))
+    except Exception as e:
+        logger.warning(f"Failed to save preferences: {e}")
 
 
 # Load ByteTrack parameter definitions
@@ -59,6 +84,7 @@ model_manager = ModelManager()
 async def index():
     """Main tracking studio page"""
     session_id = str(uuid.uuid4())[:8]
+    prefs = load_preferences()
 
     # State variables (stored in page context)
     import threading
@@ -143,8 +169,23 @@ async def index():
                     folder_select.on("update:model-value", update_video_list)
                     video_select.on("update:model-value", enable_load_video_btn)
 
+                    # Restore last used bucket from preferences
+                    saved_bucket = prefs.get("video_bucket")
+                    if saved_bucket and saved_bucket in buckets:
+                        bucket_select.value = saved_bucket
+
                     if bucket_select.value:
-                        ui.timer(0.1, lambda: update_folders(None), once=True)
+                        async def _restore_gcs_selection():
+                            await update_folders(None)
+                            saved_folder = prefs.get("video_folder", "")
+                            if saved_folder and saved_folder in folder_select.options:
+                                folder_select.value = saved_folder
+                                await update_video_list(None)
+                            saved_video = prefs.get("video_name")
+                            if saved_video and saved_video in video_select.options:
+                                video_select.value = saved_video
+                                load_video_btn.enable()
+                        ui.timer(0.1, _restore_gcs_selection, once=True)
 
                 # Upload widget
                 async def handle_upload(e):
@@ -177,26 +218,27 @@ async def index():
                     model_source = ui.select(
                         label="Source",
                         options=["YOLO", "Roboflow", "Custom"],
-                        value="Roboflow",
+                        value=prefs.get("model_source", "Roboflow"),
                     ).classes("w-full")
 
                     # YOLO model selection
                     yolo_container = ui.column().classes("w-full mt-2")
-                    yolo_container.visible = False
+                    yolo_container.visible = (prefs.get("model_source", "Roboflow") == "YOLO")
                     with yolo_container:
                         yolo_model_input = ui.input(
                             label="Model Name",
                             placeholder="e.g., yolo11n.pt",
-                            value="yolo11n.pt"
+                            value=prefs.get("yolo_model_name", "yolo11n.pt")
                         ).classes("w-full").tooltip("Enter any YOLO model name (will auto-download)")
 
-                    # Roboflow model selection (default visible)
+                    # Roboflow model selection
                     rf_container = ui.column().classes("w-full mt-2 gap-2")
+                    rf_container.visible = (prefs.get("model_source", "Roboflow") == "Roboflow")
                     with rf_container:
                         rf_project_input = ui.input(
                             label="Project ID",
                             placeholder="workspace/project",
-                            value="dima-sdrkv/ratsmerged20260211"
+                            value=prefs.get("rf_project_id", "")
                         ).classes("w-full")
 
                         # Store raw version data for detail dialog
@@ -265,7 +307,7 @@ async def index():
 
                     # Custom model upload
                     custom_container = ui.column().classes("w-full mt-2")
-                    custom_container.visible = False
+                    custom_container.visible = (prefs.get("model_source", "Roboflow") == "Custom")
                     with custom_container:
                         async def handle_model_upload(e):
                             """Handle model .pt file upload"""
@@ -307,6 +349,18 @@ async def index():
                     model_source.on("update:model-value", toggle_model_ui)
                     yolo_model_input.on("update:model-value", enable_load_model_btn)
                     rf_version_select.on("update:model-value", enable_load_model_btn)
+
+                    # Auto-fetch Roboflow versions if saved project exists
+                    if prefs.get("model_source") == "Roboflow" and prefs.get("rf_project_id"):
+                        async def _restore_rf_version():
+                            await list_rf_models()
+                            saved_ver = prefs.get("rf_version")
+                            if saved_ver and saved_ver in (rf_version_select.options or {}):
+                                rf_version_select.value = saved_ver
+                                enable_load_model_btn()
+                        ui.timer(0.1, _restore_rf_version, once=True)
+                    elif prefs.get("model_source") == "YOLO":
+                        enable_load_model_btn()
 
                 # Parameters card
                 params_card = ui.card().classes("w-full shadow-md p-3")
@@ -655,6 +709,14 @@ async def index():
                 status_label.text = "Video loaded ✓"
                 ui.notify("Video loaded successfully", type="positive")
 
+                # Save video selection to preferences
+                video_prefs = {}
+                if gcs_browser and bucket_select.value:
+                    video_prefs["video_bucket"] = bucket_select.value
+                    video_prefs["video_folder"] = folder_select.value or ""
+                    video_prefs["video_name"] = video_select.value or ""
+                save_preferences(video_prefs)
+
                 # Enable Start button if model is also loaded
                 if state["model_loaded"]:
                     start_btn.enable()
@@ -730,6 +792,15 @@ async def index():
 
                 status_label.text = f"Model loaded ✓ ({tracker_type} tracking)"
                 ui.notify("Model loaded successfully", type="positive")
+
+                # Save model selection to preferences
+                model_prefs = {"model_source": model_source.value}
+                if model_source.value == "YOLO":
+                    model_prefs["yolo_model_name"] = yolo_model_input.value
+                elif model_source.value == "Roboflow":
+                    model_prefs["rf_project_id"] = rf_project_input.value
+                    model_prefs["rf_version"] = rf_version_select.value
+                save_preferences(model_prefs)
 
                 # Enable Start button if video is also loaded
                 if state["video_loaded"]:
