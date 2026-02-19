@@ -7,7 +7,7 @@ import pyarrow.parquet as pq
 from loguru import logger
 
 from collab_env.data.file_utils import get_project_root, expand_path
-from collab_env.sim.boids.run_boids_simulator import run_simulator
+from collab_env.sim.boids.run_simulator import run_simulator_main
 
 
 def remove_run_folder(sim_runs_path=None):
@@ -74,7 +74,7 @@ def check_parquet_file(
         assert (
             episode_df["type"].value_counts().get("agent", 0)
             == (num_frames + 1) * num_agents
-        ), f"num agents record = {episode_df['type'].value_counts().get('agent', 0)}"
+        ), f"num agents recorded = {episode_df['type'].value_counts().get('agent', 0)}"
 
         # get all the target rows
         targets_df = episode_df.loc[episode_df["type"] == "env"]
@@ -185,7 +185,7 @@ def check_parquet_file(
 
 
 def sim_check_files(
-    config_file=None,
+    config_file="tests/sim_test_1_config.yaml",
     sim_runs_path=None,
     prefix=None,
     num_episodes=3,
@@ -197,7 +197,7 @@ def sim_check_files(
 ):
     """
     Default parameters test the following scenarios:
-    1. run_boids_simulator successfully runs with command line specified config file.
+    1. run_simulator successfully runs with command line specified config file.
     2. output folder is created.
     3. three episodes of parquet files are created.
     4. three videos are created, one for each episode.
@@ -222,19 +222,16 @@ def sim_check_files(
     --- 082825 3:07PM 
     Do this regardless in case the folder is left over from a previous failed run. 
     """
-    # Clear the sim-runs folder from previous tests -- a little dicey
+    # Clear the sim-runs folder from previous tests -- a little dicey.
     # If this is a remote test, these files shouldn't be here, so don't bother. They
-    # get cleaned up at the end
+    # get cleaned up at the end.
     remove_run_folder(sim_runs_path)
 
     create_run_folder(sim_runs_path)
 
     logger.info(f"\nsim runs path {sim_runs_path}\n")
 
-    if config_file is None:
-        config_file = "tests/sim_test_1_config.yaml"
-
-    # Test to see that the run_boids_simulator runs successfully with test config file
+    # Test to see that the run_simulator runs successfully with test config file
     # result = os.system(f"python {program_path} -cf {config_file}")
     # assert result == 0, f"failed({result}) -- python {program_path} -cf {config_file}"
     """
@@ -243,7 +240,7 @@ def sim_check_files(
     get passed github testing. This needs to be fixed later. 
     """
     # program_path = expand_path(
-    #    "collab_env/sim/boids/run_boids_simulator.py", get_project_root()
+    #    "collab_env/sim/boids/run_simulator.py", get_project_root()
     # )
     # python_executable = sys.executable
     # result = os.system(f"{python_executable} {program_path} -cf {config_file}")
@@ -251,7 +248,7 @@ def sim_check_files(
     #    f"failed({result}) -- {python_executable} {program_path} -cf {config_file}"
     # )
 
-    run_simulator(expand_path(config_file, get_project_root()))
+    run_simulator_main(expand_path(config_file, get_project_root()))
 
     # Test to see that output folder was created. There should be exactly 1 of these.
     if prefix is None:
