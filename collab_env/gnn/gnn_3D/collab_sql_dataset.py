@@ -678,6 +678,9 @@ def train_sql_dataset(
     seed: Optional[int] = None,
     include_second_layer: bool = False,
     mlp_layers: Optional[List[int]] = None,
+    hidden_dim: int = 128,
+    heads: int = 1,
+    dropout_p: float = 0.0,
 ) -> dict:
     """
     Train a GNN on a CollabSQLDataset using graph-level splitting.
@@ -696,6 +699,9 @@ def train_sql_dataset(
         seed: Random seed for reproducibility
         include_second_layer: Add convolutional layer after attention
         mlp_layers: Optional MLP layer dimensions
+        hidden_dim: Hidden layer dimension (default 128)
+        heads: Number of attention heads (default 1)
+        dropout_p: Dropout probability (default 0.0)
 
     Returns:
         Dictionary with training results (losses, final predictions, model)
@@ -733,9 +739,12 @@ def train_sql_dataset(
         in_node_dim=dataset.input_node_dim,
         edge_dim=dataset.edge_attr_dim,
         output_dim=dataset.label_dim,
+        hidden_dim=hidden_dim,
+        heads=heads,
         self_loops=True,
         fill_value=torch.zeros(dataset.edge_attr_dim).float(),
         include_convolutional_layer=include_second_layer,
+        dropout_p=dropout_p,
         mlp=mlp,
     )
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -750,22 +759,22 @@ def train_sql_dataset(
     val_loss_list = []
 
     for epoch in range(num_epochs):
-        print(f"\nEpoch {epoch + 1}/{num_epochs}")
-        print("-" * 40)
+        # print(f"\nEpoch {epoch + 1}/{num_epochs}")
+        # print("-" * 40)
 
         # Validation first
         val_loss, val_predictions, val_attention, val_idx_list = train_epoch(
             model=model, loader=val_loader, optimizer=optimizer, train=False
         )
         val_loss_list.append(val_loss)
-        print(f"Val loss: {val_loss:.6f}")
+        print(f"Epoch {epoch} Val loss: {val_loss:.6f}")
 
         # Training
         train_loss, train_predictions, train_attention, train_idx_list = train_epoch(
             model=model, loader=train_loader, optimizer=optimizer, train=True
         )
         train_loss_list.append(train_loss)
-        print(f"Train loss: {train_loss:.6f}")
+        print(f"Epoch {epoch} Train loss: {train_loss:.6f}")
 
         # Save model checkpoint
         model_path = output_path / f"model_epoch_{epoch}.pt"
@@ -810,6 +819,235 @@ def train_sql_dataset(
         "trained_model": model,
         "dataset_metadata": dataset.metadata,
         "output_path": output_path,
+    }
+
+
+# =============================================================================
+# Rollout Functions
+# =============================================================================
+
+
+def rollout_episode(
+    model: torch.nn.Module,
+    episode_df: pd.DataFrame,
+    schema: SchemaConfig,
+    time_window_length: int,
+    num_rollout_steps: int,
+    start_time: Optional[int] = None,
+) -> pd.DataFrame:
+    """
+    Run autoregressive rollout for an episode.
+
+    The rollout has two phases:
+    1. Warmup: First time_window_length frames use ground truth positions
+    2. Prediction: After warmup, GNN predicts next positions autoregressively
+
+    Args:
+        model: Trained GNN model
+        episode_df: DataFrame with episode observations (ground truth)
+        schema: Schema configuration for column mapping
+        time_window_length: Number of frames in input window
+        num_rollout_steps: How many prediction steps after warmup
+        start_time: Starting timestep (default: first timestep in episode_df)
+
+    Returns:
+        DataFrame with predicted positions (time, agent_id, x, y, z, ...)
+        Includes both warmup frames (ground truth) and predicted frames.
+    """
+    model.eval()
+
+    # Get agent and timestep info
+    agent_ids = sorted(episode_df[schema.agent_id_column].unique().tolist())
+    num_agents = len(agent_ids)
+    timesteps = sorted(episode_df[schema.time_column].unique().tolist())
+
+    if start_time is None:
+        start_time = timesteps[0]
+
+    # Collect predictions (including warmup frames)
+    predictions = []
+
+    # Current observation buffer (list of position arrays for rolling window)
+    obs_buffer: List[np.ndarray] = []
+
+    # Total frames = warmup + rollout steps
+    total_frames = time_window_length + num_rollout_steps
+
+    for frame_idx in tqdm(range(total_frames), desc="Rollout"):
+        current_time = start_time + frame_idx
+
+        if frame_idx < time_window_length:
+            # Warmup phase: use ground truth
+            positions = _get_positions_at_time(
+                episode_df, schema, agent_ids, current_time
+            )
+        else:
+            # Prediction phase: use GNN
+            # Build graph from observation buffer
+            graph = _build_graph_from_buffer(
+                obs_buffer, agent_ids, schema, time_window_length
+            )
+
+            with torch.no_grad():
+                prediction, _ = model(graph)
+
+                # Rescale if scale factor was used during training
+                if schema.scale_factor is not None:
+                    positions = prediction.detach().cpu().numpy() * schema.scale_factor
+                else:
+                    positions = prediction.detach().cpu().numpy()
+
+        # Record positions
+        for agent_idx, agent_id in enumerate(agent_ids):
+            row = {
+                schema.time_column: current_time,
+                schema.agent_id_column: agent_id,
+            }
+            for col_idx, col in enumerate(schema.position_columns):
+                row[col] = positions[agent_idx, col_idx]
+            predictions.append(row)
+
+        # Update observation buffer
+        obs_buffer.append(positions)
+        if len(obs_buffer) > time_window_length:
+            obs_buffer.pop(0)
+
+    return pd.DataFrame(predictions)
+
+
+def _get_positions_at_time(
+    df: pd.DataFrame,
+    schema: SchemaConfig,
+    agent_ids: List[int],
+    time_step: int,
+) -> np.ndarray:
+    """Get positions for all agents at a specific timestep."""
+    df_t = df[df[schema.time_column] == time_step].sort_values(
+        schema.agent_id_column
+    )
+    return df_t[schema.position_columns].to_numpy()
+
+
+def _build_graph_from_buffer(
+    obs_buffer: List[np.ndarray],
+    agent_ids: List[int],
+    schema: SchemaConfig,
+    time_window_length: int,
+) -> Data:
+    """
+    Build PyG Data object from observation buffer for inference.
+
+    Args:
+        obs_buffer: List of position arrays, one per timestep in window
+        agent_ids: Sorted list of agent IDs
+        schema: Schema configuration
+        time_window_length: Expected window length
+
+    Returns:
+        PyG Data object ready for model inference
+    """
+    num_agents = len(agent_ids)
+
+    # Build DataFrame from buffer for node feature computation
+    rows = []
+    for t_idx, positions in enumerate(obs_buffer):
+        for agent_idx, agent_id in enumerate(agent_ids):
+            row = {
+                schema.time_column: t_idx,
+                schema.agent_id_column: agent_id,
+            }
+            for col_idx, col in enumerate(schema.position_columns):
+                row[col] = positions[agent_idx, col_idx]
+            # Node features - use positions if they match schema
+            for col in schema.node_feature_columns:
+                if col in schema.position_columns:
+                    col_idx = schema.position_columns.index(col)
+                    row[col] = positions[agent_idx, col_idx]
+            rows.append(row)
+
+    obs_df = pd.DataFrame(rows)
+    timesteps = list(range(len(obs_buffer)))
+
+    # Build node features
+    node_features = build_node_features(obs_df, schema, agent_ids, timesteps)
+
+    # Get positions at last timestep for edge attributes
+    last_positions = obs_buffer[-1]
+    positions_tensor = torch.from_numpy(last_positions).float()
+
+    # Compute relative positions
+    relative_positions = positions_tensor.unsqueeze(0) - positions_tensor.unsqueeze(1)
+
+    # Build graph edges
+    edge_index, edge_attr = build_complete_graph_edges(num_agents, relative_positions)
+
+    # Apply normalization if scale factor is set
+    if schema.scale_factor is not None:
+        scale = schema.scale_factor
+        node_features = node_features / scale
+        edge_attr = edge_attr / scale
+
+    return Data(
+        x=node_features,
+        edge_index=edge_index,
+        edge_attr=edge_attr,
+    )
+
+
+def compare_predictions_with_ground_truth(
+    predictions_df: pd.DataFrame,
+    ground_truth_df: pd.DataFrame,
+    schema: SchemaConfig,
+) -> dict:
+    """
+    Compare rollout predictions with ground truth.
+
+    Args:
+        predictions_df: DataFrame with predicted positions
+        ground_truth_df: DataFrame with ground truth positions
+        schema: Schema configuration for column mapping
+
+    Returns:
+        Dictionary with:
+        - mse_per_timestep: dict mapping timestep to MSE
+        - overall_mse: float, average MSE across all predictions
+        - per_agent_mse: dict mapping agent_id to MSE
+        - merged_df: DataFrame with both predicted and true values
+    """
+    time_col = schema.time_column
+    agent_col = schema.agent_id_column
+    pos_cols = schema.position_columns
+
+    # Merge on (time, agent_id)
+    merged = predictions_df.merge(
+        ground_truth_df[[time_col, agent_col] + pos_cols],
+        on=[time_col, agent_col],
+        suffixes=("_pred", "_true"),
+    )
+
+    # Compute squared errors for each position column
+    squared_errors = []
+    for col in pos_cols:
+        error = (merged[f"{col}_pred"] - merged[f"{col}_true"]) ** 2
+        squared_errors.append(error)
+        merged[f"{col}_error"] = merged[f"{col}_pred"] - merged[f"{col}_true"]
+
+    merged["squared_error"] = sum(squared_errors)
+
+    # MSE per timestep
+    mse_per_timestep = merged.groupby(time_col)["squared_error"].mean().to_dict()
+
+    # MSE per agent
+    per_agent_mse = merged.groupby(agent_col)["squared_error"].mean().to_dict()
+
+    # Overall MSE
+    overall_mse = float(merged["squared_error"].mean())
+
+    return {
+        "mse_per_timestep": mse_per_timestep,
+        "overall_mse": overall_mse,
+        "per_agent_mse": per_agent_mse,
+        "merged_df": merged,
     }
 
 
