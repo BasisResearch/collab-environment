@@ -16,7 +16,7 @@ shopt -s nullglob
 for f in "$DIR"/*.csq; do
   out="${f%.csq}.avi"
   echo "Converting: $f -> $out"
-  python -m collab_env.tracking.csq convert "$f" "$out" --max-length 99999
+  python -m collab_env.tracking.csq convert "$f" "$out"
 done
 
 echo "Done."

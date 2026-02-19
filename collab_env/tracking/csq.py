@@ -295,7 +295,7 @@ def plot_thermal(frame):
     plt.show()
 
 
-def csq_to_avi(f_name_csq, vmin, vmax, max_mins=10, output_path=None):
+def csq_to_avi(f_name_csq, vmin, vmax, max_mins=None, output_path=None):
     if vmax <= vmin:
         raise ValueError("vmax must be greater than vmin")
 
@@ -310,11 +310,11 @@ def csq_to_avi(f_name_csq, vmin, vmax, max_mins=10, output_path=None):
 
         f_start = 1
         f_end = n_frames
-        if n_frames > 30 * 60 * max_mins:
-            f_end = 30 * 60 * max_mins
+        if max_mins is not None and n_frames > 30 * 60 * max_mins:
+            f_end = int(30 * 60 * max_mins)
 
         if output_path is None:
-            suffix = f"_first{max_mins}mins" if f_end != n_frames else ""
+            suffix = f"_first{max_mins}mins" if max_mins is not None and f_end != n_frames else ""
             output_path = f"{f_name_csq[:-4]}{suffix}_{vmin}_{vmax}.mp4"
         else:
             base_dir = os.path.dirname(output_path)
@@ -385,7 +385,10 @@ def cli():
     help="Max temperature for normalization. Auto-detected if omitted.",
 )
 @click.option(
-    "--max-length", type=float, default=10, help="Maximum video length in minutes."
+    "--max-length",
+    type=float,
+    default=None,
+    help="Maximum video length in minutes. If omitted, convert all frames.",
 )
 @click.option(
     "--num-samples",
