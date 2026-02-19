@@ -11,12 +11,12 @@ import exiftool
 from numpy import exp, sqrt, log
 from libjpeg import decode
 from tqdm import tqdm
+
 MAGIC_SEQ = re.compile(b"\x46\x46\x46\x00\x52\x54")
 
 
 class CSQReader:
     def __init__(self, filename, blocksize=1000000):
-
         self.reader = open(filename, "rb")
         self.blocksize = blocksize
         self.leftover = b""
@@ -28,7 +28,6 @@ class CSQReader:
         self.et.run()
 
     def _populate_list(self):
-
         self.imgs = []
         self.index = 0
 
@@ -55,7 +54,6 @@ class CSQReader:
         self.leftover = x[end:]
 
     def next_frame(self):
-
         if self.index >= len(self.imgs):
             self._populate_list()
 
@@ -71,7 +69,6 @@ class CSQReader:
         return thermal_im
 
     def skip_frame(self):
-
         if self.index >= len(self.imgs):
             self._populate_list()
 
@@ -82,7 +79,6 @@ class CSQReader:
         return True
 
     def count_frames(self):
-
         self.nframes = 0
         while self.skip_frame():
             self.nframes += 1
@@ -91,8 +87,7 @@ class CSQReader:
         return self.nframes
 
     def frame_at(self, pos: int):
-
-        if self.nframes == None:
+        if self.nframes is None:
             self.count_frames()
 
         if pos > self.nframes:
@@ -108,7 +103,6 @@ class CSQReader:
         return self.next_frame()
 
     def frames(self):
-
         for im in self.imgs:
             self.index += 1
             if self.index >= len(self.imgs):
@@ -121,7 +115,6 @@ class CSQReader:
             yield thermal_im
 
     def get_metadata(self):
-
         if self.index >= len(self.imgs):
             self._populate_list()
 
@@ -142,7 +135,6 @@ class CSQReader:
 
 
 def extract_data(bin, etHelper):  # binary to raw image
-
     with tempfile.NamedTemporaryFile() as fp:
         fp.write(bin)
         fp.flush()
@@ -157,7 +149,6 @@ def extract_data(bin, etHelper):  # binary to raw image
 
 
 def raw2temp(raw, metadata):
-
     E = metadata["FLIR:Emissivity"]
     OD = metadata["FLIR:ObjectDistance"]
     RTemp = metadata["FLIR:ReflectedApparentTemperature"]
@@ -221,7 +212,9 @@ def raw2temp(raw, metadata):
 
     return temp_C
 
+
 # functions to convert csq to avi
+
 
 def process_frame(frame, vmin, vmax):
     # Clip and normalize frame data
@@ -250,7 +243,9 @@ def _sample_frames(filename, num_samples=10):
             return []
 
         sample_size = min(num_samples, n_frames)
-        sample_indices = sorted(np.random.choice(range(1, n_frames + 1), size=sample_size, replace=False))
+        sample_indices = sorted(
+            np.random.choice(range(1, n_frames + 1), size=sample_size, replace=False)
+        )
         frames = []
         for idx in sample_indices:
             frame = reader.frame_at(int(idx))
@@ -266,15 +261,17 @@ def detect_vmin_vmax(filename, num_samples=10):
     return _compute_vmin_vmax(_sample_frames(filename, num_samples))
 
 
-def choose_vmin_vmax(date_folder, thermal_folder_prefix = "FLIR"):
+def choose_vmin_vmax(date_folder, thermal_folder_prefix="FLIR"):
     # within folders in date_folder, find folders called FLIR*
     # sample 1 random frame per csq file, then compute percentiles across all
     frame_collection = []
     for folder in os.listdir(date_folder):
         if folder.startswith(thermal_folder_prefix):
             for f_name in os.listdir(os.path.join(date_folder, folder)):
-                if f_name.endswith('.csq'):
-                    frames = _sample_frames(os.path.join(date_folder, folder, f_name), num_samples=1)
+                if f_name.endswith(".csq"):
+                    frames = _sample_frames(
+                        os.path.join(date_folder, folder, f_name), num_samples=1
+                    )
                     frame_collection.extend(frames)
     return _compute_vmin_vmax(frame_collection)
 
@@ -301,7 +298,7 @@ def csq_to_avi(f_name_csq, vmin, vmax, max_mins=10, output_path=None):
     if vmax <= vmin:
         raise ValueError("vmax must be greater than vmin")
 
-    print(f'Working on {f_name_csq}')
+    print(f"Working on {f_name_csq}")
 
     reader = CSQReader(f_name_csq)
     try:
@@ -332,7 +329,7 @@ def csq_to_avi(f_name_csq, vmin, vmax, max_mins=10, output_path=None):
         Fs = 30
         flipped_shape = (frame.shape[1], frame.shape[0])
 
-        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         out = cv2.VideoWriter(output_path, fourcc, Fs, flipped_shape, 0)
 
         if not out.isOpened():
@@ -355,9 +352,10 @@ def csq_to_avi(f_name_csq, vmin, vmax, max_mins=10, output_path=None):
         out.release()
 
         end_time = time.time()
-        print(f'Converted {output_path} in {end_time - start_time} seconds')
+        print(f"Converted {output_path} in {end_time - start_time} seconds")
     finally:
         reader.close()
+
 
 @click.group()
 def cli():
@@ -367,10 +365,27 @@ def cli():
 @cli.command()
 @click.argument("file_name")
 @click.argument("output_file", required=False, default=None)
-@click.option("--vmin", type=float, default=None, help="Min temperature for normalization. Auto-detected if omitted.")
-@click.option("--vmax", type=float, default=None, help="Max temperature for normalization. Auto-detected if omitted.")
-@click.option("--max-length", type=float, default=10, help="Maximum video length in minutes.")
-@click.option("--num-samples", type=int, default=10, help="Number of random frames to sample for auto-detection.")
+@click.option(
+    "--vmin",
+    type=float,
+    default=None,
+    help="Min temperature for normalization. Auto-detected if omitted.",
+)
+@click.option(
+    "--vmax",
+    type=float,
+    default=None,
+    help="Max temperature for normalization. Auto-detected if omitted.",
+)
+@click.option(
+    "--max-length", type=float, default=10, help="Maximum video length in minutes."
+)
+@click.option(
+    "--num-samples",
+    type=int,
+    default=10,
+    help="Number of random frames to sample for auto-detection.",
+)
 def convert(file_name, output_file, vmin, vmax, max_length, num_samples):
     """Convert a CSQ file to an MP4 video."""
 
@@ -379,7 +394,9 @@ def convert(file_name, output_file, vmin, vmax, max_length, num_samples):
             click.echo(f"Auto-detecting vmin/vmax from {num_samples} random frames...")
             auto_vmin, auto_vmax = detect_vmin_vmax(file_name, num_samples)
             if auto_vmin is None or auto_vmax is None:
-                raise click.ClickException("Could not auto-detect vmin/vmax (no frames found).")
+                raise click.ClickException(
+                    "Could not auto-detect vmin/vmax (no frames found)."
+                )
             vmin = vmin if vmin is not None else auto_vmin
             vmax = vmax if vmax is not None else auto_vmax
             click.echo(f"Using vmin={vmin}, vmax={vmax}")
@@ -393,7 +410,9 @@ def convert(file_name, output_file, vmin, vmax, max_length, num_samples):
 
 @cli.command()
 @click.argument("file_name")
-@click.option("--num-samples", type=int, default=10, help="Number of random frames to sample.")
+@click.option(
+    "--num-samples", type=int, default=10, help="Number of random frames to sample."
+)
 def detect(file_name, num_samples):
     """Auto-detect vmin/vmax for a CSQ file by sampling random frames."""
 
