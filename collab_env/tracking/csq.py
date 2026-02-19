@@ -231,31 +231,52 @@ def process_frame(frame, vmin, vmax):
     return mat
 
 
+def _compute_vmin_vmax(frame_collection):
+    """Compute vmin/vmax from a list of flattened frame arrays using percentiles."""
+    if len(frame_collection) == 0:
+        return None, None
+    frame_collection = np.concatenate(frame_collection)
+    vmin = np.max([-5, np.round(np.percentile(frame_collection, 0.1))])
+    vmax = np.min([37, np.round(np.percentile(frame_collection, 99.999))])
+    return vmin, vmax
+
+
+def _sample_frames(filename, num_samples=10):
+    """Sample random frames from a single CSQ file, returning flattened arrays."""
+    reader = CSQReader(filename)
+    try:
+        n_frames = reader.count_frames()
+        if n_frames == 0:
+            return []
+
+        sample_size = min(num_samples, n_frames)
+        sample_indices = sorted(np.random.choice(range(1, n_frames + 1), size=sample_size, replace=False))
+        frames = []
+        for idx in sample_indices:
+            frame = reader.frame_at(int(idx))
+            if frame is not None:
+                frames.append(frame.flatten())
+        return frames
+    finally:
+        reader.close()
+
+
+def detect_vmin_vmax(filename, num_samples=10):
+    """Detect vmin/vmax for a single CSQ file by sampling random frames."""
+    return _compute_vmin_vmax(_sample_frames(filename, num_samples))
+
+
 def choose_vmin_vmax(date_folder, thermal_folder_prefix = "FLIR"):
     # within folders in date_folder, find folders called FLIR*
+    # sample 1 random frame per csq file, then compute percentiles across all
     frame_collection = []
     for folder in os.listdir(date_folder):
         if folder.startswith(thermal_folder_prefix):
-            # iterate over csq files in folder
             for f_name in os.listdir(os.path.join(date_folder, folder)):
                 if f_name.endswith('.csq'):
-                    # set up reader
-                    reader = CSQReader(os.path.join(date_folder, folder, f_name))
-                    # reader._populate_list()
-                    frame = reader.next_frame()
-                    # collect first frame of each video
-                    if frame is not None: # some videos are empty
-                        frame_collection.append(frame.flatten())
-    if len(frame_collection) == 0:
-        vmin = None
-        vmax = None
-    else: 
-        # turn frame collection into 1D vector
-        frame_collection = np.array(frame_collection).flatten()
-        # min is 1st prctile, max is 99th prctile
-        vmin = np.max([-5, np.round(np.percentile(frame_collection, .1))]) # was -15
-        vmax = np.min([37, np.round(np.percentile(frame_collection, 99.999))])
-    return vmin, vmax
+                    frames = _sample_frames(os.path.join(date_folder, folder, f_name), num_samples=1)
+                    frame_collection.extend(frames)
+    return _compute_vmin_vmax(frame_collection)
 
 
 def plot_thermal(frame):
@@ -296,7 +317,7 @@ def csq_to_avi(f_name_csq, vmin, vmax, max_mins=10, output_path=None):
 
         if output_path is None:
             suffix = f"_first{max_mins}mins" if f_end != n_frames else ""
-            output_path = f"{f_name_csq[:-4]}{suffix}_{vmin}_{vmax}.avi"
+            output_path = f"{f_name_csq[:-4]}{suffix}_{vmin}_{vmax}.mp4"
         else:
             base_dir = os.path.dirname(output_path)
             if base_dir:
@@ -311,7 +332,7 @@ def csq_to_avi(f_name_csq, vmin, vmax, max_mins=10, output_path=None):
         Fs = 30
         flipped_shape = (frame.shape[1], frame.shape[0])
 
-        fourcc = cv2.VideoWriter_fourcc(*'mjpg')
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         out = cv2.VideoWriter(output_path, fourcc, Fs, flipped_shape, 0)
 
         if not out.isOpened():
@@ -345,17 +366,44 @@ def cli():
 
 @cli.command()
 @click.argument("file_name")
-@click.argument("vmin", type=float)
-@click.argument("vmax", type=float)
-@click.argument("max_length", type=float)
-@click.argument("output_file")
-def convert(file_name, vmin, vmax, max_length, output_file):
-    """Convert a CSQ file to an AVI video."""
+@click.argument("output_file", required=False, default=None)
+@click.option("--vmin", type=float, default=None, help="Min temperature for normalization. Auto-detected if omitted.")
+@click.option("--vmax", type=float, default=None, help="Max temperature for normalization. Auto-detected if omitted.")
+@click.option("--max-length", type=float, default=10, help="Maximum video length in minutes.")
+@click.option("--num-samples", type=int, default=10, help="Number of random frames to sample for auto-detection.")
+def convert(file_name, output_file, vmin, vmax, max_length, num_samples):
+    """Convert a CSQ file to an MP4 video."""
 
     try:
+        if vmin is None or vmax is None:
+            click.echo(f"Auto-detecting vmin/vmax from {num_samples} random frames...")
+            auto_vmin, auto_vmax = detect_vmin_vmax(file_name, num_samples)
+            if auto_vmin is None or auto_vmax is None:
+                raise click.ClickException("Could not auto-detect vmin/vmax (no frames found).")
+            vmin = vmin if vmin is not None else auto_vmin
+            vmax = vmax if vmax is not None else auto_vmax
+            click.echo(f"Using vmin={vmin}, vmax={vmax}")
+
         csq_to_avi(file_name, vmin, vmax, max_length, output_file)
+    except click.ClickException:
+        raise
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
+
+
+@cli.command()
+@click.argument("file_name")
+@click.option("--num-samples", type=int, default=10, help="Number of random frames to sample.")
+def detect(file_name, num_samples):
+    """Auto-detect vmin/vmax for a CSQ file by sampling random frames."""
+
+    click.echo(f"Sampling {num_samples} random frames from {file_name}...")
+    vmin, vmax = detect_vmin_vmax(file_name, num_samples)
+    if vmin is None or vmax is None:
+        raise click.ClickException("No frames found in file.")
+
+    click.echo(f"vmin={vmin}")
+    click.echo(f"vmax={vmax}")
 
 
 @cli.command()
