@@ -378,7 +378,7 @@ def cli():
     help="Max temperature for normalization. Auto-detected if omitted.",
 )
 @click.option(
-    "--max-length", type=float, default=10, help="Maximum video length in minutes."
+    "--max-length", type=int, default=10, help="Maximum video length in minutes."
 )
 @click.option(
     "--num-samples",
