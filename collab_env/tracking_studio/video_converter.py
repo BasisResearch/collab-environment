@@ -42,7 +42,9 @@ def needs_conversion(video_path: Path) -> bool:
         # H.264 in non-MP4 container (e.g. .mov) may not play in all browsers
         ext = Path(video_path).suffix.lower()
         if ext not in (".mp4", ".m4v"):
-            logger.info(f"H.264 in {ext} container — will remux to .mp4 for browser compatibility")
+            logger.info(
+                f"H.264 in {ext} container — will remux to .mp4 for browser compatibility"
+            )
             return True
         return False
 
@@ -55,7 +57,9 @@ def needs_conversion(video_path: Path) -> bool:
         raise
 
 
-def convert_to_h264(input_path: Path, output_path: Path, remux_only: bool = False) -> Path:
+def convert_to_h264(
+    input_path: Path, output_path: Path, remux_only: bool = False
+) -> Path:
     """
     Convert video to H.264 format using ffmpeg.
 
@@ -72,9 +76,12 @@ def convert_to_h264(input_path: Path, output_path: Path, remux_only: bool = Fals
             logger.info(f"Remuxing {input_path} to MP4 container (no re-encoding)")
             cmd = [
                 "ffmpeg",
-                "-i", str(input_path),
-                "-c", "copy",  # Copy all streams without re-encoding
-                "-movflags", "+faststart",
+                "-i",
+                str(input_path),
+                "-c",
+                "copy",  # Copy all streams without re-encoding
+                "-movflags",
+                "+faststart",
                 "-y",
                 str(output_path),
             ]
@@ -82,13 +89,20 @@ def convert_to_h264(input_path: Path, output_path: Path, remux_only: bool = Fals
             logger.info(f"Converting {input_path} to H.264 format")
             cmd = [
                 "ffmpeg",
-                "-i", str(input_path),
-                "-c:v", "libx264",
-                "-preset", "fast",
-                "-crf", "23",
-                "-c:a", "aac",
-                "-b:a", "128k",
-                "-movflags", "+faststart",
+                "-i",
+                str(input_path),
+                "-c:v",
+                "libx264",
+                "-preset",
+                "fast",
+                "-crf",
+                "23",
+                "-c:a",
+                "aac",
+                "-b:a",
+                "128k",
+                "-movflags",
+                "+faststart",
                 "-y",
                 str(output_path),
             ]

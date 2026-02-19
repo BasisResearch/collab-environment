@@ -135,6 +135,7 @@ def overlay_tracks_on_video(
 
     # Get frame size
     sample_frame = cv2.imread(str(frame_paths[0]))
+    assert sample_frame is not None, f"Failed to read frame: {frame_paths[0]}"
     h, w = sample_frame.shape[:2]
     writer = cv2.VideoWriter(
         str(output_video),
@@ -146,6 +147,8 @@ def overlay_tracks_on_video(
     for frame_path in frame_paths:
         frame_idx = int(frame_path.stem.split("_")[-1])
         frame = cv2.imread(str(frame_path))
+        if frame is None:
+            continue
 
         frame_tracks = df[df["frame"] == frame_idx]
         for _, row in frame_tracks.iterrows():

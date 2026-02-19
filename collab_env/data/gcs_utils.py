@@ -33,6 +33,7 @@ class GCSClient:
                 credentials_path = default_path
 
         self.project_id = project_id
+        self.credentials_path: Union[str, Path, None]
 
         if credentials_path and os.path.exists(str(credentials_path)):
             logger.info(f"Using service account credentials from {credentials_path}")

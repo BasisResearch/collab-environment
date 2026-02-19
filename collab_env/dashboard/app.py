@@ -310,9 +310,7 @@ class DataDashboard(param.Parameterized):
 
         except Exception as e:
             logger.error(f"Error refreshing data browser: {e}")
-            self.status_pane.object = (
-                f"<p style='color:red'>Error refreshing: {e}</p>"
-            )
+            self.status_pane.object = f"<p style='color:red'>Error refreshing: {e}</p>"
 
     def _on_session_change(self, event):
         """Handle session selection change."""
@@ -2153,7 +2151,9 @@ class DataDashboard(param.Parameterized):
         cache_controls = pn.Column(self.cache_info_pane, self.clear_cache_button)
 
         nav_panel = pn.Column(
-            pn.Row("## Data Browser", pn.Spacer(width=100), self.refresh_browser_button),
+            pn.Row(
+                "## Data Browser", pn.Spacer(width=100), self.refresh_browser_button
+            ),
             self.session_select,
             self.bucket_type_toggle,
             self.file_tree,

@@ -4,7 +4,6 @@ GCS Video Browser Component
 Provides interface for browsing and downloading videos from Google Cloud Storage.
 """
 
-from pathlib import Path
 from typing import List, Dict
 from loguru import logger
 
@@ -72,7 +71,7 @@ class GCSVideoBrowser:
                 if prefix:
                     if not rel_path.startswith(prefix):
                         continue
-                    rel_path = rel_path[len(prefix):]
+                    rel_path = rel_path[len(prefix) :]
 
                 # Get first directory component after prefix
                 if "/" in rel_path:
@@ -81,7 +80,9 @@ class GCSVideoBrowser:
                         unique_folders.add(folder)
 
             folder_list = sorted(list(unique_folders))
-            logger.info(f"Found {len(folder_list)} folder prefixes in {bucket}/{prefix}")
+            logger.info(
+                f"Found {len(folder_list)} folder prefixes in {bucket}/{prefix}"
+            )
             return folder_list
 
         except Exception as e:
@@ -109,7 +110,9 @@ class GCSVideoBrowser:
             all_files = []
 
             for ext in video_extensions:
-                pattern = f"{bucket}/{prefix}**/{ext}" if prefix else f"{bucket}/**/{ext}"
+                pattern = (
+                    f"{bucket}/{prefix}**/{ext}" if prefix else f"{bucket}/**/{ext}"
+                )
                 files = self.gcs.glob(pattern)
                 all_files.extend(files)
 

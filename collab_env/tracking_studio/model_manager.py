@@ -6,7 +6,7 @@ Handles loading and managing detection models (YOLO and Roboflow).
 
 import os
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 from loguru import logger
 
 from ultralytics import YOLO
@@ -15,7 +15,7 @@ from ultralytics import YOLO
 class ModelManager:
     """Manager for detection models (YOLO and Roboflow)"""
 
-    def __init__(self, roboflow_api_key: str = None):
+    def __init__(self, roboflow_api_key: Optional[str] = None):
         """
         Initialize model manager.
 
@@ -105,7 +105,7 @@ class ModelManager:
 
         Returns properly formatted model ID.
         """
-        parts = model_id.split('/')
+        parts = model_id.split("/")
 
         if len(parts) == 2:
             # project/version format
@@ -133,7 +133,11 @@ class ModelManager:
             Loaded Roboflow model or YOLO model from local file
         """
         # Check if model_id is a local file path
-        if model_id.startswith('/') or model_id.startswith('~') or model_id.endswith('.pt'):
+        if (
+            model_id.startswith("/")
+            or model_id.startswith("~")
+            or model_id.endswith(".pt")
+        ):
             logger.info(f"Loading Roboflow model from local file: {model_id}")
             model_path = Path(model_id).expanduser()
 
@@ -142,7 +146,9 @@ class ModelManager:
 
             logger.info(f"Loading YOLO model from: {model_path}")
             model = YOLO(str(model_path))
-            logger.info(f"Successfully loaded Roboflow model from local file: {model_id}")
+            logger.info(
+                f"Successfully loaded Roboflow model from local file: {model_id}"
+            )
             return model
 
         if not self.roboflow_api_key:
@@ -156,36 +162,52 @@ class ModelManager:
         # Try downloading .pt file first (for YOLO native tracking)
         # This provides better performance and supports all ByteTrack parameters
         try:
-            logger.info(f"Downloading Roboflow model weights for YOLO native tracking: {model_id}")
+            logger.info(
+                f"Downloading Roboflow model weights for YOLO native tracking: {model_id}"
+            )
             model = self._load_roboflow_with_pipeline(model_id)
-            logger.info(f"Successfully loaded Roboflow model with native tracking: {model_id}")
+            logger.info(
+                f"Successfully loaded Roboflow model with native tracking: {model_id}"
+            )
             return model
 
         except Exception as download_error:
             # Fallback to get_model() (inference API) if download fails
             logger.warning(f"Download failed: {download_error}")
-            logger.info(f"Attempting fallback: loading with inference API (Supervision tracking)")
+            logger.info(
+                "Attempting fallback: loading with inference API (Supervision tracking)"
+            )
 
             try:
                 from inference import get_model
 
                 # Extract project/version from workspace/project/version if needed
-                parts = model_id.split('/')
+                parts = model_id.split("/")
                 if len(parts) == 3:
                     # workspace/project/version -> project/version
                     project_version = f"{parts[1]}/{parts[2]}"
-                    logger.info(f"Trying to load Roboflow model with get_model(): {project_version}")
-                    model = get_model(model_id=project_version, api_key=self.roboflow_api_key)
+                    logger.info(
+                        f"Trying to load Roboflow model with get_model(): {project_version}"
+                    )
+                    model = get_model(
+                        model_id=project_version, api_key=self.roboflow_api_key
+                    )
                 else:
                     # Already project/version format
-                    logger.info(f"Trying to load Roboflow model with get_model(): {model_id}")
+                    logger.info(
+                        f"Trying to load Roboflow model with get_model(): {model_id}"
+                    )
                     model = get_model(model_id=model_id, api_key=self.roboflow_api_key)
 
-                logger.info(f"Successfully loaded Roboflow model via inference API: {model_id}")
+                logger.info(
+                    f"Successfully loaded Roboflow model via inference API: {model_id}"
+                )
                 return model
 
             except ImportError:
-                logger.error("inference library not installed. Install with: pip install inference")
+                logger.error(
+                    "inference library not installed. Install with: pip install inference"
+                )
                 raise
             except Exception as inference_error:
                 # Both methods failed
@@ -212,10 +234,12 @@ class ModelManager:
         """
         import requests
 
-        logger.info(f"Downloading Roboflow model weights for local inference: {model_id}")
+        logger.info(
+            f"Downloading Roboflow model weights for local inference: {model_id}"
+        )
 
         # Parse model ID to get workspace/project/version
-        parts = model_id.split('/')
+        parts = model_id.split("/")
         if len(parts) == 2:
             # project/version format - need workspace
             raise ValueError(
@@ -245,38 +269,42 @@ class ModelManager:
 
         try:
             # Call /ptFile endpoint to get signed download URL
-            ptfile_url = f"https://api.roboflow.com/{workspace}/{project}/{version}/ptFile"
+            ptfile_url = (
+                f"https://api.roboflow.com/{workspace}/{project}/{version}/ptFile"
+            )
             logger.info(f"Requesting weights URL from: {ptfile_url}")
 
             response = requests.get(
-                ptfile_url,
-                params={"api_key": self.roboflow_api_key},
-                timeout=10
+                ptfile_url, params={"api_key": self.roboflow_api_key}, timeout=10
             )
             response.raise_for_status()
 
             # Parse response to get weightsUrl
             data = response.json()
-            if 'weightsUrl' not in data:
+            if "weightsUrl" not in data:
                 raise ValueError(f"No weightsUrl in response: {data}")
 
-            weights_url = data['weightsUrl']
-            logger.info(f"Got weights URL, downloading...")
+            weights_url = data["weightsUrl"]
+            logger.info("Got weights URL, downloading...")
 
             # Download the .pt file from signed URL
             response = requests.get(weights_url, stream=True, timeout=120)
             response.raise_for_status()
 
             # Save to cache
-            with open(cached_model_path, 'wb') as f:
+            with open(cached_model_path, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     f.write(chunk)
 
-            logger.info(f"Downloaded model weights: {cached_model_path} ({cached_model_path.stat().st_size} bytes)")
+            logger.info(
+                f"Downloaded model weights: {cached_model_path} ({cached_model_path.stat().st_size} bytes)"
+            )
 
             # Load with Ultralytics YOLO
             model = YOLO(str(cached_model_path))
-            logger.info(f"Successfully loaded Roboflow model for local inference: {model_id}")
+            logger.info(
+                f"Successfully loaded Roboflow model for local inference: {model_id}"
+            )
             return model
 
         except requests.exceptions.HTTPError as e:
@@ -311,12 +339,11 @@ class ModelManager:
             List of dicts with keys: version, name, images, map
         """
         import requests
-        from datetime import datetime
 
         if not self.roboflow_api_key:
             raise ValueError("ROBOFLOW_API_KEY not set")
 
-        parts = project_id.split('/')
+        parts = project_id.split("/")
         if len(parts) != 2:
             raise ValueError("Project ID must be in format: workspace/project")
 
@@ -327,45 +354,52 @@ class ModelManager:
             logger.info(f"Querying Roboflow project models: {url}")
 
             response = requests.get(
-                url,
-                params={"api_key": self.roboflow_api_key},
-                timeout=10
+                url, params={"api_key": self.roboflow_api_key}, timeout=10
             )
             response.raise_for_status()
 
             data = response.json()
 
             versions = []
-            if 'versions' in data:
-                for vd in data['versions']:
-                    version_num = vd.get('id', '')
-                    if isinstance(version_num, str) and '/' in version_num:
-                        version_num = version_num.split('/')[-1]
+            if "versions" in data:
+                for vd in data["versions"]:
+                    version_num = vd.get("id", "")
+                    if isinstance(version_num, str) and "/" in version_num:
+                        version_num = version_num.split("/")[-1]
                     if not version_num:
-                        version_num = vd.get('version')
+                        version_num = vd.get("version")
                     if not version_num:
                         continue
 
-                    map_val = vd.get('model', {}).get('map', '')
-                    if map_val and str(map_val) != 'NaN':
+                    map_val = vd.get("model", {}).get("map", "")
+                    if map_val and str(map_val) != "NaN":
                         map_str = f"{float(map_val):.1f}%"
                     else:
                         map_str = ""
 
-                    versions.append({
-                        "version": str(version_num),
-                        "name": vd.get('name', ''),
-                        "images": vd.get('images', 0),
-                        "map": map_str,
-                        "raw": vd,
-                    })
+                    versions.append(
+                        {
+                            "version": str(version_num),
+                            "name": vd.get("name", ""),
+                            "images": vd.get("images", 0),
+                            "map": map_str,
+                            "raw": vd,
+                        }
+                    )
 
-            versions.sort(key=lambda x: int(x['version']) if x['version'].isdigit() else 0, reverse=True)
-            logger.info(f"Found {len(versions)} versions: {[v['version'] for v in versions]}")
+            versions.sort(
+                key=lambda x: int(x["version"]) if x["version"].isdigit() else 0,
+                reverse=True,
+            )
+            logger.info(
+                f"Found {len(versions)} versions: {[v['version'] for v in versions]}"
+            )
             return versions
 
         except requests.exceptions.HTTPError as e:
-            error_msg = f"Failed to query Roboflow project: HTTP {e.response.status_code}"
+            error_msg = (
+                f"Failed to query Roboflow project: HTTP {e.response.status_code}"
+            )
             logger.error(error_msg)
             raise ValueError(error_msg) from e
         except Exception as e:
