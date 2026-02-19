@@ -2,7 +2,6 @@ import math
 import os
 import re
 import subprocess
-import sys
 import tempfile
 import time
 import click
@@ -324,12 +323,17 @@ def csq_to_avi(f_name_csq, vmin, vmax, max_mins=None, output_path=None):
         start_time = time.time()
 
         reader.index = f_start
-        frame = reader.next_frame()
+        try:
+            frame = reader.next_frame()
+        except Exception as e:
+            raise AssertionError(
+                f"Frame decode failed - file may be corrupt: {e}"
+            ) from e
         if frame is None:
             raise RuntimeError("Unable to read first frame from CSQ file")
-        Fs = 30
-        flipped_shape = (frame.shape[1], frame.shape[0])
         last_valid_frame = frame
+        Fs = 30
+        flipped_shape = (last_valid_frame.shape[1], last_valid_frame.shape[0])
 
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         out = cv2.VideoWriter(output_path, fourcc, Fs, flipped_shape, 0)
@@ -342,13 +346,14 @@ def csq_to_avi(f_name_csq, vmin, vmax, max_mins=None, output_path=None):
         for frame_index in tqdm(range(f_start, f_end)):
             try:
                 frame = reader.next_frame()
-                if frame is None:
-                    break
-                last_valid_frame = frame
-                frames_to_write.append(process_frame(frame, vmin, vmax))
             except Exception as e:
-                print(f"Warning: skipping bad frame {frame_index}: {e}", file=sys.stderr)
-                frames_to_write.append(process_frame(last_valid_frame, vmin, vmax))
+                raise AssertionError(
+                    f"Frame decode failed at frame {frame_index} - file may be corrupt: {e}"
+                ) from e
+            if frame is None:
+                break
+            last_valid_frame = frame
+            frames_to_write.append(process_frame(frame, vmin, vmax))
 
         if not frames_to_write:
             out.release()
