@@ -26,9 +26,7 @@ class GCSClient:
                 the default path, then fall back to Application Default Credentials.
         """
         if credentials_path is None:
-            default_path = expand_path(
-                DEFAULT_GCS_CREDENTIALS_PATH, get_project_root()
-            )
+            default_path = expand_path(DEFAULT_GCS_CREDENTIALS_PATH, get_project_root())
             if os.path.exists(default_path):
                 credentials_path = default_path
 
@@ -48,7 +46,9 @@ class GCSClient:
                 self.project_id, credentials=self.credentials
             )
         else:
-            logger.info("Using Application Default Credentials (no credentials file found)")
+            logger.info(
+                "Using Application Default Credentials (no credentials file found)"
+            )
             self.credentials_path = None
             self.credentials = None
             self._gcs = gcsfs.GCSFileSystem(

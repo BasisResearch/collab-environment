@@ -276,11 +276,21 @@ class VideoTracker:
                 and tracked_detections.tracker_id is not None
                 and len(tracked_detections) > 0
             ):
+                confidences: Any = (
+                    tracked_detections.confidence
+                    if tracked_detections.confidence is not None
+                    else []
+                )
+                class_ids: Any = (
+                    tracked_detections.class_id
+                    if tracked_detections.class_id is not None
+                    else []
+                )
                 for bbox, track_id, conf, class_id in zip(
                     tracked_detections.xyxy,
                     tracked_detections.tracker_id,
-                    tracked_detections.confidence or [],
-                    tracked_detections.class_id or [],
+                    confidences,
+                    class_ids,
                 ):
                     tracking_list.append(
                         {
