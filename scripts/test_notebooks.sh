@@ -17,6 +17,7 @@ EXCLUDED_NOTEBOOKS=(
 if [ -n "${SKIP_GCS_TESTS:-}" ]; then
     EXCLUDED_NOTEBOOKS+=(
         "docs/data/gcloud_bucket_manipulation.ipynb"
+        "docs/data/db/query_cloud_db.ipynb"
     )
 fi
 
