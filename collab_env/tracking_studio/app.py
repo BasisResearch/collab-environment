@@ -467,10 +467,10 @@ async def index():
                                 # Update label on change
                                 param_slider.on(
                                     "update:model-value",
-                                    lambda e,
-                                    lbl=param_label,
-                                    name=param_name: lbl.set_text(
-                                        f"{name.replace('_', ' ').title()}: {e.args:.2f}"
+                                    lambda e, lbl=param_label, name=param_name: (
+                                        lbl.set_text(
+                                            f"{name.replace('_', ' ').title()}: {e.args:.2f}"
+                                        )
                                     ),
                                 )
                                 param_widgets[param_name] = param_slider
@@ -496,10 +496,10 @@ async def index():
 
                                 param_slider.on(
                                     "update:model-value",
-                                    lambda e,
-                                    lbl=param_label,
-                                    name=param_name: lbl.set_text(
-                                        f"{name.replace('_', ' ').title()}: {int(e.args)}"
+                                    lambda e, lbl=param_label, name=param_name: (
+                                        lbl.set_text(
+                                            f"{name.replace('_', ' ').title()}: {int(e.args)}"
+                                        )
                                     ),
                                 )
                                 param_widgets[param_name] = param_slider
