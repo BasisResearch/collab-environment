@@ -243,7 +243,7 @@ class _FrameRenderer:
         gradient = np.linspace(1.0, 0.0, self.frame_height, dtype=np.float32).reshape(
             self.frame_height, 1
         )
-        gradient = np.repeat(gradient, bar_width, axis=1)  # type: ignore[assignment]
+        gradient = np.repeat(gradient, bar_width, axis=1)
         rgba = self.cmap(gradient)
         colorbar = np.clip(rgba[..., :3] * 255.0, 0, 255).astype(np.uint8)
 
@@ -272,7 +272,7 @@ class _FrameRenderer:
         if self.vmax == self.vmin:
             normalized = np.zeros_like(frame, dtype=np.float32)
         else:
-            normalized = (frame - self.vmin) / (self.vmax - self.vmin)  # type: ignore[assignment]
+            normalized = (frame - self.vmin) / (self.vmax - self.vmin)
         normalized = np.clip(normalized, 0.0, 1.0)
         rgba = self.cmap(normalized)
         rgb = np.clip(rgba[..., :3] * 255.0, 0, 255).astype(np.uint8)
