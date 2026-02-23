@@ -112,7 +112,7 @@ else
     echo "  Password: Stored in Secret Manager (postgres-password)"
     echo ""
     echo "Next steps:"
-    echo "  1. Run: ./scripts/deploy/init_database.sh"
-    echo "  2. Load data with: ./scripts/deploy/dev_local_cloudsql.sh"
+    echo "  1. Start proxy: ./scripts/deploy/start_proxy.sh"
+    echo "  2. Init database: source scripts/deploy/config.sh && python -m collab_env.data.db.init_database --backend postgres"
     echo "  3. Deploy dashboard: ./scripts/deploy/build_and_deploy.sh"
 fi

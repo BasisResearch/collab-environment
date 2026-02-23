@@ -8,16 +8,17 @@ Automated scripts for deploying the spatial analysis dashboard to Google Cloud R
 # 1. Configure project (edit if needed)
 vim scripts/deploy/config.sh
 
-# 2. Create Cloud SQL instance
+# 2. Create Cloud SQL instance (see caveat below)
 ./scripts/deploy/setup_cloud_sql.sh
 
-# 3. Initialize database schema
-./scripts/deploy/init_database.sh
+# 3. Start proxy, init database, and load data locally
+./scripts/deploy/start_proxy.sh
+# In another terminal:
+source scripts/deploy/config.sh
+python -m collab_env.data.db.init_database --backend postgres
+python -m collab_env.data.db.db_loader --source boids2d --path simulated_data/boid_food_basic.pt
 
-# 4. Load data locally
-./scripts/deploy/dev_local_cloudsql.sh
-
-# 5. Deploy dashboard to Cloud Run
+# 4. Deploy dashboard to Cloud Run
 ./scripts/deploy/build_and_deploy.sh
 ```
 
@@ -26,88 +27,79 @@ vim scripts/deploy/config.sh
 ### Core Setup
 
 **`setup_cloud_sql.sh`**
-- Creates Cloud SQL PostgreSQL instance
-- Creates database
+- Creates Cloud SQL PostgreSQL 17 instance, database, and user
 - Stores password in Secret Manager
+- Grants IAM permissions (Cloud SQL Client role)
 - One-time setup
+- **Note:** The `gcloud sql instances create` command may fail; you may need to create the instance manually via the Cloud Console
 
-**`init_database.sh`**
-- Initializes database schema
-- Downloads Cloud SQL Auth Proxy if needed
-- Connects via proxy and runs init_database.py
-- Run after setup_cloud_sql.sh
-
-### Development
-
-**`dev_local_cloudsql.sh`**
-- Interactive script for local development
-- Starts Cloud SQL Auth Proxy
-- Options to:
-  - Load data (db_loader)
-  - Start dashboard locally
-  - Open Python shell
-  - Export environment variables
-
-**`stop_proxy.sh`**
-- Stops Cloud SQL Auth Proxy
-- Run when done with local development
+**`start_proxy.sh`**
+- Starts Cloud SQL Auth Proxy on `PROXY_PORT` (default 5433)
+- Requires `GOOGLE_APPLICATION_CREDENTIALS` to be set
+- Run in a dedicated terminal; leave running during local dev
 
 ### Deployment
 
 **`build_and_deploy.sh`**
-- Builds Docker image
-- Pushes to Google Container Registry
-- Deploys to Cloud Run
-- Configures Cloud SQL connection
+- Submits build to Cloud Build via `cloudbuild.yaml`
+- Grants IAM roles (Cloud Build -> Cloud Run admin, service account user, secret access)
+- Grants public access (`allUsers` invoker role) to the Cloud Run service
 - Use for initial deployment and updates
+
+**`cloudbuild.yaml`**
+- Cloud Build configuration used by `build_and_deploy.sh`
+- Builds Docker image from `Dockerfile.dashboard`
+- Pushes to Google Container Registry (`gcr.io`)
+- Deploys to Cloud Run with Cloud SQL connection and secrets
 
 ### Configuration
 
 **`config.sh`**
-- Centralized configuration
-- Sourced by all scripts
-- Edit to customize:
-  - Project ID, region
-  - Instance names
-  - Database tier
-  - Cloud Run resources
+- Centralized configuration sourced by all scripts
+- Reads `PROJECT_ID` from `gcloud config` by default
+- Fetches password from Secret Manager
+- Sets all `POSTGRES_*` and `DB_*` environment variables for local use
+- Edit to customize project, region, instance names, database tier, Cloud Run resources
 
 **`Dockerfile.dashboard`**
-- Docker image definition
-- Installs dependencies
-- Runs Panel dashboard
-- Used by build_and_deploy.sh
+- Python 3.10 slim image
+- Installs deps via `uv` from `requirements-db.txt`
+- Runs `panel serve collab_env/dashboard/spatial_analysis_app.py`
+- Used by `cloudbuild.yaml`
 
 ## Typical Workflows
 
 ### Initial Setup
 
 ```bash
-# One-time setup
+# One-time: create Cloud SQL instance
 ./scripts/deploy/setup_cloud_sql.sh
-./scripts/deploy/init_database.sh
+
+# Start proxy (in a dedicated terminal)
+./scripts/deploy/start_proxy.sh
+
+# In another terminal: init database and deploy
+source scripts/deploy/config.sh
+python -m collab_env.data.db.init_database --backend postgres
 ./scripts/deploy/build_and_deploy.sh
 ```
 
 ### Daily Development
 
 ```bash
-# Terminal 1: Start proxy and load data
-./scripts/deploy/dev_local_cloudsql.sh
-# Choose option 1 (Load data)
+# Terminal 1: Start proxy
+./scripts/deploy/start_proxy.sh
 
-# Terminal 2: Run dashboard locally
-source .venv-310/bin/activate
-source .envrc
-export DB_BACKEND=postgres
-export POSTGRES_HOST=localhost
-export POSTGRES_DB=tracking_analytics
-export POSTGRES_USER=postgres
-export POSTGRES_PASSWORD=$(gcloud secrets versions access latest --secret=postgres-password)
+# Terminal 2: Source config (sets all DB env vars) and work
+source scripts/deploy/config.sh
+
+# Load data
+python -m collab_env.data.db.db_loader --source boids2d --path simulated_data/boid_food_basic.pt
+
+# Run dashboard locally (proxy uses port 5433 by default)
 panel serve collab_env/dashboard/spatial_analysis_app.py --show --dev
 
-# When done
-./scripts/deploy/stop_proxy.sh
+# When done: Ctrl-C the proxy in Terminal 1
 ```
 
 ### Update Deployment
@@ -119,11 +111,10 @@ panel serve collab_env/dashboard/spatial_analysis_app.py --show --dev
 
 ## Configuration
 
-Edit `scripts/deploy/config.sh` to customize:
+Edit `scripts/deploy/config.sh` to customize. Defaults:
 
 ```bash
-# Google Cloud
-export PROJECT_ID="your-project-id"
+# Google Cloud (PROJECT_ID reads from gcloud config by default)
 export REGION="us-central1"
 export INSTANCE_NAME="spatial-analysis-db"
 
@@ -132,9 +123,12 @@ export DB_NAME="tracking_analytics"
 export DB_USER="postgres"
 export DB_TIER="db-g1-small"  # or db-f1-micro for testing
 
+# Local proxy
+export PROXY_PORT="5433"  # avoids conflict with local postgres on 5432
+
 # Cloud Run
 export SERVICE_NAME="spatial-analysis-dashboard"
-export MEMORY="2Gi"
+export MEMORY="5Gi"
 export CPU="2"
 export TIMEOUT="3600"
 ```
@@ -148,7 +142,7 @@ export TIMEOUT="3600"
 gcloud sql instances describe spatial-analysis-db
 
 # Test proxy with verbose logging
-./cloud-sql-proxy PROJECT_ID:REGION:INSTANCE_NAME --verbose
+cloud-sql-proxy PROJECT_ID:REGION:INSTANCE_NAME --verbose
 ```
 
 ### Cloud Run can't access database
@@ -204,4 +198,3 @@ gcloud secrets delete postgres-password
 
 - [Complete Setup Guide](../../docs/dashboard/CLOUD_SETUP.md)
 - [Database Documentation](../../docs/data/db/README.md)
-- [Dashboard Widgets](../../docs/data/dashboard/README.md)
