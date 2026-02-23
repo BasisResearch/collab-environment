@@ -102,10 +102,7 @@ dev = [
   "mypy-extensions==1.1.0",
   "ruff==0.15.2",
   "nbval",
-  "nbqa",
-  "black",
-  "isort",
-  "flake8>=6.0",
+  "nbqa==1.9.1",
   "types-requests",
   "types-PyYAML",
 ]
@@ -117,16 +114,6 @@ build-backend = "setuptools.build_meta"
 [tool.ruff]
 target-version = "py39"
 
-[tool.flake8]
-max-line-length = 120
-extend-ignore = ["E203", "E501"]
-exclude = [".venv"]
-
-[tool.nbqa.addopts]
-flake8 = [
-    "--extend-ignore=E203,E501"
-]
-
 [tool.mypy]
 ignore_missing_imports = true
 warn_unused_ignores = true
@@ -136,6 +123,3 @@ exclude = "build"
 addopts = "--doctest-modules"
 testpaths = ["./tests"]
 
-[tool.isort]
-profile = "black"
-skip_gitignore = true
