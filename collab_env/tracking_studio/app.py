@@ -297,6 +297,7 @@ async def index():
                                     rf_version_select.value = versions[0]["version"]
                                     rf_version_select.enable()
                                     rf_detail_btn.visible = True
+                                    enable_load_model_btn()
                                     ui.notify(
                                         f"Found {len(versions)} versions",
                                         type="positive",
