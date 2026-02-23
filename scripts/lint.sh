@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euxo pipefail
 
-SRC="tests/ collab_env/"
+SRC="collab_env tests"
 
 mypy $SRC
 ruff check $SRC
-ruff format --diff $SRC
+ruff format --check $SRC
