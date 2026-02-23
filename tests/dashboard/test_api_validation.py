@@ -25,26 +25,23 @@ def mock_backend():
 def shared_params():
     """Shared parameters that AnalysisContext.get_query_params() produces."""
     return {
-        'episode_id': 'ep_123',
-        'bin_size': 10.0,
-        'window_size': 100,
-        'min_samples': 100,
-        'agent_type': 'agent',
-        'start_time': 0,
-        'end_time': 500
+        "episode_id": "ep_123",
+        "bin_size": 10.0,
+        "window_size": 100,
+        "min_samples": 100,
+        "agent_type": "agent",
+        "start_time": 0,
+        "end_time": 500,
     }
 
 
 # List of QueryBackend analysis methods supporting both episode_id and session_id
 SESSION_SUPPORTED_METHODS = [
-    'get_spatial_heatmap',
+    "get_spatial_heatmap",
 ]
 
 # List of correlation methods supporting only episode_id (session-level disabled)
-EPISODE_ONLY_METHODS = [
-    'get_velocity_correlations',
-    'get_distance_correlations'
-]
+EPISODE_ONLY_METHODS = ["get_velocity_correlations", "get_distance_correlations"]
 
 # All analysis methods combined
 ANALYSIS_METHODS = SESSION_SUPPORTED_METHODS + EPISODE_ONLY_METHODS
@@ -59,9 +56,9 @@ class TestQueryBackendMethodSignatures:
         method = getattr(mock_backend, method_name)
 
         # Should not raise
-        if 'heatmap' in method_name:
+        if "heatmap" in method_name:
             method(episode_id="ep_123", bin_size=10.0)
-        elif 'correlation' in method_name:
+        elif "correlation" in method_name:
             method(episode_id="ep_123", min_samples=100)
         else:
             method(episode_id="ep_123", window_size=100)
@@ -72,7 +69,7 @@ class TestQueryBackendMethodSignatures:
         method = getattr(mock_backend, method_name)
 
         # Should not raise
-        if 'heatmap' in method_name:
+        if "heatmap" in method_name:
             method(session_id="sess_456", bin_size=10.0)
         else:
             method(session_id="sess_456", window_size=100)
@@ -86,12 +83,16 @@ class TestExtraParameters:
         # Should not raise TypeError
         mock_backend.get_spatial_heatmap(**shared_params)
 
-    def test_velocity_correlations_accepts_extra_params(self, mock_backend, shared_params):
+    def test_velocity_correlations_accepts_extra_params(
+        self, mock_backend, shared_params
+    ):
         """Velocity correlations should accept extra params like bin_size, window_size."""
         # Should not raise TypeError
         mock_backend.get_velocity_correlations(**shared_params)
 
-    def test_distance_correlations_accepts_extra_params(self, mock_backend, shared_params):
+    def test_distance_correlations_accepts_extra_params(
+        self, mock_backend, shared_params
+    ):
         """Distance correlations should accept extra params like bin_size, window_size."""
         # Should not raise TypeError
         mock_backend.get_distance_correlations(**shared_params)
@@ -105,7 +106,9 @@ class TestParameterValidation:
         """Session-supported methods should raise ValueError when both episode_id and session_id are missing."""
         method = getattr(mock_backend, method_name)
 
-        with pytest.raises(ValueError, match="Either episode_id or session_id must be provided"):
+        with pytest.raises(
+            ValueError, match="Either episode_id or session_id must be provided"
+        ):
             method()
 
     @pytest.mark.parametrize("method_name", EPISODE_ONLY_METHODS)
@@ -121,7 +124,9 @@ class TestParameterValidation:
         """Session-supported methods should raise ValueError when both episode_id and session_id are provided."""
         method = getattr(mock_backend, method_name)
 
-        with pytest.raises(ValueError, match="Cannot specify both episode_id and session_id"):
+        with pytest.raises(
+            ValueError, match="Cannot specify both episode_id and session_id"
+        ):
             method(episode_id="ep_123", session_id="sess_456")
 
 
@@ -136,17 +141,17 @@ class TestAnalysisContextIntegration:
             scope=scope,
             spatial_bin_size=10.0,
             temporal_window_size=100,
-            min_samples=100
+            min_samples=100,
         )
 
         params = context.get_query_params()
 
         # Should have episode_id
-        assert 'episode_id' in params
-        assert params['episode_id'] == "ep_123"
+        assert "episode_id" in params
+        assert params["episode_id"] == "ep_123"
 
         # Should not have session_id
-        assert 'session_id' not in params or params['session_id'] is None
+        assert "session_id" not in params or params["session_id"] is None
 
         # All methods should accept these params
         mock_backend.get_spatial_heatmap(**params)
@@ -160,17 +165,17 @@ class TestAnalysisContextIntegration:
             scope=scope,
             spatial_bin_size=10.0,
             temporal_window_size=100,
-            min_samples=100
+            min_samples=100,
         )
 
         params = context.get_query_params()
 
         # Should have session_id
-        assert 'session_id' in params
-        assert params['session_id'] == "sess_456"
+        assert "session_id" in params
+        assert params["session_id"] == "sess_456"
 
         # Should not have episode_id
-        assert 'episode_id' not in params or params['episode_id'] is None
+        assert "episode_id" not in params or params["episode_id"] is None
 
         # Session-supported methods should accept these params
         mock_backend.get_spatial_heatmap(**params)
@@ -184,13 +189,13 @@ class TestAnalysisContextIntegration:
             scope=scope,
             spatial_bin_size=15.0,
             temporal_window_size=200,
-            min_samples=50
+            min_samples=50,
         )
 
         params = context.get_query_params()
 
         # Check shared parameters are present
-        assert params['bin_size'] == 15.0
-        assert params['window_size'] == 200
-        assert params['min_samples'] == 50
-        assert 'agent_type' in params
+        assert params["bin_size"] == 15.0
+        assert params["window_size"] == 200
+        assert params["min_samples"] == 50
+        assert "agent_type" in params

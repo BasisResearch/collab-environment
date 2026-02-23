@@ -11,6 +11,7 @@ from enum import Enum
 
 class ScopeType(Enum):
     """Type of data scope for analysis."""
+
     EPISODE = "episode"
     SESSION = "session"
     CUSTOM = "custom"
@@ -65,7 +66,7 @@ class QueryScope:
         episode_id: str,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
-        agent_type: str = "agent"
+        agent_type: str = "agent",
     ) -> "QueryScope":
         """
         Create scope for single episode.
@@ -91,7 +92,7 @@ class QueryScope:
             episode_id=episode_id,
             start_time=start_time,
             end_time=end_time,
-            agent_type=agent_type
+            agent_type=agent_type,
         )
 
     @classmethod
@@ -100,7 +101,7 @@ class QueryScope:
         session_id: str,
         start_time: Optional[int] = None,
         end_time: Optional[int] = None,
-        agent_type: str = "agent"
+        agent_type: str = "agent",
     ) -> "QueryScope":
         """
         Create scope for full session (all episodes).
@@ -126,7 +127,7 @@ class QueryScope:
             session_id=session_id,
             start_time=start_time,
             end_time=end_time,
-            agent_type=agent_type
+            agent_type=agent_type,
         )
 
     @classmethod
@@ -152,10 +153,7 @@ class QueryScope:
         ...     min_speed=5.0
         ... )
         """
-        return cls(
-            scope_type=ScopeType.CUSTOM,
-            custom_filters=filters
-        )
+        return cls(scope_type=ScopeType.CUSTOM, custom_filters=filters)
 
     def to_query_params(self) -> Dict[str, Any]:
         """
@@ -169,17 +167,17 @@ class QueryScope:
         params: Dict[str, Any] = {}
 
         if self.episode_id:
-            params['episode_id'] = self.episode_id
+            params["episode_id"] = self.episode_id
         if self.session_id:
-            params['session_id'] = self.session_id
+            params["session_id"] = self.session_id
         if self.start_time is not None:
-            params['start_time'] = self.start_time
+            params["start_time"] = self.start_time
         if self.end_time is not None:
-            params['end_time'] = self.end_time
+            params["end_time"] = self.end_time
         if self.agent_type:
-            params['agent_type'] = self.agent_type
+            params["agent_type"] = self.agent_type
         if self.agent_ids:
-            params['agent_ids'] = self.agent_ids
+            params["agent_ids"] = self.agent_ids
         if self.custom_filters:
             params.update(self.custom_filters)
 
@@ -198,5 +196,7 @@ class QueryScope:
                 time_range = f" [{self.start_time or 0}:{self.end_time or '∞'}]"
             return f"Session({self.session_id}{time_range}, {self.agent_type})"
         else:
-            filters = ", ".join(f"{k}={v}" for k, v in self.custom_filters.items())
+            filters = ", ".join(
+                f"{k}={v}" for k, v in (self.custom_filters or {}).items()
+            )
             return f"Custom({filters})"

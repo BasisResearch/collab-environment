@@ -12,7 +12,7 @@ from collab_env.dashboard.widgets import (
     ScopeType,
     AnalysisContext,
     BaseAnalysisWidget,
-    WidgetRegistry
+    WidgetRegistry,
 )
 
 
@@ -25,9 +25,9 @@ class TestImports:
             QueryScope,
             ScopeType,
             AnalysisContext,
-            BaseAnalysisWidget,
-            WidgetRegistry
+            WidgetRegistry,
         )
+
         # If we get here, imports succeeded
         assert QueryScope is not None
         assert ScopeType is not None
@@ -52,10 +52,7 @@ class TestQueryScope:
     def test_episode_scope_creation(self):
         """Test creating an episode scope."""
         scope = QueryScope.from_episode(
-            episode_id="ep_123",
-            start_time=0,
-            end_time=500,
-            agent_type="agent"
+            episode_id="ep_123", start_time=0, end_time=500, agent_type="agent"
         )
 
         assert scope.scope_type == ScopeType.EPISODE
@@ -66,25 +63,19 @@ class TestQueryScope:
     def test_episode_scope_to_query_params(self):
         """Test converting episode scope to query parameters."""
         scope = QueryScope.from_episode(
-            episode_id="ep_123",
-            start_time=0,
-            end_time=500,
-            agent_type="agent"
+            episode_id="ep_123", start_time=0, end_time=500, agent_type="agent"
         )
 
         params = scope.to_query_params()
 
-        assert params['episode_id'] == "ep_123"
-        assert params['start_time'] == 0
-        assert params['end_time'] == 500
-        assert params['agent_type'] == "agent"
+        assert params["episode_id"] == "ep_123"
+        assert params["start_time"] == 0
+        assert params["end_time"] == 500
+        assert params["agent_type"] == "agent"
 
     def test_session_scope_creation(self):
         """Test creating a session scope."""
-        scope = QueryScope.from_session(
-            session_id="sess_456",
-            agent_type="target"
-        )
+        scope = QueryScope.from_session(session_id="sess_456", agent_type="target")
 
         assert scope.scope_type == ScopeType.SESSION
         assert scope.session_id == "sess_456"
@@ -92,20 +83,19 @@ class TestQueryScope:
     def test_custom_scope_creation(self):
         """Test creating a custom scope."""
         scope = QueryScope.from_custom(
-            session_id="sess_789",
-            min_speed=5.0,
-            max_distance=100.0
+            session_id="sess_789", min_speed=5.0, max_distance=100.0
         )
 
         assert scope.scope_type == ScopeType.CUSTOM
-        assert scope.custom_filters['min_speed'] == 5.0
-        assert scope.custom_filters['max_distance'] == 100.0
+        assert scope.custom_filters["min_speed"] == 5.0
+        assert scope.custom_filters["max_distance"] == 100.0
 
 
 @pytest.fixture(scope="module")
 def init_holoviews():
     """Initialize HoloViews extensions once for all tests."""
     import holoviews as hv
+
     hv.extension("bokeh")
 
 
@@ -115,7 +105,12 @@ class TestWidgetRegistry:
     def test_registry_loads_config(self, init_holoviews):
         """Test that WidgetRegistry loads config file."""
         # Find config file (relative to project root)
-        config_path = Path(__file__).parent.parent.parent / "collab_env" / "dashboard" / "analysis_widgets.yaml"
+        config_path = (
+            Path(__file__).parent.parent.parent
+            / "collab_env"
+            / "dashboard"
+            / "analysis_widgets.yaml"
+        )
 
         if not config_path.exists():
             pytest.skip(f"Config file not found at {config_path}")
@@ -128,7 +123,12 @@ class TestWidgetRegistry:
 
     def test_registry_loads_default_parameters(self, init_holoviews):
         """Test that WidgetRegistry loads default parameters."""
-        config_path = Path(__file__).parent.parent.parent / "collab_env" / "dashboard" / "analysis_widgets.yaml"
+        config_path = (
+            Path(__file__).parent.parent.parent
+            / "collab_env"
+            / "dashboard"
+            / "analysis_widgets.yaml"
+        )
 
         if not config_path.exists():
             pytest.skip(f"Config file not found at {config_path}")
@@ -136,13 +136,18 @@ class TestWidgetRegistry:
         registry = WidgetRegistry(str(config_path))
         defaults = registry.get_defaults()
 
-        assert defaults['spatial_bin_size'] == 10.0
-        assert defaults['temporal_window_size'] == 100
-        assert defaults['min_samples'] == 100
+        assert defaults["spatial_bin_size"] == 10.0
+        assert defaults["temporal_window_size"] == 100
+        assert defaults["min_samples"] == 100
 
     def test_widgets_have_correct_attributes(self, init_holoviews):
         """Test that loaded widgets have expected attributes."""
-        config_path = Path(__file__).parent.parent.parent / "collab_env" / "dashboard" / "analysis_widgets.yaml"
+        config_path = (
+            Path(__file__).parent.parent.parent
+            / "collab_env"
+            / "dashboard"
+            / "analysis_widgets.yaml"
+        )
 
         if not config_path.exists():
             pytest.skip(f"Config file not found at {config_path}")
@@ -151,8 +156,8 @@ class TestWidgetRegistry:
         widgets = registry.get_enabled_widgets()
 
         for widget in widgets:
-            assert hasattr(widget, 'widget_name')
-            assert hasattr(widget, 'widget_category')
+            assert hasattr(widget, "widget_name")
+            assert hasattr(widget, "widget_category")
             assert widget.widget_name is not None
             assert widget.widget_category is not None
 
@@ -177,8 +182,8 @@ class TestWidgetInstantiation:
         widget = VelocityStatsWidget()
 
         # Check for standard components
-        assert hasattr(widget, 'load_btn')
-        assert hasattr(widget, 'display_pane')
+        assert hasattr(widget, "load_btn")
+        assert hasattr(widget, "display_pane")
         assert widget.load_btn is not None
         assert widget.display_pane is not None
 
@@ -195,7 +200,7 @@ class TestAnalysisContext:
             scope=scope,
             spatial_bin_size=5.0,
             temporal_window_size=50,
-            min_samples=20
+            min_samples=20,
         )
 
         assert context.scope == scope
@@ -212,20 +217,20 @@ class TestAnalysisContext:
             scope=scope,
             spatial_bin_size=5.0,
             temporal_window_size=50,
-            min_samples=20
+            min_samples=20,
         )
 
         params = context.get_query_params()
 
         # Scope parameters
-        assert params['episode_id'] == "ep_123"
-        assert params['start_time'] == 0
-        assert params['end_time'] == 500
+        assert params["episode_id"] == "ep_123"
+        assert params["start_time"] == 0
+        assert params["end_time"] == 500
 
         # Context parameters
-        assert params['bin_size'] == 5.0
-        assert params['window_size'] == 50
-        assert params['min_samples'] == 20
+        assert params["bin_size"] == 5.0
+        assert params["window_size"] == 50
+        assert params["min_samples"] == 20
 
     def test_get_query_params_allows_overrides(self):
         """Test that get_query_params() allows parameter overrides."""
@@ -236,16 +241,16 @@ class TestAnalysisContext:
             scope=scope,
             spatial_bin_size=5.0,
             temporal_window_size=50,
-            min_samples=20
+            min_samples=20,
         )
 
         # Override bin_size and add custom param
         params = context.get_query_params(bin_size=15.0, custom_param="test")
 
-        assert params['bin_size'] == 15.0  # Overridden
-        assert params['window_size'] == 50  # Not overridden
-        assert params['min_samples'] == 20  # Not overridden
-        assert params['custom_param'] == "test"  # Added
+        assert params["bin_size"] == 15.0  # Overridden
+        assert params["window_size"] == 50  # Not overridden
+        assert params["min_samples"] == 20  # Not overridden
+        assert params["custom_param"] == "test"  # Added
 
     def test_context_with_session_scope(self):
         """Test creating AnalysisContext with session scope."""
@@ -256,11 +261,11 @@ class TestAnalysisContext:
             scope=scope,
             spatial_bin_size=10.0,
             temporal_window_size=100,
-            min_samples=100
+            min_samples=100,
         )
 
         params = context.get_query_params()
 
-        assert 'session_id' in params
-        assert params['session_id'] == "sess_456"
-        assert 'episode_id' not in params or params['episode_id'] is None
+        assert "session_id" in params
+        assert params["session_id"] == "sess_456"
+        assert "episode_id" not in params or params["episode_id"] is None

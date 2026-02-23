@@ -17,7 +17,7 @@ class TestDatabaseInitialization:
         db.connect()
 
         # Query information schema for table count
-        if backend_config.backend == 'postgres':
+        if backend_config.backend == "postgres":
             query = """
                 SELECT count(*)
                 FROM information_schema.tables
@@ -32,6 +32,7 @@ class TestDatabaseInitialization:
             """
 
         result = db.fetch_one(query)
+        assert result is not None
         table_count = result[0]
 
         db.close()
@@ -44,11 +45,14 @@ class TestDatabaseInitialization:
         db.connect()
 
         result = db.fetch_one("SELECT COUNT(*) FROM agent_types")
+        assert result is not None
         count = result[0]
 
         db.close()
 
-        assert count == 7, f"Expected 7 agent types (agent, env, target, food, bird, rat, gerbil), found {count}"
+        assert count == 7, (
+            f"Expected 7 agent types (agent, env, target, food, bird, rat, gerbil), found {count}"
+        )
 
     def test_property_definitions_seeded(self, backend_config: DBConfig):
         """Test that property definitions seed data is loaded."""
@@ -56,6 +60,7 @@ class TestDatabaseInitialization:
         db.connect()
 
         result = db.fetch_one("SELECT COUNT(*) FROM property_definitions")
+        assert result is not None
         count = result[0]
 
         db.close()
@@ -68,11 +73,14 @@ class TestDatabaseInitialization:
         db.connect()
 
         result = db.fetch_one("SELECT COUNT(*) FROM categories")
+        assert result is not None
         count = result[0]
 
         db.close()
 
-        assert count == 4, f"Expected 4 categories (boids_3d, boids_2d, boids_2d_rollout, tracking_csv), found {count}"
+        assert count == 4, (
+            f"Expected 4 categories (boids_3d, boids_2d, boids_2d_rollout, tracking_csv), found {count}"
+        )
 
     def test_foreign_key_relationships(self, backend_config: DBConfig):
         """Test that foreign key relationships work."""
@@ -84,7 +92,9 @@ class TestDatabaseInitialization:
         assert result is not None, "agent_types table should have 'agent' type"
 
         # Test we can query categories
-        result = db.fetch_one("SELECT category_id FROM categories WHERE category_id = 'boids_3d'")
+        result = db.fetch_one(
+            "SELECT category_id FROM categories WHERE category_id = 'boids_3d'"
+        )
         assert result is not None, "categories should have 'boids_3d' category"
 
         db.close()
@@ -95,22 +105,31 @@ class TestDatabaseInitialization:
         db.connect()
 
         # Insert and retrieve a test session
-        db.execute("""
+        db.execute(
+            """
             INSERT INTO sessions (session_id, session_name, category_id, config, metadata)
             VALUES (:sid, :name, :cat, :config, :meta)
-        """, {
-            'sid': 'test-session',
-            'name': 'Test Session',
-            'cat': 'boids_3d',
-            'config': '{"test": true}',
-            'meta': None
-        })
+        """,
+            {
+                "sid": "test-session",
+                "name": "Test Session",
+                "cat": "boids_3d",
+                "config": '{"test": true}',
+                "meta": None,
+            },
+        )
 
-        result = db.fetch_one("SELECT session_name FROM sessions WHERE session_id = :sid", {'sid': 'test-session'})
-        assert result[0] == 'Test Session'
+        result = db.fetch_one(
+            "SELECT session_name FROM sessions WHERE session_id = :sid",
+            {"sid": "test-session"},
+        )
+        assert result is not None
+        assert result[0] == "Test Session"
 
         # Cleanup
-        db.execute("DELETE FROM sessions WHERE session_id = :sid", {'sid': 'test-session'})
+        db.execute(
+            "DELETE FROM sessions WHERE session_id = :sid", {"sid": "test-session"}
+        )
         db.close()
 
 
@@ -145,7 +164,9 @@ class TestDuckDBSpecific:
         """)
 
         # Check that auto-increment IDs were generated
-        result = db.fetch_all("SELECT observation_id FROM observations WHERE episode_id = 'test-e' ORDER BY time_index")
+        result = db.fetch_all(
+            "SELECT observation_id FROM observations WHERE episode_id = 'test-e' ORDER BY time_index"
+        )
 
         assert len(result) == 2, "Should have 2 observations"
         assert result[0][0] is not None, "First observation should have an ID"
@@ -169,27 +190,34 @@ class TestPostgreSQLSpecific:
         db.connect()
 
         # Insert session with JSON config
-        db.execute("""
+        db.execute(
+            """
             INSERT INTO sessions (session_id, session_name, category_id, config)
             VALUES (:sid, :name, :cat, :config::jsonb)
-        """, {
-            'sid': 'test-json',
-            'name': 'Test',
-            'cat': 'boids_3d',
-            'config': '{"frame_rate": 30}'
-        })
+        """,
+            {
+                "sid": "test-json",
+                "name": "Test",
+                "cat": "boids_3d",
+                "config": '{"frame_rate": 30}',
+            },
+        )
 
         # Query with JSONB operators (PostgreSQL-specific)
-        result = db.fetch_one("""
+        result = db.fetch_one(
+            """
             SELECT config->>'frame_rate' as frame_rate
             FROM sessions
             WHERE session_id = :sid
-        """, {'sid': 'test-json'})
+        """,
+            {"sid": "test-json"},
+        )
 
-        assert result[0] == '30'
+        assert result is not None
+        assert result[0] == "30"
 
         # Cleanup
-        db.execute("DELETE FROM sessions WHERE session_id = :sid", {'sid': 'test-json'})
+        db.execute("DELETE FROM sessions WHERE session_id = :sid", {"sid": "test-json"})
         db.close()
 
 
@@ -202,7 +230,7 @@ class TestDatabaseBackendExecuteQuery:
         backend.connect()
 
         # Query table count (this was the failing scenario)
-        if backend_config.backend == 'postgres':
+        if backend_config.backend == "postgres":
             query = """
                 SELECT count(*)
                 FROM information_schema.tables
@@ -214,7 +242,9 @@ class TestDatabaseBackendExecuteQuery:
         result = backend.execute_query(query)
 
         # This would fail with "list index out of range" if commit happens before fetchall
-        assert result is not None, "execute_query should return results for SELECT queries"
+        assert result is not None, (
+            "execute_query should return results for SELECT queries"
+        )
         assert len(result) > 0, "Should have at least one row"
         assert result[0][0] == 7, f"Expected 7 tables, got {result[0][0]}"
 
@@ -233,10 +263,10 @@ class TestDatabaseBackendExecuteQuery:
         assert len(result) == 7, f"Expected 7 agent types, got {len(result)}"
         # Check specific types are present (alphabetically: agent, bird, env, food, gerbil, rat, target)
         type_ids = [row[0] for row in result]
-        assert 'agent' in type_ids, "Should have 'agent' type"
-        assert 'env' in type_ids, "Should have 'env' type"
-        assert 'food' in type_ids, "Should have 'food' type"
-        assert type_ids[0] == 'agent', "First type (alphabetically) should be 'agent'"
+        assert "agent" in type_ids, "Should have 'agent' type"
+        assert "env" in type_ids, "Should have 'env' type"
+        assert "food" in type_ids, "Should have 'food' type"
+        assert type_ids[0] == "agent", "First type (alphabetically) should be 'agent'"
 
         backend.close()
 
@@ -246,7 +276,7 @@ class TestDatabaseBackendExecuteQuery:
         backend.connect()
 
         # Create a temporary table
-        if backend_config.backend == 'postgres':
+        if backend_config.backend == "postgres":
             result = backend.execute_query("""
                 CREATE TEMPORARY TABLE test_temp (id INTEGER, name VARCHAR)
             """)

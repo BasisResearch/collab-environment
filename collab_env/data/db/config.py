@@ -4,16 +4,16 @@ Supports PostgreSQL and DuckDB backends.
 """
 
 import os
-from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
 
-from collab_env.data.file_utils import expand_path, get_project_root
+from collab_env.data.file_utils import get_project_root
 
 
 @dataclass
 class PostgresConfig:
     """PostgreSQL connection configuration"""
+
     dbname: str
     user: str
     password: Optional[str]
@@ -21,21 +21,21 @@ class PostgresConfig:
     port: int
 
     @classmethod
-    def from_env(cls) -> 'PostgresConfig':
+    def from_env(cls) -> "PostgresConfig":
         """Load PostgreSQL config from environment variables"""
         return cls(
-            dbname=os.getenv('POSTGRES_DB', 'tracking_analytics'),
-            user=os.getenv('POSTGRES_USER', os.getenv('USER', 'postgres')),
-            password=os.getenv('POSTGRES_PASSWORD'),  # None if not set
-            host=os.getenv('POSTGRES_HOST', 'localhost'),
-            port=int(os.getenv('POSTGRES_PORT', '5432'))
+            dbname=os.getenv("POSTGRES_DB", "tracking_analytics"),
+            user=os.getenv("POSTGRES_USER", os.getenv("USER", "postgres")),
+            password=os.getenv("POSTGRES_PASSWORD"),  # None if not set
+            host=os.getenv("POSTGRES_HOST", "localhost"),
+            port=int(os.getenv("POSTGRES_PORT", "5432")),
         )
 
     def connection_string(self, include_password: bool = True) -> str:
         """Generate PostgreSQL connection string for SQLAlchemy"""
         # Check if host is a Unix socket path (starts with '/')
         # For Cloud Run, POSTGRES_HOST=/cloudsql/PROJECT:REGION:INSTANCE
-        if self.host.startswith('/'):
+        if self.host.startswith("/"):
             # Unix socket connection - pass directory path, driver adds .s.PGSQL.5432
             # See: https://cloud.google.com/sql/docs/postgres/samples/cloud-sql-postgres-sqlalchemy-connect-unix
             if self.password and include_password:
@@ -52,13 +52,13 @@ class PostgresConfig:
     def psycopg2_params(self) -> dict:
         """Get parameters for psycopg2.connect() (for direct connections)"""
         params = {
-            'dbname': self.dbname,
-            'user': self.user,
-            'host': self.host,
-            'port': self.port
+            "dbname": self.dbname,
+            "user": self.user,
+            "host": self.host,
+            "port": self.port,
         }
         if self.password:
-            params['password'] = self.password
+            params["password"] = self.password
         return params
 
     def sqlalchemy_url(self) -> str:
@@ -69,14 +69,15 @@ class PostgresConfig:
 @dataclass
 class DuckDBConfig:
     """DuckDB connection configuration"""
+
     dbpath: str
     read_only: bool
 
     @classmethod
-    def from_env(cls) -> 'DuckDBConfig':
+    def from_env(cls) -> "DuckDBConfig":
         """Load DuckDB config from environment variables"""
         # Default to tracking.duckdb in project root or specified path
-        default_path = os.getenv('DUCKDB_PATH', 'tracking.duckdb')
+        default_path = os.getenv("DUCKDB_PATH", "tracking.duckdb")
 
         # If relative path, make it absolute from project root
         if not os.path.isabs(default_path):
@@ -85,7 +86,7 @@ class DuckDBConfig:
 
         return cls(
             dbpath=default_path,
-            read_only=os.getenv('DUCKDB_READ_ONLY', 'false').lower() == 'true'
+            read_only=os.getenv("DUCKDB_READ_ONLY", "false").lower() == "true",
         )
 
     def connection_string(self) -> str:
@@ -113,37 +114,46 @@ class DBConfig:
             Database backend ('postgres' or 'duckdb').
             If None, reads from DB_BACKEND env var (defaults to 'duckdb')
         """
-        self.backend = backend or os.getenv('DB_BACKEND', 'duckdb')
+        self.backend = backend or os.getenv("DB_BACKEND", "duckdb")
 
-        if self.backend not in ('postgres', 'duckdb'):
-            raise ValueError(f"Invalid backend: {self.backend}. Must be 'postgres' or 'duckdb'")
+        if self.backend not in ("postgres", "duckdb"):
+            raise ValueError(
+                f"Invalid backend: {self.backend}. Must be 'postgres' or 'duckdb'"
+            )
 
-        if self.backend == 'postgres':
+        self.postgres: Optional[PostgresConfig] = None
+        self.duckdb: Optional[DuckDBConfig] = None
+
+        if self.backend == "postgres":
             self.postgres = PostgresConfig.from_env()
-            self.duckdb = None
         else:
             self.duckdb = DuckDBConfig.from_env()
-            self.postgres = None
 
     @property
     def connection_string(self) -> str:
         """Get connection string for current backend"""
-        if self.backend == 'postgres':
+        if self.backend == "postgres":
+            assert self.postgres is not None
             return self.postgres.connection_string()
         else:
+            assert self.duckdb is not None
             return self.duckdb.connection_string()
 
     def sqlalchemy_url(self) -> str:
         """Get SQLAlchemy connection URL for current backend"""
-        if self.backend == 'postgres':
+        if self.backend == "postgres":
+            assert self.postgres is not None
             return self.postgres.sqlalchemy_url()
         else:
+            assert self.duckdb is not None
             return self.duckdb.sqlalchemy_url()
 
     def __repr__(self) -> str:
-        if self.backend == 'postgres':
+        if self.backend == "postgres":
+            assert self.postgres is not None
             return f"DBConfig(backend='postgres', dbname='{self.postgres.dbname}', host='{self.postgres.host}')"
         else:
+            assert self.duckdb is not None
             return f"DBConfig(backend='duckdb', dbpath='{self.duckdb.dbpath}')"
 
 
@@ -154,8 +164,9 @@ def load_dotenv_if_exists():
     """
     try:
         from dotenv import load_dotenv
+
         project_root = get_project_root()
-        env_file = project_root / '.env'
+        env_file = project_root / ".env"
         if env_file.exists():
             load_dotenv(env_file)
             return True
@@ -193,13 +204,12 @@ def get_db_config(backend: Optional[str] = None) -> DBConfig:
     return DBConfig(backend)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Test configuration loading
-    import sys
 
-    print("="*60)
+    print("=" * 60)
     print("Database Configuration Test")
-    print("="*60)
+    print("=" * 60)
 
     # Try loading .env
     if load_dotenv_if_exists():
@@ -210,25 +220,27 @@ if __name__ == '__main__':
     print()
 
     # Test both backends
-    for backend in ['duckdb', 'postgres']:
+    for backend in ["duckdb", "postgres"]:
         print(f"\n{backend.upper()} Configuration:")
-        print("-"*60)
+        print("-" * 60)
 
         try:
             config = DBConfig(backend)
             print(f"Backend: {config.backend}")
             print(f"Connection string: {config.connection_string}")
 
-            if backend == 'postgres':
+            if backend == "postgres":
+                assert config.postgres is not None
                 print(f"Database: {config.postgres.dbname}")
                 print(f"User: {config.postgres.user}")
                 print(f"Host: {config.postgres.host}:{config.postgres.port}")
                 print(f"Password set: {config.postgres.password is not None}")
             else:
+                assert config.duckdb is not None
                 print(f"DB Path: {config.duckdb.dbpath}")
                 print(f"Read-only: {config.duckdb.read_only}")
 
         except Exception as e:
             print(f"Error: {e}")
 
-    print("\n" + "="*60)
+    print("\n" + "=" * 60)

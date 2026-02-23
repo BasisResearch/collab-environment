@@ -119,6 +119,17 @@ dev = [
   "types-PyYAML",
 ]
 
+db-dashboard = [
+  "aiosql<14",
+  "sqlalchemy",
+  "psycopg2",
+  "panel",
+  "param",
+  "holoviews",
+  "bokeh",
+  "plotly",
+]
+
 [build-system]
 requires = ["setuptools<70.0"]
 build-backend = "setuptools.build_meta"

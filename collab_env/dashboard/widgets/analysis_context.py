@@ -41,12 +41,14 @@ class AnalysisContext:
     scope: QueryScope
 
     # Shared analysis parameters (commonly used across widgets)
-    spatial_bin_size: float = 10.0      # For spatial discretization
-    temporal_window_size: int = 10     # For time-windowed analyses
+    spatial_bin_size: float = 10.0  # For spatial discretization
+    temporal_window_size: int = 10  # For time-windowed analyses
 
     # Additional shared parameters
-    min_samples: int = 100              # Minimum samples for statistics (matches QueryBackend default)
-    confidence_level: float = 0.95      # For confidence intervals
+    min_samples: int = (
+        100  # Minimum samples for statistics (matches QueryBackend default)
+    )
+    confidence_level: float = 0.95  # For confidence intervals
 
     # Callback hooks for status updates (optional)
     on_loading: Optional[Callable[[str], None]] = None
@@ -86,9 +88,9 @@ class AnalysisContext:
         params = self.scope.to_query_params()
 
         # Add shared analysis parameters
-        params['bin_size'] = self.spatial_bin_size
-        params['window_size'] = self.temporal_window_size
-        params['min_samples'] = self.min_samples
+        params["bin_size"] = self.spatial_bin_size
+        params["window_size"] = self.temporal_window_size
+        params["min_samples"] = self.min_samples
 
         # Widget-specific overrides
         params.update(extra_params)

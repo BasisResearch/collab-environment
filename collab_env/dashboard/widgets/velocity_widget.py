@@ -39,9 +39,7 @@ class VelocityStatsWidget(BaseAnalysisWidget):
 
     # Widget-specific parameters (minimal, since layout is fixed)
     bin_count = param.Integer(
-        default=30,
-        bounds=(10, 100),
-        doc="Number of bins for histograms"
+        default=30, bounds=(10, 100), doc="Number of bins for histograms"
     )
 
     def create_custom_controls(self) -> Optional[pn.Column]:
@@ -49,10 +47,8 @@ class VelocityStatsWidget(BaseAnalysisWidget):
         return pn.Column(
             "### Visualization Options",
             pn.widgets.IntSlider.from_param(
-                self.param.bin_count,
-                name="Histogram Bins",
-                width=200
-            )
+                self.param.bin_count, name="Histogram Bins", width=200
+            ),
         )
 
     def create_display_pane(self) -> pn.pane.PaneBase:
@@ -60,11 +56,12 @@ class VelocityStatsWidget(BaseAnalysisWidget):
         # Return a Column that we can update with content
         return pn.Column(
             pn.pane.Markdown('Click "Load Data" to display velocity statistics'),
-            sizing_mode="stretch_both"
+            sizing_mode="stretch_both",
         )
 
     def load_data(self) -> None:
         """Load and visualize velocity statistics."""
+        assert self.context is not None
         # Validate this is episode scope only
         if self.context.scope.scope_type != ScopeType.EPISODE:
             raise ValueError(
@@ -73,7 +70,7 @@ class VelocityStatsWidget(BaseAnalysisWidget):
             )
 
         # Get raw episode tracks (positions + velocities for all agents at all times)
-        df_tracks = self.query_with_context('get_episode_tracks')
+        df_tracks = self.query_with_context("get_episode_tracks")
 
         if len(df_tracks) == 0:
             raise ValueError("No data found for selected parameters")
@@ -84,57 +81,76 @@ class VelocityStatsWidget(BaseAnalysisWidget):
 
         # Group 1a: Individual agent speed (should always work)
         try:
-            speed_data = self._to_numeric_array(df_tracks['speed'])
+            speed_data = self._to_numeric_array(df_tracks["speed"])
             speed_hist = self._create_histogram(
                 speed_data,
                 "1a. Individual Agent Speed - Distribution",
                 "Speed",
-                "darkblue"
+                "darkblue",
             )
-            speed_ts = self._create_speed_time_series(df_tracks, "1a. Individual Agent Speed - Time Series")
-            display_objects.extend([
-                pn.pane.Markdown("## 1a. Individual Agent Speed"),
-                pn.pane.HoloViews((speed_hist + speed_ts).opts(axiswise=True))
-            ])
+            speed_ts = self._create_speed_time_series(
+                df_tracks, "1a. Individual Agent Speed - Time Series"
+            )
+            display_objects.extend(
+                [
+                    pn.pane.Markdown("## 1a. Individual Agent Speed"),
+                    pn.pane.HoloViews((speed_hist + speed_ts).opts(axiswise=True)),
+                ]
+            )
             successful_groups += 1
             logger.info("✓ Individual agent speed statistics computed successfully")
         except Exception as e:
             logger.warning(f"Failed to compute individual agent speed: {e}")
-            display_objects.extend([
-                pn.pane.Markdown("## 1a. Individual Agent Speed"),
-                pn.pane.Markdown(f"_Could not compute individual agent speed statistics: {e}_")
-            ])
+            display_objects.extend(
+                [
+                    pn.pane.Markdown("## 1a. Individual Agent Speed"),
+                    pn.pane.Markdown(
+                        f"_Could not compute individual agent speed statistics: {e}_"
+                    ),
+                ]
+            )
 
         # Group 1b: Mean velocity magnitude (may fail if all agents stationary)
         try:
             mean_vel_mag_data = self._compute_mean_velocity_magnitude(df_tracks)
-            if len(mean_vel_mag_data) == 0 or mean_vel_mag_data['mean_velocity_magnitude'].isna().all():
+            if (
+                len(mean_vel_mag_data) == 0
+                or mean_vel_mag_data["mean_velocity_magnitude"].isna().all()
+            ):
                 raise ValueError("All agents have zero or near-zero velocity")
 
             mean_vel_mag_hist = self._create_histogram(
-                mean_vel_mag_data['mean_velocity_magnitude'].values,
+                mean_vel_mag_data["mean_velocity_magnitude"].values,
                 "1b. Mean Velocity Magnitude - Distribution",
                 "Magnitude",
-                "darkgreen"
+                "darkgreen",
             )
             mean_vel_mag_ts = self._create_simple_time_series(
                 mean_vel_mag_data,
-                'mean_velocity_magnitude',
+                "mean_velocity_magnitude",
                 "1b. Mean Velocity Magnitude - Time Series",
-                "green"
+                "green",
             )
-            display_objects.extend([
-                pn.pane.Markdown("## 1b. Mean Velocity Magnitude"),
-                pn.pane.HoloViews((mean_vel_mag_hist + mean_vel_mag_ts).opts(axiswise=True))
-            ])
+            display_objects.extend(
+                [
+                    pn.pane.Markdown("## 1b. Mean Velocity Magnitude"),
+                    pn.pane.HoloViews(
+                        (mean_vel_mag_hist + mean_vel_mag_ts).opts(axiswise=True)
+                    ),
+                ]
+            )
             successful_groups += 1
             logger.info("✓ Mean velocity magnitude statistics computed successfully")
         except Exception as e:
             logger.warning(f"Failed to compute mean velocity magnitude: {e}")
-            display_objects.extend([
-                pn.pane.Markdown("## 1b. Mean Velocity Magnitude"),
-                pn.pane.Markdown(f"_Could not compute mean velocity magnitude: {e}_")
-            ])
+            display_objects.extend(
+                [
+                    pn.pane.Markdown("## 1b. Mean Velocity Magnitude"),
+                    pn.pane.Markdown(
+                        f"_Could not compute mean velocity magnitude: {e}_"
+                    ),
+                ]
+            )
 
         # Group 1c: Relative velocity magnitude (may fail or be uninteresting if agents stationary)
         try:
@@ -143,55 +159,65 @@ class VelocityStatsWidget(BaseAnalysisWidget):
                 raise ValueError("No pairwise velocity data available")
 
             # Check if all relative velocities are near-zero (stationary agents)
-            if rel_vel_mag_data['relative_velocity_magnitude'].max() < 1e-6:
+            if rel_vel_mag_data["relative_velocity_magnitude"].max() < 1e-6:
                 raise ValueError("All agents appear stationary (no relative movement)")
 
             rel_vel_mag_hist = self._create_histogram(
-                rel_vel_mag_data['relative_velocity_magnitude'].values,
+                rel_vel_mag_data["relative_velocity_magnitude"].values,
                 "1c. Relative Velocity Magnitude - Distribution",
                 "||v_i - v_j||",
-                "darkorange"
+                "darkorange",
             )
             rel_vel_mag_ts = self._create_relative_time_series(
                 rel_vel_mag_data,
-                'relative_velocity_magnitude',
+                "relative_velocity_magnitude",
                 "1c. Relative Velocity Magnitude - Time Series",
-                "orange"
+                "orange",
             )
-            display_objects.extend([
-                pn.pane.Markdown("## 1c. Relative Velocity Magnitude (pairwise)"),
-                pn.pane.HoloViews((rel_vel_mag_hist + rel_vel_mag_ts).opts(axiswise=True))
-            ])
+            display_objects.extend(
+                [
+                    pn.pane.Markdown("## 1c. Relative Velocity Magnitude (pairwise)"),
+                    pn.pane.HoloViews(
+                        (rel_vel_mag_hist + rel_vel_mag_ts).opts(axiswise=True)
+                    ),
+                ]
+            )
             successful_groups += 1
-            logger.info("✓ Relative velocity magnitude statistics computed successfully")
+            logger.info(
+                "✓ Relative velocity magnitude statistics computed successfully"
+            )
         except Exception as e:
             logger.warning(f"Failed to compute relative velocity magnitude: {e}")
-            display_objects.extend([
-                pn.pane.Markdown("## 1c. Relative Velocity Magnitude (pairwise)"),
-                pn.pane.Markdown(f"_Could not compute relative velocity statistics: {e}_")
-            ])
+            display_objects.extend(
+                [
+                    pn.pane.Markdown("## 1c. Relative Velocity Magnitude (pairwise)"),
+                    pn.pane.Markdown(
+                        f"_Could not compute relative velocity statistics: {e}_"
+                    ),
+                ]
+            )
 
         # Only fail if NO statistics could be computed
         if successful_groups == 0:
-            raise ValueError("Could not compute any velocity statistics. Check data quality.")
+            raise ValueError(
+                "Could not compute any velocity statistics. Check data quality."
+            )
 
         # Update display with whatever we successfully computed
         self.display_pane.objects = display_objects
-        logger.info(f"Loaded velocity stats with {len(df_tracks)} observations ({successful_groups}/3 groups successful)")
+        logger.info(
+            f"Loaded velocity stats with {len(df_tracks)} observations ({successful_groups}/3 groups successful)"
+        )
 
     def _to_numeric_array(self, series: pd.Series) -> np.ndarray:
         """Convert pandas series to clean numeric array, replacing None/NaN with 0.0."""
         # Convert to numeric (handles None, converts to NaN)
-        numeric = pd.to_numeric(series, errors='coerce')
+        numeric = pd.to_numeric(series, errors="coerce")
         # Replace NaN with 0.0
         return numeric.fillna(0.0).values
 
     def _create_histogram(
-        self,
-        data: np.ndarray,
-        title: str,
-        xlabel: str,
-        color: str
+        self, data: np.ndarray, title: str, xlabel: str, color: str
     ) -> hv.Histogram:
         """Create a histogram plot."""
         # Remove NaN and infinite values
@@ -215,80 +241,78 @@ class VelocityStatsWidget(BaseAnalysisWidget):
                 width=500,
                 height=300,
                 xlabel=xlabel,
-                ylabel='Count',
+                ylabel="Count",
                 title=title,
             )
         )
         return hist
 
-    def _create_speed_time_series(self, df_tracks: pd.DataFrame, title: str = "Speed Over Time") -> hv.Overlay:
+    def _create_speed_time_series(
+        self, df_tracks: pd.DataFrame, title: str = "Speed Over Time"
+    ) -> hv.Overlay:
         """Create time series with median and IQR (25th-75th percentile) for individual agent speeds."""
-        logger.info("⭐ USING NEW VERSION: Creating speed time series with Spread element")
+        logger.info(
+            "⭐ USING NEW VERSION: Creating speed time series with Spread element"
+        )
+        assert self.context is not None
         window_size = self.context.temporal_window_size
 
         # Clean speed data first (handle None/NaN values)
         df_tracks = df_tracks.copy()
-        df_tracks['speed'] = self._to_numeric_array(df_tracks['speed'])
+        df_tracks["speed"] = self._to_numeric_array(df_tracks["speed"])
 
         # Compute windowed statistics (median and quartiles)
-        df_tracks['time_window'] = (df_tracks['time_index'] // window_size) * window_size
-        stats = df_tracks.groupby('time_window')['speed'].agg([
-            ('median', 'median'),
-            ('q25', lambda x: x.quantile(0.25)),
-            ('q75', lambda x: x.quantile(0.75))
-        ]).reset_index()
+        df_tracks["time_window"] = (
+            df_tracks["time_index"] // window_size
+        ) * window_size
+        stats = (
+            df_tracks.groupby("time_window")["speed"]
+            .agg(
+                [
+                    ("median", "median"),
+                    ("q25", lambda x: x.quantile(0.25)),
+                    ("q75", lambda x: x.quantile(0.75)),
+                ]
+            )
+            .reset_index()
+        )
 
         # Compute errors for Spread element (distance from median to quantiles)
-        stats['neg_err'] = stats['median'] - stats['q25']
-        stats['pos_err'] = stats['q75'] - stats['median']
+        stats["neg_err"] = stats["median"] - stats["q25"]
+        stats["pos_err"] = stats["q75"] - stats["median"]
 
         # Create median line
         curve = hv.Curve(
-            (stats['time_window'], stats['median']),
-            kdims='Time',
-            vdims='Speed',
-            label='Median'
-        ).opts(
-            color='darkblue',
-            line_width=2
-        )
+            (stats["time_window"], stats["median"]),
+            kdims="Time",
+            vdims="Speed",
+            label="Median",
+        ).opts(color="darkblue", line_width=2)
 
         # Create IQR spread
         spread = hv.Spread(
-            (stats['time_window'], stats['median'], stats['neg_err'], stats['pos_err']),
-            kdims='Time',
-            vdims=['Speed', 'neg_err', 'pos_err'],
-            label='IQR (25th-75th)'
-        ).opts(
-            color='lightblue'
-        )
+            (stats["time_window"], stats["median"], stats["neg_err"], stats["pos_err"]),
+            kdims="Time",
+            vdims=["Speed", "neg_err", "pos_err"],
+            label="IQR (25th-75th)",
+        ).opts(color="lightblue")
 
         def legend_hook(plot, element):
             """Position legend inside plot for plotly backend."""
             fig = plot.state
             fig["layout"]["legend"] = dict(
-                yanchor="top",
-                y=0.98,
-                xanchor="right",
-                x=0.98
+                yanchor="top", y=0.98, xanchor="right", x=0.98
             )
 
         return (spread * curve).opts(
-            width=500,
-            height=300,
-            title=title,
-            show_legend=True,
-            hooks=[legend_hook]
+            width=500, height=300, title=title, show_legend=True, hooks=[legend_hook]
         )
 
     def _create_simple_time_series(
-        self,
-        df: pd.DataFrame,
-        value_col: str,
-        title: str,
-        color: str
+        self, df: pd.DataFrame, value_col: str, title: str, color: str
     ) -> hv.Curve:
         """Create simple time series with windowing (no std bands)."""
+        assert self.context is not None
         window_size = self.context.temporal_window_size
 
         # Filter out NaN values
@@ -297,86 +321,75 @@ class VelocityStatsWidget(BaseAnalysisWidget):
             raise ValueError(f"No valid data for time series: {title}")
 
         # Apply windowing and compute mean per window
-        df_clean['time_window'] = (df_clean['time_index'] // window_size) * window_size
-        stats = df_clean.groupby('time_window')[value_col].mean().reset_index()
+        df_clean["time_window"] = (df_clean["time_index"] // window_size) * window_size
+        stats = df_clean.groupby("time_window")[value_col].mean().reset_index()
 
-        return hv.Curve(
-            stats,
-            kdims='time_window',
-            vdims=value_col
-        ).opts(
+        return hv.Curve(stats, kdims="time_window", vdims=value_col).opts(
             color=color,
             line_width=2,
             width=500,
             height=300,
-            xlabel='Time',
-            ylabel='Magnitude',
-            title=title
+            xlabel="Time",
+            ylabel="Magnitude",
+            title=title,
         )
 
     def _create_relative_time_series(
-        self,
-        df: pd.DataFrame,
-        value_col: str,
-        title: str,
-        color: str
+        self, df: pd.DataFrame, value_col: str, title: str, color: str
     ) -> hv.Overlay:
         """Create time series with median and IQR (25th-75th percentile) for relative quantities."""
-        logger.info(f"⭐ USING NEW VERSION: Creating relative time series with Spread element (color={color})")
+        logger.info(
+            f"⭐ USING NEW VERSION: Creating relative time series with Spread element (color={color})"
+        )
+        assert self.context is not None
         window_size = self.context.temporal_window_size
 
         # Compute windowed statistics (median and quartiles)
-        df['time_window'] = (df['time_index'] // window_size) * window_size
-        stats = df.groupby('time_window')[value_col].agg([
-            ('median', 'median'),
-            ('q25', lambda x: x.quantile(0.25)),
-            ('q75', lambda x: x.quantile(0.75))
-        ]).reset_index()
+        df["time_window"] = (df["time_index"] // window_size) * window_size
+        stats = (
+            df.groupby("time_window")[value_col]
+            .agg(
+                [
+                    ("median", "median"),
+                    ("q25", lambda x: x.quantile(0.25)),
+                    ("q75", lambda x: x.quantile(0.75)),
+                ]
+            )
+            .reset_index()
+        )
 
         # Compute errors for Spread element
-        stats['neg_err'] = stats['median'] - stats['q25']
-        stats['pos_err'] = stats['q75'] - stats['median']
+        stats["neg_err"] = stats["median"] - stats["q25"]
+        stats["pos_err"] = stats["q75"] - stats["median"]
 
         # Create line plot (median) - use darker shade for line
-        dark_color = {'green': 'darkgreen', 'orange': 'darkorange'}.get(color, color)
-        light_color = {'green': 'lightgreen', 'orange': 'lightsalmon'}.get(color, color)
+        dark_color = {"green": "darkgreen", "orange": "darkorange"}.get(color, color)
+        light_color = {"green": "lightgreen", "orange": "lightsalmon"}.get(color, color)
 
         curve = hv.Curve(
-            (stats['time_window'], stats['median']),
-            kdims='Time',
-            vdims='Magnitude',
-            label='Median'
-        ).opts(
-            color=dark_color,
-            line_width=2
-        )
+            (stats["time_window"], stats["median"]),
+            kdims="Time",
+            vdims="Magnitude",
+            label="Median",
+        ).opts(color=dark_color, line_width=2)
 
         # Create IQR spread
         spread = hv.Spread(
-            (stats['time_window'], stats['median'], stats['neg_err'], stats['pos_err']),
-            kdims='Time',
-            vdims=['Magnitude', 'neg_err', 'pos_err'],
-            label='IQR (25th-75th)'
-        ).opts(
-            color=light_color
-        )
+            (stats["time_window"], stats["median"], stats["neg_err"], stats["pos_err"]),
+            kdims="Time",
+            vdims=["Magnitude", "neg_err", "pos_err"],
+            label="IQR (25th-75th)",
+        ).opts(color=light_color)
 
         def legend_hook(plot, element):
             """Position legend inside plot for plotly backend."""
             fig = plot.state
             fig["layout"]["legend"] = dict(
-                yanchor="top",
-                y=0.98,
-                xanchor="right",
-                x=0.98
+                yanchor="top", y=0.98, xanchor="right", x=0.98
             )
 
         return (spread * curve).opts(
-            width=500,
-            height=300,
-            title=title,
-            show_legend=True,
-            hooks=[legend_hook]
+            width=500, height=300, title=title, show_legend=True, hooks=[legend_hook]
         )
 
     def _compute_mean_velocity_magnitude(self, df_tracks: pd.DataFrame) -> pd.DataFrame:
@@ -387,14 +400,14 @@ class VelocityStatsWidget(BaseAnalysisWidget):
         """
         results = []
 
-        for time_idx in df_tracks['time_index'].unique():
-            df_t = df_tracks[df_tracks['time_index'] == time_idx].copy()
+        for time_idx in df_tracks["time_index"].unique():
+            df_t = df_tracks[df_tracks["time_index"] == time_idx].copy()
 
             # Compute velocity magnitudes (handle 2D data where v_z might be None/NaN or missing)
-            v_x = self._to_numeric_array(df_t['v_x'])
-            v_y = self._to_numeric_array(df_t['v_y'])
-            if 'v_z' in df_t.columns:
-                v_z_vals = self._to_numeric_array(df_t['v_z'])
+            v_x = self._to_numeric_array(df_t["v_x"])
+            v_y = self._to_numeric_array(df_t["v_y"])
+            if "v_z" in df_t.columns:
+                v_z_vals = self._to_numeric_array(df_t["v_z"])
             else:
                 v_z_vals = np.zeros(len(df_t))
             v_mag = np.sqrt(v_x**2 + v_y**2 + v_z_vals**2)
@@ -420,27 +433,32 @@ class VelocityStatsWidget(BaseAnalysisWidget):
             # Compute magnitude of mean vector
             mean_vel_mag = np.sqrt(mean_v_x**2 + mean_v_y**2 + mean_v_z**2)
 
-            results.append({
-                'time_index': time_idx,
-                'mean_velocity_magnitude': mean_vel_mag
-            })
+            results.append(
+                {"time_index": time_idx, "mean_velocity_magnitude": mean_vel_mag}
+            )
 
         return pd.DataFrame(results)
 
-    def _compute_relative_velocity_magnitude(self, df_tracks: pd.DataFrame) -> pd.DataFrame:
+    def _compute_relative_velocity_magnitude(
+        self, df_tracks: pd.DataFrame
+    ) -> pd.DataFrame:
         """
         Compute pairwise relative velocity magnitudes ||v_i - v_j|| for all i<j.
         """
         results = []
 
-        for time_idx in df_tracks['time_index'].unique():
-            df_t = df_tracks[df_tracks['time_index'] == time_idx].copy()
+        for time_idx in df_tracks["time_index"].unique():
+            df_t = df_tracks[df_tracks["time_index"] == time_idx].copy()
 
-            agents = df_t['agent_id'].values
+            agents = df_t["agent_id"].values
             # Handle None/NaN values in all velocity components
-            v_x = self._to_numeric_array(df_t['v_x'])
-            v_y = self._to_numeric_array(df_t['v_y'])
-            v_z = self._to_numeric_array(df_t['v_z']) if 'v_z' in df_t.columns else np.zeros(len(df_t))
+            v_x = self._to_numeric_array(df_t["v_x"])
+            v_y = self._to_numeric_array(df_t["v_y"])
+            v_z = (
+                self._to_numeric_array(df_t["v_z"])
+                if "v_z" in df_t.columns
+                else np.zeros(len(df_t))
+            )
 
             # Compute all pairwise differences (i < j)
             for i in range(len(agents)):
@@ -451,11 +469,13 @@ class VelocityStatsWidget(BaseAnalysisWidget):
 
                     rel_vel_mag = np.sqrt(delta_vx**2 + delta_vy**2 + delta_vz**2)
 
-                    results.append({
-                        'time_index': time_idx,
-                        'agent_i': agents[i],
-                        'agent_j': agents[j],
-                        'relative_velocity_magnitude': rel_vel_mag
-                    })
+                    results.append(
+                        {
+                            "time_index": time_idx,
+                            "agent_i": agents[i],
+                            "agent_j": agents[j],
+                            "relative_velocity_magnitude": rel_vel_mag,
+                        }
+                    )
 
         return pd.DataFrame(results)

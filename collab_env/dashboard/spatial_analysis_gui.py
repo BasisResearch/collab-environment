@@ -9,14 +9,13 @@ import panel as pn
 import param
 import logging
 from pathlib import Path
+from typing import Optional
 
 from collab_env.data.db.query_backend import QueryBackend
-from collab_env.dashboard.widgets import (
-    WidgetRegistry,
-    AnalysisContext,
-    QueryScope,
-    ScopeType
-)
+from collab_env.dashboard.widgets import WidgetRegistry, AnalysisContext, QueryScope
+
+import holoviews as hv
+
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -24,7 +23,6 @@ logger = logging.getLogger(__name__)
 
 # Enable Panel extensions
 pn.extension("tabulator", "plotly")
-import holoviews as hv
 hv.extension("plotly", "bokeh")  # plotly first for Scatter3D support
 
 
@@ -43,12 +41,10 @@ class SpatialAnalysisGUI(param.Parameterized):
     selected_session = param.String(default="", doc="Selected session ID")
     selected_episode = param.String(default="", doc="Selected episode ID")
     scope_type = param.Selector(
-        default="Episode",
-        objects=["Episode", "Session"],
-        doc="Analysis scope type"
+        default="Episode", objects=["Episode", "Session"], doc="Analysis scope type"
     )
 
-    def __init__(self, widget_config: str = None, **params):
+    def __init__(self, widget_config: Optional[str] = None, **params):
         super().__init__(**params)
 
         # Initialize query backend
@@ -90,28 +86,19 @@ class SpatialAnalysisGUI(param.Parameterized):
             name="Analysis Scope",
             options=["Episode", "Session"],
             value="Episode",
-            button_type="success"
+            button_type="success",
         )
 
         self.category_select = pn.widgets.Select(
-            name="Category",
-            options=[],
-            min_width=350,
-            sizing_mode="stretch_width"
+            name="Category", options=[], min_width=350, sizing_mode="stretch_width"
         )
 
         self.session_select = pn.widgets.Select(
-            name="Session",
-            options=[],
-            min_width=350,
-            sizing_mode="stretch_width"
+            name="Session", options=[], min_width=350, sizing_mode="stretch_width"
         )
 
         self.episode_select = pn.widgets.Select(
-            name="Episode",
-            options=[],
-            min_width=350,
-            sizing_mode="stretch_width"
+            name="Episode", options=[], min_width=350, sizing_mode="stretch_width"
         )
 
         # === Agent Filtering ===
@@ -119,45 +106,29 @@ class SpatialAnalysisGUI(param.Parameterized):
             name="Agent Type",
             options=["agent", "target", "all"],
             value="agent",
-            button_type="success"
+            button_type="success",
         )
 
         # === Time Range Controls ===
         self.start_time_slider = pn.widgets.IntSlider(
-            name="Start Time",
-            value=0,
-            start=0,
-            end=3000,
-            step=10,
-            width=350
+            name="Start Time", value=0, start=0, end=3000, step=10, width=350
         )
 
         self.end_time_slider = pn.widgets.IntSlider(
-            name="End Time",
-            value=3000,
-            start=0,
-            end=3000,
-            step=10,
-            width=350
+            name="End Time", value=3000, start=0, end=3000, step=10, width=350
         )
 
         # Quick time range buttons
         self.btn_before_500 = pn.widgets.Button(
-            name="Before t=500",
-            button_type="default",
-            width=110
+            name="Before t=500", button_type="default", width=110
         )
 
         self.btn_after_500 = pn.widgets.Button(
-            name="After t=500",
-            button_type="default",
-            width=110
+            name="After t=500", button_type="default", width=110
         )
 
         self.btn_full_range = pn.widgets.Button(
-            name="Full Range",
-            button_type="default",
-            width=110
+            name="Full Range", button_type="default", width=110
         )
 
         # === Shared Analysis Parameters ===
@@ -165,40 +136,37 @@ class SpatialAnalysisGUI(param.Parameterized):
 
         self.spatial_bin_input = pn.widgets.FloatInput(
             name="Spatial Bin Size",
-            value=defaults.get('spatial_bin_size', 10.0),
+            value=defaults.get("spatial_bin_size", 10.0),
             start=1.0,
             end=100.0,
             step=1.0,
-            width=350
+            width=350,
         )
 
         self.temporal_window_input = pn.widgets.IntInput(
             name="Time Window Size",
-            value=defaults.get('temporal_window_size', 10),
+            value=defaults.get("temporal_window_size", 10),
             start=2,
             end=1000,
             step=2,
-            width=350
+            width=350,
         )
 
         self.min_samples_input = pn.widgets.IntInput(
             name="Min Samples",
-            value=defaults.get('min_samples', 10),
+            value=defaults.get("min_samples", 10),
             start=1,
             end=1000,
-            width=350
+            width=350,
         )
 
         # === Status and Loading Indicators ===
         self.status_pane = pn.pane.HTML(
-            "<p>Ready. Select a session to begin.</p>",
-            sizing_mode="stretch_width"
+            "<p>Ready. Select a session to begin.</p>", sizing_mode="stretch_width"
         )
 
         self.loading_indicator = pn.indicators.LoadingSpinner(
-            value=False,
-            width=50,
-            height=50
+            value=False, width=50, height=50
         )
 
     def _wire_callbacks(self):
@@ -215,15 +183,29 @@ class SpatialAnalysisGUI(param.Parameterized):
         self.btn_full_range.on_click(self._set_full_range)
 
         # Update contexts when scope parameters change
-        self.scope_type_select.param.watch(lambda e: self._update_widget_contexts(), 'value')
-        self.agent_type_select.param.watch(lambda e: self._update_widget_contexts(), 'value')
-        self.start_time_slider.param.watch(lambda e: self._update_widget_contexts(), 'value')
-        self.end_time_slider.param.watch(lambda e: self._update_widget_contexts(), 'value')
+        self.scope_type_select.param.watch(
+            lambda e: self._update_widget_contexts(), "value"
+        )
+        self.agent_type_select.param.watch(
+            lambda e: self._update_widget_contexts(), "value"
+        )
+        self.start_time_slider.param.watch(
+            lambda e: self._update_widget_contexts(), "value"
+        )
+        self.end_time_slider.param.watch(
+            lambda e: self._update_widget_contexts(), "value"
+        )
 
         # Shared parameter changes
-        self.spatial_bin_input.param.watch(lambda e: self._update_widget_contexts(), 'value')
-        self.temporal_window_input.param.watch(lambda e: self._update_widget_contexts(), 'value')
-        self.min_samples_input.param.watch(lambda e: self._update_widget_contexts(), 'value')
+        self.spatial_bin_input.param.watch(
+            lambda e: self._update_widget_contexts(), "value"
+        )
+        self.temporal_window_input.param.watch(
+            lambda e: self._update_widget_contexts(), "value"
+        )
+        self.min_samples_input.param.watch(
+            lambda e: self._update_widget_contexts(), "value"
+        )
 
     # ==================== Status Helpers ====================
 
@@ -254,11 +236,15 @@ class SpatialAnalysisGUI(param.Parameterized):
             categories_df = self.query.get_categories()
             if len(categories_df) == 0:
                 self.category_select.options = [""]
-                self.status_pane.object = "<p style='color:orange'>⚠️ No categories found in database.</p>"
+                self.status_pane.object = (
+                    "<p style='color:orange'>⚠️ No categories found in database.</p>"
+                )
             else:
                 # Create display names (category_name)
-                category_options = {row['category_name']: row['category_id']
-                                   for _, row in categories_df.iterrows()}
+                category_options = {
+                    row["category_name"]: row["category_id"]
+                    for _, row in categories_df.iterrows()
+                }
                 self.category_select.options = [""] + list(category_options.keys())
                 self.category_select.param.trigger("options")
                 self._category_map = category_options
@@ -282,8 +268,10 @@ class SpatialAnalysisGUI(param.Parameterized):
                     self.status_pane.object = "<p style='color:orange'>⚠️ No sessions found. Load data first.</p>"
             else:
                 # Create display names (session_name)
-                session_options = {row['session_name']: row['session_id']
-                                   for _, row in sessions_df.iterrows()}
+                session_options = {
+                    row["session_name"]: row["session_id"]
+                    for _, row in sessions_df.iterrows()
+                }
                 self.session_select.options = [""] + list(session_options.keys())
                 self.session_select.param.trigger("options")
                 self._session_map = session_options
@@ -333,15 +321,17 @@ class SpatialAnalysisGUI(param.Parameterized):
                 self._show_error("No episodes found for this session")
             else:
                 # Create display names (episode_id for clarity, especially for GNN rollouts)
-                episode_options = {row['episode_id']: row['episode_id']
-                                   for _, row in episodes_df.iterrows()}
+                episode_options = {
+                    row["episode_id"]: row["episode_id"]
+                    for _, row in episodes_df.iterrows()
+                }
                 self.episode_select.options = [""] + list(episode_options.keys())
                 self.episode_select.param.trigger("options")
                 self._episode_map = episode_options
 
                 # Update time range sliders based on session's episodes
                 # Use the maximum num_frames across all episodes in the session
-                max_frames = int(episodes_df['num_frames'].max())
+                max_frames = int(episodes_df["num_frames"].max())
                 self.start_time_slider.end = max_frames
                 self.end_time_slider.end = max_frames
                 self.end_time_slider.value = max_frames
@@ -350,15 +340,21 @@ class SpatialAnalysisGUI(param.Parameterized):
                 # Get agent types from session
                 agent_types_df = self.query.get_agent_types_for_session(session_id)
                 if len(agent_types_df) > 0:
-                    agent_types = agent_types_df['agent_type_id'].tolist()
+                    agent_types = agent_types_df["agent_type_id"].tolist()
                     # Always include 'all' option
-                    agent_types_with_all = agent_types + ['all']
+                    agent_types_with_all = agent_types + ["all"]
                     self.agent_type_select.options = agent_types_with_all
                     # Set default to first agent type
-                    self.agent_type_select.value = agent_types[0] if agent_types else 'all'
-                    logger.info(f"Loaded {len(agent_types)} agent types for session: {agent_types}")
+                    self.agent_type_select.value = (
+                        agent_types[0] if agent_types else "all"
+                    )
+                    logger.info(
+                        f"Loaded {len(agent_types)} agent types for session: {agent_types}"
+                    )
 
-                self._show_success(f"Loaded {len(episodes_df)} episodes (max {max_frames} frames, {len(agent_types_df)} agent types)")
+                self._show_success(
+                    f"Loaded {len(episodes_df)} episodes (max {max_frames} frames, {len(agent_types_df)} agent types)"
+                )
                 logger.info(f"Loaded {len(episodes_df)} episodes")
 
                 # Update widget contexts for session scope
@@ -381,7 +377,7 @@ class SpatialAnalysisGUI(param.Parameterized):
             # Get episode metadata to update time range
             metadata = self.query.get_episode_metadata(episode_id)
             if len(metadata) > 0:
-                num_frames = int(metadata.iloc[0]['num_frames'])
+                num_frames = int(metadata.iloc[0]["num_frames"])
                 self.start_time_slider.end = num_frames
                 self.end_time_slider.end = num_frames
                 self.end_time_slider.value = num_frames
@@ -389,15 +385,19 @@ class SpatialAnalysisGUI(param.Parameterized):
                 # Get agent types from episode
                 agent_types_df = self.query.get_agent_types(episode_id)
                 if len(agent_types_df) > 0:
-                    agent_types = agent_types_df['agent_type_id'].tolist()
+                    agent_types = agent_types_df["agent_type_id"].tolist()
                     # Always include 'all' option
-                    agent_types_with_all = agent_types + ['all']
+                    agent_types_with_all = agent_types + ["all"]
                     self.agent_type_select.options = agent_types_with_all
                     # Set default to first agent type
-                    self.agent_type_select.value = agent_types[0] if agent_types else 'all'
+                    self.agent_type_select.value = (
+                        agent_types[0] if agent_types else "all"
+                    )
                     logger.info(f"Loaded {len(agent_types)} agent types: {agent_types}")
 
-                self._show_success(f"Episode selected ({num_frames} frames, {len(agent_types_df)} agent types)")
+                self._show_success(
+                    f"Episode selected ({num_frames} frames, {len(agent_types_df)} agent types)"
+                )
                 logger.info(f"Selected episode {episode_id} ({num_frames} frames)")
 
                 # Update widget contexts for episode scope
@@ -426,7 +426,7 @@ class SpatialAnalysisGUI(param.Parameterized):
 
     # ==================== Context Management ====================
 
-    def _get_current_scope(self) -> QueryScope:
+    def _get_current_scope(self) -> Optional[QueryScope]:
         """Build QueryScope from current UI state."""
         scope_type_str = self.scope_type_select.value.lower()
 
@@ -438,7 +438,7 @@ class SpatialAnalysisGUI(param.Parameterized):
                 episode_id=self.selected_episode,
                 start_time=self.start_time_slider.value,
                 end_time=self.end_time_slider.value,
-                agent_type=self.agent_type_select.value
+                agent_type=self.agent_type_select.value,
             )
 
         elif scope_type_str == "session":
@@ -449,12 +449,12 @@ class SpatialAnalysisGUI(param.Parameterized):
                 session_id=self.selected_session,
                 start_time=self.start_time_slider.value,
                 end_time=self.end_time_slider.value,
-                agent_type=self.agent_type_select.value
+                agent_type=self.agent_type_select.value,
             )
 
         return None
 
-    def _get_context(self) -> AnalysisContext:
+    def _get_context(self) -> Optional[AnalysisContext]:
         """Build AnalysisContext from current UI state."""
         scope = self._get_current_scope()
         if scope is None:
@@ -468,7 +468,7 @@ class SpatialAnalysisGUI(param.Parameterized):
             min_samples=self.min_samples_input.value,
             on_loading=self._show_loading,
             on_success=self._show_success,
-            on_error=self._show_error
+            on_error=self._show_error,
         )
 
     def _update_widget_contexts(self):
@@ -479,7 +479,7 @@ class SpatialAnalysisGUI(param.Parameterized):
                 widget.context = context
             logger.debug(f"Updated widget contexts: {context.scope}")
 
-    @param.depends('scope_type_select.value')
+    @param.depends("scope_type_select.value")
     def _get_data_selectors(self):
         """Get data selection widgets based on current scope type."""
         scope = self.scope_type_select.value
@@ -487,20 +487,20 @@ class SpatialAnalysisGUI(param.Parameterized):
         if scope == "Episode":
             # Episode scope: show category, session, and episode selectors
             return pn.Column(
-                self.category_select,
-                self.session_select,
-                self.episode_select
+                self.category_select, self.session_select, self.episode_select
             )
         else:  # Session scope
             # Session scope: show only category and session selectors (no episode)
             return pn.Column(
                 self.category_select,
                 self.session_select,
-                pn.pane.Markdown("_Episode selection not required for session-level analysis_",
-                                styles={'font-size': '0.9em', 'color': '#666'})
+                pn.pane.Markdown(
+                    "_Episode selection not required for session-level analysis_",
+                    styles={"font-size": "0.9em", "color": "#666"},
+                ),
             )
 
-    @param.depends('scope_type_select.value')
+    @param.depends("scope_type_select.value")
     def _get_time_range_controls(self):
         """Get time range controls (available for both Episode and Session scope)."""
         scope = self.scope_type_select.value
@@ -511,12 +511,8 @@ class SpatialAnalysisGUI(param.Parameterized):
                 "## Time Range",
                 self.start_time_slider,
                 self.end_time_slider,
-                pn.Row(
-                    self.btn_before_500,
-                    self.btn_after_500,
-                    self.btn_full_range
-                ),
-                pn.layout.Divider()
+                pn.Row(self.btn_before_500, self.btn_after_500, self.btn_full_range),
+                pn.layout.Divider(),
             )
         else:  # Session scope
             # Session scope: show time range controls (filters across all episodes)
@@ -524,9 +520,11 @@ class SpatialAnalysisGUI(param.Parameterized):
                 "## Time Range (applies to all episodes in session)",
                 self.start_time_slider,
                 self.end_time_slider,
-                pn.pane.Markdown("_Filter data across all episodes in the session_",
-                                styles={'font-size': '0.9em', 'color': '#666'}),
-                pn.layout.Divider()
+                pn.pane.Markdown(
+                    "_Filter data across all episodes in the session_",
+                    styles={"font-size": "0.9em", "color": "#666"},
+                ),
+                pn.layout.Divider(),
             )
 
     # ==================== Layout ====================
@@ -540,33 +538,27 @@ class SpatialAnalysisGUI(param.Parameterized):
             self.scope_type_select,
             self._get_data_selectors,
             pn.layout.Divider(),
-
             "## Agent Type",
             self.agent_type_select,
             pn.layout.Divider(),
-
             self._get_time_range_controls,
-
             "## Shared Parameters",
             self.spatial_bin_input,
             self.temporal_window_input,
             self.min_samples_input,
-
             width=400,
-            sizing_mode="stretch_height"
+            sizing_mode="stretch_height",
         )
 
         # Main content: Dynamic tabs from widgets
         tabs = pn.Tabs(
             *[(w.widget_name, w.get_tab_content()) for w in self.widgets],
-            sizing_mode="stretch_both"
+            sizing_mode="stretch_both",
         )
 
         # Status bar with loading indicator
         status_bar = pn.Row(
-            self.loading_indicator,
-            self.status_pane,
-            sizing_mode="stretch_width"
+            self.loading_indicator, self.status_pane, sizing_mode="stretch_width"
         )
 
         # Create template

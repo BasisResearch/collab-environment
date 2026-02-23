@@ -46,7 +46,9 @@ class WidgetRegistry:
         if config_path:
             self.load_from_config(config_path)
 
-    def register(self, widget_class: Type[BaseAnalysisWidget], name: Optional[str] = None):
+    def register(
+        self, widget_class: Type[BaseAnalysisWidget], name: Optional[str] = None
+    ):
         """
         Register widget programmatically.
 
@@ -91,7 +93,7 @@ class WidgetRegistry:
             logger.warning(f"Config file not found: {config_path}")
             return
 
-        with open(config_file, 'r') as f:
+        with open(config_file, "r") as f:
             self.config = yaml.safe_load(f)
 
         if not self.config:
@@ -99,9 +101,9 @@ class WidgetRegistry:
             return
 
         # Load widget classes
-        widget_configs = self.config.get('widgets', [])
+        widget_configs = self.config.get("widgets", [])
         for widget_config in widget_configs:
-            class_path = widget_config.get('class')
+            class_path = widget_config.get("class")
             if not class_path:
                 logger.warning(f"Widget config missing 'class' field: {widget_config}")
                 continue
@@ -136,7 +138,7 @@ class WidgetRegistry:
             If class is not a BaseAnalysisWidget subclass
         """
         # Split module and class name
-        module_path, class_name = class_path.rsplit('.', 1)
+        module_path, class_name = class_path.rsplit(".", 1)
 
         # Import module
         module = importlib.import_module(module_path)
@@ -169,14 +171,14 @@ class WidgetRegistry:
         ...     print(f"{w.widget_name}: {w.widget_description}")
         """
         enabled_widgets = []
-        widget_configs = self.config.get('widgets', [])
+        widget_configs = self.config.get("widgets", [])
 
         for widget_config in widget_configs:
             # Check if enabled
-            if not widget_config.get('enabled', True):
+            if not widget_config.get("enabled", True):
                 continue
 
-            class_path = widget_config.get('class')
+            class_path = widget_config.get("class")
             if class_path not in self.widgets:
                 logger.warning(f"Widget not registered: {class_path}")
                 continue
@@ -187,8 +189,10 @@ class WidgetRegistry:
                 widget = widget_class()
 
                 # Store metadata
-                widget._config_order = widget_config.get('order', 999)
-                widget._config_category = widget_config.get('category', widget.widget_category)
+                widget._config_order = widget_config.get("order", 999)
+                widget._config_category = widget_config.get(
+                    "category", widget.widget_category
+                )
 
                 enabled_widgets.append(widget)
 
@@ -215,4 +219,4 @@ class WidgetRegistry:
         >>> defaults = registry.get_defaults()
         >>> spatial_bin_size = defaults.get('spatial_bin_size', 10.0)
         """
-        return self.config.get('defaults', {})
+        return self.config.get("defaults", {})

@@ -11,16 +11,14 @@ Loads data from various sources into PostgreSQL or DuckDB:
 import argparse
 import json
 import os
-import pickle
 import re
 import sys
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
-import pyarrow.parquet as pq
 import torch
 import yaml
 from loguru import logger
@@ -31,7 +29,11 @@ from collab_env.data.db.config import DBConfig, get_db_config
 
 # Configure loguru logging
 logger.remove()  # Remove default handler
-logger.add(sys.stderr, format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}", level="INFO")
+logger.add(
+    sys.stderr,
+    format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+    level="INFO",
+)
 
 # Add file output to logs directory
 log_dir = Path(__file__).parent.parent.parent.parent / "logs"
@@ -41,7 +43,7 @@ logger.add(
     rotation="00:00",  # Rotate at midnight
     retention="30 days",  # Keep logs for 30 days
     format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-    level="DEBUG"
+    level="DEBUG",
 )
 
 
@@ -73,7 +75,9 @@ def convert_to_json_serializable(obj: Any) -> Any:
         return obj
 
 
-def get_food_location_from_config(config: Dict[str, Any], scene_size: float) -> Optional[Tuple[float, float]]:
+def get_food_location_from_config(
+    config: Dict[str, Any], scene_size: float
+) -> Optional[Tuple[float, float]]:
     """
     Extract food location from 2D boids species config.
 
@@ -94,40 +98,43 @@ def get_food_location_from_config(config: Dict[str, Any], scene_size: float) -> 
     Returns:
         (food_x, food_y) in scaled scene coordinates, or None if no food
     """
-    if not config or 'food0' not in config:
+    if not config or "food0" not in config:
         return None
 
-    food_config = config['food0']
+    food_config = config["food0"]
 
     # Get scene dimensions (default to scene_size if not in config)
-    if 'A' in config:
-        width = config['A'].get('width', scene_size)
-        height = config['A'].get('height', scene_size)
+    if "A" in config:
+        width = config["A"].get("width", scene_size)
+        height = config["A"].get("height", scene_size)
     else:
         width = height = scene_size
 
     # Food config stores pixel coordinates, normalize first
-    food_x_normalized = food_config['x'] / width
-    food_y_normalized = food_config['y'] / height
+    food_x_normalized = food_config["x"] / width
+    food_y_normalized = food_config["y"] / height
 
     # Scale to scene coordinates (same as agent positions)
     food_x = food_x_normalized * scene_size
     food_y = food_y_normalized * scene_size
 
-    logger.debug(f"Food location: pixel=({food_config['x']}, {food_config['y']}), "
-                 f"normalized=({food_x_normalized:.4f}, {food_y_normalized:.4f}), "
-                 f"scaled=({food_x:.2f}, {food_y:.2f})")
+    logger.debug(
+        f"Food location: pixel=({food_config['x']}, {food_config['y']}), "
+        f"normalized=({food_x_normalized:.4f}, {food_y_normalized:.4f}), "
+        f"scaled=({food_x:.2f}, {food_y:.2f})"
+    )
 
     return (food_x, food_y)
 
 
 class TrackingCSVFormat(Enum):
     """Supported tracking CSV formats."""
-    TRACKS_2D = "tracks_2d"        # track_id, frame, x, y
-    TRACKS_3D = "tracks_3d"        # track_id, frame, x, y, z (simple 3D tracks)
-    BBOX_2D = "bbox_2d"            # track_id, frame, x1, y1, x2, y2, confidence, class
-    CENTROID_3D = "centroid_3d"    # track_id, frame, x1, y1, x2, y2, confidence, class, u, v, x, y, z
-    UNKNOWN = "unknown"            # Unsupported format (e.g., raw detections)
+
+    TRACKS_2D = "tracks_2d"  # track_id, frame, x, y
+    TRACKS_3D = "tracks_3d"  # track_id, frame, x, y, z (simple 3D tracks)
+    BBOX_2D = "bbox_2d"  # track_id, frame, x1, y1, x2, y2, confidence, class
+    CENTROID_3D = "centroid_3d"  # track_id, frame, x1, y1, x2, y2, confidence, class, u, v, x, y, z
+    UNKNOWN = "unknown"  # Unsupported format (e.g., raw detections)
 
 
 def detect_csv_format(df: pd.DataFrame) -> TrackingCSVFormat:
@@ -143,19 +150,19 @@ def detect_csv_format(df: pd.DataFrame) -> TrackingCSVFormat:
     cols = set(df.columns)
 
     # 3D centroids have world coordinates (x, y, z) and image coordinates (u, v)
-    if {'x', 'y', 'z', 'u', 'v'}.issubset(cols) and 'track_id' in cols:
+    if {"x", "y", "z", "u", "v"}.issubset(cols) and "track_id" in cols:
         return TrackingCSVFormat.CENTROID_3D
 
     # 2D bboxes have corner coordinates
-    if {'x1', 'y1', 'x2', 'y2', 'track_id', 'frame'}.issubset(cols):
+    if {"x1", "y1", "x2", "y2", "track_id", "frame"}.issubset(cols):
         return TrackingCSVFormat.BBOX_2D
 
     # Simple 3D tracks have centroid coordinates with z (check before 2D)
-    if {'x', 'y', 'z', 'track_id', 'frame'}.issubset(cols):
+    if {"x", "y", "z", "track_id", "frame"}.issubset(cols):
         return TrackingCSVFormat.TRACKS_3D
 
     # Simple 2D tracks have centroid coordinates
-    if {'x', 'y', 'track_id', 'frame'}.issubset(cols):
+    if {"x", "y", "track_id", "frame"}.issubset(cols):
         return TrackingCSVFormat.TRACKS_2D
 
     return TrackingCSVFormat.UNKNOWN
@@ -164,9 +171,12 @@ def detect_csv_format(df: pd.DataFrame) -> TrackingCSVFormat:
 @dataclass
 class SessionMetadata:
     """Metadata for a simulation/tracking session."""
+
     session_id: str
     session_name: str
-    category_id: str  # 'boids_3d', 'boids_2d', 'tracking_csv' (references categories table)
+    category_id: (
+        str  # 'boids_3d', 'boids_2d', 'tracking_csv' (references categories table)
+    )
     config: Dict[str, Any]
     metadata: Optional[Dict[str, Any]] = None
 
@@ -174,6 +184,7 @@ class SessionMetadata:
 @dataclass
 class EpisodeMetadata:
     """Metadata for a single episode."""
+
     episode_id: str
     session_id: str
     episode_number: int
@@ -208,7 +219,7 @@ class DatabaseConnection:
         with self.engine.connect() as conn:
             conn.execute(text("SELECT 1"))
 
-        if self.config.backend == 'postgres':
+        if self.config.backend == "postgres":
             logger.info(f"Connected to PostgreSQL: {self.config.postgres.dbname}")
         else:
             logger.info(f"Connected to DuckDB: {self.config.duckdb.dbpath}")
@@ -247,23 +258,32 @@ class DatabaseConnection:
             conn.execute(text(query), params or {})
         else:
             # Create connection and auto-commit (non-transactional mode)
+            assert self.engine is not None
             with self.engine.connect() as conn:
                 conn.execute(text(query), params or {})
                 conn.commit()
 
-    def fetch_one(self, query: str, params: Optional[Dict[str, Any]] = None) -> Optional[tuple]:
+    def fetch_one(
+        self, query: str, params: Optional[Dict[str, Any]] = None
+    ) -> Optional[tuple]:
         """Fetch one result."""
+        assert self.engine is not None
         with self.engine.connect() as conn:
             result = conn.execute(text(query), params or {})
-            return result.fetchone()
+            return result.fetchone()  # type: ignore[return-value]
 
-    def fetch_all(self, query: str, params: Optional[Dict[str, Any]] = None) -> List[tuple]:
+    def fetch_all(
+        self, query: str, params: Optional[Dict[str, Any]] = None
+    ) -> List[tuple]:
         """Fetch all results."""
+        assert self.engine is not None
         with self.engine.connect() as conn:
             result = conn.execute(text(query), params or {})
-            return result.fetchall()
+            return result.fetchall()  # type: ignore[return-value]
 
-    def insert_dataframe(self, df: pd.DataFrame, table_name: str, if_exists: str = 'append', conn=None):
+    def insert_dataframe(
+        self, df: pd.DataFrame, table_name: str, if_exists: str = "append", conn=None
+    ):
         """Insert DataFrame into database table.
 
         When native_bulk_insert=True (set in constructor), uses native bulk loading
@@ -285,15 +305,24 @@ class DatabaseConnection:
         # Use standard pandas to_sql if native_bulk_insert is disabled
         if not self.native_bulk_insert:
             if conn is not None:
-                df.to_sql(table_name, conn, if_exists=if_exists, index=False, method='multi')
+                df.to_sql(
+                    table_name, conn, if_exists=if_exists, index=False, method="multi"
+                )
             else:
-                df.to_sql(table_name, self.engine, if_exists=if_exists, index=False, method='multi')
+                df.to_sql(
+                    table_name,
+                    self.engine,
+                    if_exists=if_exists,
+                    index=False,
+                    method="multi",
+                )
             return
 
         # Native bulk insert methods for maximum performance
+        assert self.engine is not None
         engine_url = str(self.engine.url)
 
-        if 'duckdb' in engine_url:
+        if "duckdb" in engine_url:
             # DuckDB: Use native DataFrame registration for ~10-50x speedup
             if conn is not None:
                 raw_conn = conn.connection.dbapi_connection
@@ -301,12 +330,14 @@ class DatabaseConnection:
                 raw_conn = self.engine.raw_connection().dbapi_connection
 
             # Register DataFrame and insert directly
-            raw_conn.register('_temp_insert_df', df)
-            columns = ', '.join(f'"{c}"' for c in df.columns)
-            raw_conn.execute(f'INSERT INTO {table_name} ({columns}) SELECT {columns} FROM _temp_insert_df')
-            raw_conn.unregister('_temp_insert_df')
+            raw_conn.register("_temp_insert_df", df)
+            columns = ", ".join(f'"{c}"' for c in df.columns)
+            raw_conn.execute(
+                f"INSERT INTO {table_name} ({columns}) SELECT {columns} FROM _temp_insert_df"
+            )
+            raw_conn.unregister("_temp_insert_df")
 
-        elif 'postgresql' in engine_url:
+        elif "postgresql" in engine_url:
             # PostgreSQL: Use COPY command for ~10-100x speedup
             def _psql_copy_insert(table, conn_inner, keys, data_iter):
                 """Fast PostgreSQL insert using COPY command."""
@@ -314,34 +345,54 @@ class DatabaseConnection:
                 buffer = StringIO()
                 for row in data_iter:
                     # Handle None values and convert to tab-separated
-                    line = '\t'.join('' if v is None else str(v) for v in row)
-                    buffer.write(line + '\n')
+                    line = "\t".join("" if v is None else str(v) for v in row)
+                    buffer.write(line + "\n")
                 buffer.seek(0)
 
-                columns = ', '.join(f'"{k}"' for k in keys)
+                columns = ", ".join(f'"{k}"' for k in keys)
                 with raw_conn.cursor() as cursor:
                     cursor.copy_expert(
                         f"COPY {table.name} ({columns}) FROM STDIN WITH (FORMAT TEXT, NULL '')",
-                        buffer
+                        buffer,
                     )
 
             if conn is not None:
-                df.to_sql(table_name, conn, if_exists=if_exists, index=False, method=_psql_copy_insert)
+                df.to_sql(
+                    table_name,
+                    conn,
+                    if_exists=if_exists,
+                    index=False,
+                    method=_psql_copy_insert,
+                )
             else:
-                df.to_sql(table_name, self.engine, if_exists=if_exists, index=False, method=_psql_copy_insert)
+                df.to_sql(
+                    table_name,
+                    self.engine,
+                    if_exists=if_exists,
+                    index=False,
+                    method=_psql_copy_insert,
+                )
 
         else:
             # Unknown backend: fallback to pandas to_sql
             if conn is not None:
-                df.to_sql(table_name, conn, if_exists=if_exists, index=False, method='multi')
+                df.to_sql(
+                    table_name, conn, if_exists=if_exists, index=False, method="multi"
+                )
             else:
-                df.to_sql(table_name, self.engine, if_exists=if_exists, index=False, method='multi')
+                df.to_sql(
+                    table_name,
+                    self.engine,
+                    if_exists=if_exists,
+                    index=False,
+                    method="multi",
+                )
 
 
 class BaseDataLoader:
     """Base class for data loaders."""
 
-    def __init__(self, db_conn: DatabaseConnection, max_episodes: int = np.inf):
+    def __init__(self, db_conn: DatabaseConnection, max_episodes: float = np.inf):
         self.db = db_conn
         self.max_episodes = max_episodes
 
@@ -354,20 +405,28 @@ class BaseDataLoader:
         """
         # Convert config and metadata to JSON strings (convert numpy/torch types first)
         config_json = json.dumps(convert_to_json_serializable(metadata.config))
-        metadata_json = json.dumps(convert_to_json_serializable(metadata.metadata)) if metadata.metadata else None
+        metadata_json = (
+            json.dumps(convert_to_json_serializable(metadata.metadata))
+            if metadata.metadata
+            else None
+        )
 
         query = """
         INSERT INTO sessions (session_id, session_name, category_id, config, metadata)
         VALUES (:session_id, :session_name, :category_id, :config, :metadata)
         """
 
-        self.db.execute(query, {
-            'session_id': metadata.session_id,
-            'session_name': metadata.session_name,
-            'category_id': metadata.category_id,
-            'config': config_json,
-            'metadata': metadata_json
-        }, conn=conn)
+        self.db.execute(
+            query,
+            {
+                "session_id": metadata.session_id,
+                "session_name": metadata.session_name,
+                "category_id": metadata.category_id,
+                "config": config_json,
+                "metadata": metadata_json,
+            },
+            conn=conn,
+        )
         logger.info(f"Loaded session: {metadata.session_id}")
 
     def load_episode(self, metadata: EpisodeMetadata, conn=None):
@@ -382,18 +441,24 @@ class BaseDataLoader:
         VALUES (:episode_id, :session_id, :episode_number, :num_frames, :num_agents, :frame_rate, :file_path)
         """
 
-        self.db.execute(query, {
-            'episode_id': metadata.episode_id,
-            'session_id': metadata.session_id,
-            'episode_number': metadata.episode_number,
-            'num_frames': metadata.num_frames,
-            'num_agents': metadata.num_agents,
-            'frame_rate': metadata.frame_rate,
-            'file_path': metadata.file_path
-        }, conn=conn)
+        self.db.execute(
+            query,
+            {
+                "episode_id": metadata.episode_id,
+                "session_id": metadata.session_id,
+                "episode_number": metadata.episode_number,
+                "num_frames": metadata.num_frames,
+                "num_agents": metadata.num_agents,
+                "frame_rate": metadata.frame_rate,
+                "file_path": metadata.file_path,
+            },
+            conn=conn,
+        )
         logger.info(f"Loaded episode: {metadata.episode_id}")
 
-    def load_observations_batch(self, observations: pd.DataFrame, episode_id: str, conn=None):
+    def load_observations_batch(
+        self, observations: pd.DataFrame, episode_id: str, conn=None
+    ):
         """Load observations in batch using pandas to_sql.
 
         Args:
@@ -402,7 +467,7 @@ class BaseDataLoader:
             conn: Optional connection (for transactional usage)
         """
         # Ensure required columns exist
-        required_cols = ['time_index', 'agent_id', 'x', 'y']
+        required_cols = ["time_index", "agent_id", "x", "y"]
         for col in required_cols:
             if col not in observations.columns:
                 raise ValueError(f"Missing required column: {col}")
@@ -411,27 +476,35 @@ class BaseDataLoader:
         df = observations.copy()
 
         # Add episode_id column (use assign for efficiency)
-        df['episode_id'] = episode_id
+        df["episode_id"] = episode_id
 
         # Set default agent_type_id if missing
-        if 'agent_type_id' not in df.columns:
-            df['agent_type_id'] = 'agent'
+        if "agent_type_id" not in df.columns:
+            df["agent_type_id"] = "agent"
 
         # Select only the columns we need in the correct order
         # This avoids type conversions for columns that are already correct
-        col_order = ['episode_id', 'time_index', 'agent_id', 'agent_type_id', 'x', 'y', 'z', 'v_x', 'v_y', 'v_z']
+        col_order = [
+            "episode_id",
+            "time_index",
+            "agent_id",
+            "agent_type_id",
+            "x",
+            "y",
+            "z",
+            "v_x",
+            "v_y",
+            "v_z",
+        ]
         existing_cols = [c for c in col_order if c in df.columns]
         df = df[existing_cols]
 
         # Use pandas to_sql for fast bulk insert
-        self.db.insert_dataframe(df, 'observations', if_exists='append', conn=conn)
+        self.db.insert_dataframe(df, "observations", if_exists="append", conn=conn)
         logger.info(f"Loaded {len(df)} observations for episode {episode_id}")
 
     def load_extended_properties_batch(
-        self,
-        episode_id: str,
-        property_data: Dict[str, pd.Series],
-        conn=None
+        self, episode_id: str, property_data: Dict[str, pd.Series], conn=None
     ):
         """
         Load extended properties in batch.
@@ -454,14 +527,14 @@ class BaseDataLoader:
 
         if conn is not None:
             # Use transactional connection
-            result = conn.execute(text(query), {'episode_id': episode_id})
+            result = conn.execute(text(query), {"episode_id": episode_id})
             obs_rows = result.fetchall()
         else:
             # Use non-transactional connection
-            obs_rows = self.db.fetch_all(query, {'episode_id': episode_id})
+            obs_rows = self.db.fetch_all(query, {"episode_id": episode_id})
 
         # Build simple 2-tuple mapping - works for most cases
-        obs_id_map = {}
+        obs_id_map: Dict[Any, Any] = {}
         has_collision = False
         for row in obs_rows:
             key = (row[1], row[2])  # (time_index, agent_id)
@@ -473,7 +546,9 @@ class BaseDataLoader:
 
         # If collision detected, rebuild with 3-tuple mapping
         if has_collision:
-            logger.info(f"Multiple agent types detected for episode {episode_id}, using 3-tuple mapping")
+            logger.info(
+                f"Multiple agent types detected for episode {episode_id}, using 3-tuple mapping"
+            )
             query_3tuple = """
             SELECT observation_id, time_index, agent_id, agent_type_id
             FROM observations
@@ -481,21 +556,25 @@ class BaseDataLoader:
             ORDER BY time_index, agent_id, agent_type_id
             """
             if conn is not None:
-                result = conn.execute(text(query_3tuple), {'episode_id': episode_id})
+                result = conn.execute(text(query_3tuple), {"episode_id": episode_id})
                 obs_rows = result.fetchall()
             else:
-                obs_rows = self.db.fetch_all(query_3tuple, {'episode_id': episode_id})
+                obs_rows = self.db.fetch_all(query_3tuple, {"episode_id": episode_id})
 
             obs_id_map = {(row[1], row[2], row[3]): row[0] for row in obs_rows}
             # Also create 2-tuple fallback for 'agent' type (property data uses 2-tuples)
-            obs_id_map_2tuple = {(row[1], row[2]): row[0] for row in obs_rows if row[3] == 'agent'}
+            obs_id_map_2tuple = {
+                (row[1], row[2]): row[0] for row in obs_rows if row[3] == "agent"
+            }
         else:
             obs_id_map_2tuple = None
 
         # Prepare data for batch insert
         records = []
         total_property_values = sum(len(v) for v in property_data.values())
-        logger.info(f"Processing {len(property_data)} properties with {total_property_values} total values")
+        logger.info(
+            f"Processing {len(property_data)} properties with {total_property_values} total values"
+        )
 
         for property_id, values in property_data.items():
             property_records = 0
@@ -504,7 +583,11 @@ class BaseDataLoader:
                 if isinstance(idx, tuple):
                     if len(idx) == 2:
                         # Try 2-tuple mapping (most common)
-                        obs_id = obs_id_map_2tuple.get(idx) if obs_id_map_2tuple is not None else obs_id_map.get(idx)
+                        obs_id = (
+                            obs_id_map_2tuple.get(idx)
+                            if obs_id_map_2tuple is not None
+                            else obs_id_map.get(idx)
+                        )
                     elif len(idx) == 3 and has_collision:
                         # Try 3-tuple mapping
                         obs_id = obs_id_map.get(idx)
@@ -518,15 +601,23 @@ class BaseDataLoader:
                     continue
 
                 if pd.notna(value):
-                    records.append({
-                        'observation_id': obs_id,
-                        'property_id': property_id,
-                        'value_float': float(value) if isinstance(value, (int, float)) else None,
-                        'value_text': str(value) if not isinstance(value, (int, float)) else None
-                    })
+                    records.append(
+                        {
+                            "observation_id": obs_id,
+                            "property_id": property_id,
+                            "value_float": float(value)
+                            if isinstance(value, (int, float))
+                            else None,
+                            "value_text": str(value)
+                            if not isinstance(value, (int, float))
+                            else None,
+                        }
+                    )
                     property_records += 1
 
-            logger.info(f"Property '{property_id}': created {property_records} records from {len(values)} values")
+            logger.info(
+                f"Property '{property_id}': created {property_records} records from {len(values)} values"
+            )
 
         if not records:
             logger.info(f"No extended properties to load for episode {episode_id}")
@@ -534,8 +625,12 @@ class BaseDataLoader:
 
         # Use pandas to_sql for fast bulk insert
         df = pd.DataFrame(records)
-        self.db.insert_dataframe(df, 'extended_properties', if_exists='append', conn=conn)
-        logger.info(f"Loaded {len(records)} extended property values for episode {episode_id}")
+        self.db.insert_dataframe(
+            df, "extended_properties", if_exists="append", conn=conn
+        )
+        logger.info(
+            f"Loaded {len(records)} extended property values for episode {episode_id}"
+        )
 
 
 class Boids3DLoader(BaseDataLoader):
@@ -557,8 +652,10 @@ class Boids3DLoader(BaseDataLoader):
         if not simulation_dirs:
             raise ValueError(f"No simulation directories found in {parent_dir}")
 
-        logger.info(f"Found {len(simulation_dirs)} simulation directories in {parent_dir}")
-        logger.info(f"Loading all simulations in single transaction...")
+        logger.info(
+            f"Found {len(simulation_dirs)} simulation directories in {parent_dir}"
+        )
+        logger.info("Loading all simulations in single transaction...")
 
         # Load all simulations in one transaction for maximum performance
         with self.db.transaction() as conn:
@@ -582,7 +679,7 @@ class Boids3DLoader(BaseDataLoader):
         if not config_path.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
 
-        with open(config_path, 'r') as f:
+        with open(config_path, "r") as f:
             config = yaml.safe_load(f)
 
         # Create session metadata
@@ -590,30 +687,37 @@ class Boids3DLoader(BaseDataLoader):
         session_metadata = SessionMetadata(
             session_id=session_id,
             session_name=simulation_dir.name,
-            category_id='boids_3d',
+            category_id="boids_3d",
             config=config,
-            metadata={
-                'simulation_dir': str(simulation_dir),
-                'loader': 'Boids3DLoader'
-            }
+            metadata={"simulation_dir": str(simulation_dir), "loader": "Boids3DLoader"},
         )
 
         self.load_session(session_metadata, conn=conn)
 
         # Load each episode
         episode_files = sorted(simulation_dir.glob("episode-*.parquet"))
-        logger.info(f"Loading up to {min(len(episode_files), self.max_episodes)} episodes...")
+        logger.info(
+            f"Loading up to {min(len(episode_files), self.max_episodes)} episodes..."
+        )
 
         episodes_loaded = 0
         for episode_num, episode_file in enumerate(episode_files):
             if episode_num >= self.max_episodes:
-                logger.info(f"Reached maximum number of episodes ({self.max_episodes}) for session {session_id}, stopping...")
+                logger.info(
+                    f"Reached maximum number of episodes ({self.max_episodes}) for session {session_id}, stopping..."
+                )
                 break
-            logger.info(f"[{episode_num + 1}/{len(episode_files)}] Loading episode {episode_num} from: {episode_file}")
-            self.load_episode_file(session_id, episode_num, episode_file, config, conn=conn)
+            logger.info(
+                f"[{episode_num + 1}/{len(episode_files)}] Loading episode {episode_num} from: {episode_file}"
+            )
+            self.load_episode_file(
+                session_id, episode_num, episode_file, config, conn=conn
+            )
             episodes_loaded += 1
 
-        logger.info(f"Completed loading simulation: {session_id} ({episodes_loaded} out of {len(episode_files)} episodes)")
+        logger.info(
+            f"Completed loading simulation: {session_id} ({episodes_loaded} out of {len(episode_files)} episodes)"
+        )
 
     def load_simulation(self, simulation_dir: Path):
         """
@@ -629,7 +733,7 @@ class Boids3DLoader(BaseDataLoader):
         if not config_path.exists():
             raise FileNotFoundError(f"Config file not found: {config_path}")
 
-        with open(config_path, 'r') as f:
+        with open(config_path, "r") as f:
             config = yaml.safe_load(f)
 
         # Create session metadata
@@ -637,17 +741,16 @@ class Boids3DLoader(BaseDataLoader):
         session_metadata = SessionMetadata(
             session_id=session_id,
             session_name=simulation_dir.name,
-            category_id='boids_3d',
+            category_id="boids_3d",
             config=config,
-            metadata={
-                'simulation_dir': str(simulation_dir),
-                'loader': 'Boids3DLoader'
-            }
+            metadata={"simulation_dir": str(simulation_dir), "loader": "Boids3DLoader"},
         )
 
         # Load all data in a single transaction for performance
         episode_files = sorted(simulation_dir.glob("episode-*.parquet"))
-        logger.info(f"Loading up to {min(len(episode_files), self.max_episodes)} episodes in single transaction...")
+        logger.info(
+            f"Loading up to {min(len(episode_files), self.max_episodes)} episodes in single transaction..."
+        )
 
         with self.db.transaction() as conn:
             self.load_session(session_metadata, conn=conn)
@@ -656,13 +759,21 @@ class Boids3DLoader(BaseDataLoader):
             episodes_loaded = 0
             for episode_num, episode_file in enumerate(episode_files):
                 if episode_num >= self.max_episodes:
-                    logger.info(f"Reached maximum number of episodes ({self.max_episodes}) for session {session_id}, stopping...")
+                    logger.info(
+                        f"Reached maximum number of episodes ({self.max_episodes}) for session {session_id}, stopping..."
+                    )
                     break
-                logger.info(f"[{episode_num + 1}/{len(episode_files)}] Loading episode {episode_num} from: {episode_file}")
-                self.load_episode_file(session_id, episode_num, episode_file, config, conn=conn)
+                logger.info(
+                    f"[{episode_num + 1}/{len(episode_files)}] Loading episode {episode_num} from: {episode_file}"
+                )
+                self.load_episode_file(
+                    session_id, episode_num, episode_file, config, conn=conn
+                )
                 episodes_loaded += 1
 
-        logger.info(f"Completed loading simulation: {session_id} ({episodes_loaded} out of {len(episode_files)} episodes)")
+        logger.info(
+            f"Completed loading simulation: {session_id} ({episodes_loaded} out of {len(episode_files)} episodes)"
+        )
 
     def load_episode_file(
         self,
@@ -670,7 +781,7 @@ class Boids3DLoader(BaseDataLoader):
         episode_number: int,
         file_path: Path,
         config: Dict[str, Any],
-        conn=None
+        conn=None,
     ):
         """Load a single episode parquet file.
 
@@ -687,13 +798,15 @@ class Boids3DLoader(BaseDataLoader):
         df = pd.read_parquet(file_path)
 
         # Log entity types (includes both agents and environment entities)
-        if 'type' in df.columns:
-            logger.info(f"Row count: {len(df)}, Types: {df['type'].value_counts().to_dict()}")
+        if "type" in df.columns:
+            logger.info(
+                f"Row count: {len(df)}, Types: {df['type'].value_counts().to_dict()}"
+            )
 
         # Extract metadata (convert numpy types to native Python types)
-        num_frames = int(df['time'].max() + 1)
-        num_agents = int(df['id'].nunique())
-        frame_rate = float(config.get('frame_rate', 30.0))
+        num_frames = int(df["time"].max() + 1)
+        num_agents = int(df["id"].nunique())
+        frame_rate = float(config.get("frame_rate", 30.0))
 
         episode_id = f"episode-{episode_number}-{file_path.stem}"
 
@@ -704,23 +817,25 @@ class Boids3DLoader(BaseDataLoader):
             num_frames=num_frames,
             num_agents=num_agents,
             frame_rate=frame_rate,
-            file_path=str(file_path)
+            file_path=str(file_path),
         )
 
         self.load_episode(episode_metadata, conn=conn)
 
         # Prepare observations DataFrame
-        observations = pd.DataFrame({
-            'time_index': df['time'],
-            'agent_id': df['id'],
-            'agent_type_id': df['type'],
-            'x': df['x'],
-            'y': df['y'],
-            'z': df['z'],
-            'v_x': df['v_x'],
-            'v_y': df['v_y'],
-            'v_z': df['v_z']
-        })
+        observations = pd.DataFrame(
+            {
+                "time_index": df["time"],
+                "agent_id": df["id"],
+                "agent_type_id": df["type"],
+                "x": df["x"],
+                "y": df["y"],
+                "z": df["z"],
+                "v_x": df["v_x"],
+                "v_y": df["v_y"],
+                "v_z": df["v_z"],
+            }
+        )
 
         self.load_observations_batch(observations, episode_id, conn=conn)
 
@@ -729,30 +844,48 @@ class Boids3DLoader(BaseDataLoader):
         # Environment entities ('env' type) don't have extended properties and create
         # index collisions when they share agent_ids with actual agents
         import numpy as np
+
         extended_props = {}
 
         # Filter DataFrame to only include 'agent' type rows for extended properties
-        agent_df = df[df['type'] == 'agent'].copy()
+        agent_df = df[df["type"] == "agent"].copy()
 
         # Map actual parquet column names to property IDs
         # Distance to target center (may have suffix like _1, and may or may not have '_to_')
-        target_center_cols = [c for c in agent_df.columns if c.startswith('distance_target_center') or c.startswith('distance_to_target_center')]
+        target_center_cols = [
+            c
+            for c in agent_df.columns
+            if c.startswith("distance_target_center")
+            or c.startswith("distance_to_target_center")
+        ]
         if target_center_cols:
-            extended_props['distance_to_target_center'] = agent_df.set_index(['time', 'id'])[target_center_cols[0]]
+            extended_props["distance_to_target_center"] = agent_df.set_index(
+                ["time", "id"]
+            )[target_center_cols[0]]
 
         # Distance to target mesh (may have suffix like _1)
-        target_mesh_cols = [c for c in agent_df.columns if 'distance_to_target_mesh' in c]
+        target_mesh_cols = [
+            c for c in agent_df.columns if "distance_to_target_mesh" in c
+        ]
         if target_mesh_cols:
-            extended_props['distance_to_target_mesh'] = agent_df.set_index(['time', 'id'])[target_mesh_cols[0]]
+            extended_props["distance_to_target_mesh"] = agent_df.set_index(
+                ["time", "id"]
+            )[target_mesh_cols[0]]
 
         # Distance to scene mesh
-        if 'mesh_scene_distance' in agent_df.columns:
-            extended_props['distance_to_scene_mesh'] = agent_df.set_index(['time', 'id'])['mesh_scene_distance']
+        if "mesh_scene_distance" in agent_df.columns:
+            extended_props["distance_to_scene_mesh"] = agent_df.set_index(
+                ["time", "id"]
+            )["mesh_scene_distance"]
 
         # Handle array-type closest point columns
         # Target mesh closest point (stored as array [x, y, z])
         # Match columns like 'target_mesh_closest_point_1' but NOT 'distance_to_target_mesh_closest_point_1'
-        target_closest_cols = [c for c in agent_df.columns if 'target_mesh_closest_point' in c and not c.startswith('distance')]
+        target_closest_cols = [
+            c
+            for c in agent_df.columns
+            if "target_mesh_closest_point" in c and not c.startswith("distance")
+        ]
         if target_closest_cols:
             # Extract array column and filter out None values
             arr_col = agent_df[target_closest_cols[0]]
@@ -763,20 +896,26 @@ class Boids3DLoader(BaseDataLoader):
 
             if len(filtered_arr_col) > 0:
                 # Stack arrays into 2D numpy array
-                logger.info(f"Before stack: filtered_arr_col length={len(filtered_arr_col)}, first element type={type(filtered_arr_col.iloc[0])}")
+                logger.info(
+                    f"Before stack: filtered_arr_col length={len(filtered_arr_col)}, first element type={type(filtered_arr_col.iloc[0])}"
+                )
                 coords_array = np.stack(filtered_arr_col.to_numpy())
-                logger.info(f"After stack: coords_array shape={coords_array.shape}, dtype={coords_array.dtype}")
+                logger.info(
+                    f"After stack: coords_array shape={coords_array.shape}, dtype={coords_array.dtype}"
+                )
 
                 # Create Series for each coordinate with (time, id) multi-index (only for non-None values)
-                idx = pd.MultiIndex.from_arrays([filtered_df['time'], filtered_df['id']])
-                for i, suffix in enumerate(['x', 'y', 'z']):
-                    prop_id = f'target_mesh_closest_{suffix}'
+                idx = pd.MultiIndex.from_arrays(
+                    [filtered_df["time"], filtered_df["id"]]
+                )
+                for i, suffix in enumerate(["x", "y", "z"]):
+                    prop_id = f"target_mesh_closest_{suffix}"
                     extended_props[prop_id] = pd.Series(coords_array[:, i], index=idx)
 
         # Scene mesh closest point (stored as array [x, y, z])
-        if 'mesh_scene_closest_point' in agent_df.columns:
+        if "mesh_scene_closest_point" in agent_df.columns:
             # Extract array column and filter out None values
-            arr_col = agent_df['mesh_scene_closest_point']
+            arr_col = agent_df["mesh_scene_closest_point"]
             # Create mask for non-None values
             mask = arr_col.notna()
             filtered_df = agent_df[mask]
@@ -787,13 +926,17 @@ class Boids3DLoader(BaseDataLoader):
                 coords_array = np.stack(filtered_arr_col.to_numpy())
 
                 # Create Series for each coordinate with (time, id) multi-index (only for non-None values)
-                idx = pd.MultiIndex.from_arrays([filtered_df['time'], filtered_df['id']])
-                for i, suffix in enumerate(['x', 'y', 'z']):
-                    prop_id = f'scene_mesh_closest_{suffix}'
+                idx = pd.MultiIndex.from_arrays(
+                    [filtered_df["time"], filtered_df["id"]]
+                )
+                for i, suffix in enumerate(["x", "y", "z"]):
+                    prop_id = f"scene_mesh_closest_{suffix}"
                     extended_props[prop_id] = pd.Series(coords_array[:, i], index=idx)
 
         if extended_props:
-            logger.info(f"Loading {len(extended_props)} extended properties for episode {episode_id}")
+            logger.info(
+                f"Loading {len(extended_props)} extended properties for episode {episode_id}"
+            )
             self.load_extended_properties_batch(episode_id, extended_props, conn=conn)
 
 
@@ -817,7 +960,7 @@ class Boids2DLoader(BaseDataLoader):
             raise ValueError(f"No .pt dataset files found in {parent_dir}")
 
         logger.info(f"Found {len(dataset_files)} dataset files in {parent_dir}")
-        logger.info(f"Loading all datasets in single transaction...")
+        logger.info("Loading all datasets in single transaction...")
 
         # Load all datasets in one transaction for maximum performance
         with self.db.transaction() as conn:
@@ -859,7 +1002,7 @@ class Boids2DLoader(BaseDataLoader):
         logger.info(f"Dataset loaded: {len(dataset)} samples")
 
         # Extract scene size from config
-        scene_size = config.get('scene_size', 480.0)
+        scene_size = config.get("scene_size", 480.0)
         if not isinstance(scene_size, (int, float)):
             scene_size = 480.0
 
@@ -869,15 +1012,15 @@ class Boids2DLoader(BaseDataLoader):
         session_metadata = SessionMetadata(
             session_id=session_id,
             session_name=basename,
-            category_id='boids_2d',
+            category_id="boids_2d",
             config=config,
             metadata={
-                'data_file': str(data_path),
-                'config_file': str(config_path) if config_path.exists() else None,
-                'num_samples': num_samples,
-                'scene_size': scene_size,
-                'loader': 'Boids2DLoader'
-            }
+                "data_file": str(data_path),
+                "config_file": str(config_path) if config_path.exists() else None,
+                "num_samples": num_samples,
+                "scene_size": scene_size,
+                "loader": "Boids2DLoader",
+            },
         )
 
         self.load_session(session_metadata, conn=conn)
@@ -887,13 +1030,26 @@ class Boids2DLoader(BaseDataLoader):
         episodes_loaded = 0
         for sample_idx in range(len(dataset)):
             if sample_idx >= self.max_episodes:
-                logger.info(f"Reached maximum number of episodes ({self.max_episodes}) for session {session_id}, stopping...")
+                logger.info(
+                    f"Reached maximum number of episodes ({self.max_episodes}) for session {session_id}, stopping..."
+                )
                 break
-            logger.info(f"[{sample_idx + 1}/{len(dataset)}] Loading sample {sample_idx}")
-            self.load_sample(session_id, sample_idx, dataset[sample_idx], config, scene_size, conn=conn)
+            logger.info(
+                f"[{sample_idx + 1}/{len(dataset)}] Loading sample {sample_idx}"
+            )
+            self.load_sample(
+                session_id,
+                sample_idx,
+                dataset[sample_idx],
+                config,
+                scene_size,
+                conn=conn,
+            )
             episodes_loaded += 1
 
-        logger.info(f"Completed loading dataset: {session_id} ({episodes_loaded} out of {len(dataset)} episodes)")
+        logger.info(
+            f"Completed loading dataset: {session_id} ({episodes_loaded} out of {len(dataset)} episodes)"
+        )
 
     def load_dataset(self, data_path: Path):
         """
@@ -928,7 +1084,7 @@ class Boids2DLoader(BaseDataLoader):
         logger.info(f"Dataset loaded: {len(dataset)} samples")
 
         # Extract scene size from config
-        scene_size = config.get('scene_size', 480.0)
+        scene_size = config.get("scene_size", 480.0)
         if not isinstance(scene_size, (int, float)):
             # If scene_size is not in top level, try to infer from species config
             scene_size = 480.0  # Default value
@@ -940,19 +1096,21 @@ class Boids2DLoader(BaseDataLoader):
         session_metadata = SessionMetadata(
             session_id=session_id,
             session_name=basename,
-            category_id='boids_2d',
+            category_id="boids_2d",
             config=config,
             metadata={
-                'data_file': str(data_path),
-                'config_file': str(config_path) if config_path.exists() else None,
-                'num_samples': num_samples,
-                'scene_size': scene_size,
-                'loader': 'Boids2DLoader'
-            }
+                "data_file": str(data_path),
+                "config_file": str(config_path) if config_path.exists() else None,
+                "num_samples": num_samples,
+                "scene_size": scene_size,
+                "loader": "Boids2DLoader",
+            },
         )
 
         # Load all data in a single transaction for performance
-        logger.info(f"Loading up to {num_samples} out of {len(dataset)} episodes in single transaction...")
+        logger.info(
+            f"Loading up to {num_samples} out of {len(dataset)} episodes in single transaction..."
+        )
 
         with self.db.transaction() as conn:
             self.load_session(session_metadata, conn=conn)
@@ -961,13 +1119,26 @@ class Boids2DLoader(BaseDataLoader):
             episodes_loaded = 0
             for sample_idx in range(len(dataset)):
                 if sample_idx >= self.max_episodes:
-                    logger.info(f"Reached maximum number of episodes ({self.max_episodes}) for session {session_id}, stopping...")
+                    logger.info(
+                        f"Reached maximum number of episodes ({self.max_episodes}) for session {session_id}, stopping..."
+                    )
                     break
-                logger.info(f"[{sample_idx + 1}/{len(dataset)}] Loading sample {sample_idx}")
-                self.load_sample(session_id, sample_idx, dataset[sample_idx], config, scene_size, conn=conn)
+                logger.info(
+                    f"[{sample_idx + 1}/{len(dataset)}] Loading sample {sample_idx}"
+                )
+                self.load_sample(
+                    session_id,
+                    sample_idx,
+                    dataset[sample_idx],
+                    config,
+                    scene_size,
+                    conn=conn,
+                )
                 episodes_loaded += 1
 
-        logger.info(f"Completed loading dataset: {session_id} ({episodes_loaded} out of {len(dataset)} episodes)")
+        logger.info(
+            f"Completed loading dataset: {session_id} ({episodes_loaded} out of {len(dataset)} episodes)"
+        )
 
     def load_sample(
         self,
@@ -976,7 +1147,7 @@ class Boids2DLoader(BaseDataLoader):
         sample: tuple,
         config: Dict[str, Any],
         scene_size: float,
-        conn=None
+        conn=None,
     ):
         """
         Load a single sample (trajectory) from the dataset.
@@ -998,8 +1169,8 @@ class Boids2DLoader(BaseDataLoader):
 
         # Convert to numpy for easier manipulation
         import numpy as np
+
         positions_np = positions.numpy()
-        species_np = species.numpy()
 
         num_timesteps, num_agents, num_dims = positions_np.shape
         assert num_dims == 2, f"Expected 2D positions, got {num_dims}D"
@@ -1013,12 +1184,13 @@ class Boids2DLoader(BaseDataLoader):
         last_velocity = velocities_np[-1:, :, :]
         velocities_np = np.vstack([velocities_np, last_velocity])
 
-        assert velocities_np.shape[0] == num_timesteps, \
+        assert velocities_np.shape[0] == num_timesteps, (
             f"Velocity timesteps mismatch: {velocities_np.shape[0]} != {num_timesteps}"
+        )
 
         # Assume frame rate of 1.0 for 2D boids (discrete timesteps)
         # This can be overridden if specified in config
-        frame_rate = config.get('frame_rate', 1.0)
+        frame_rate = config.get("frame_rate", 1.0)
 
         # Create episode ID
         episode_id = f"episode-{sample_idx:04d}-{session_id}"
@@ -1030,7 +1202,7 @@ class Boids2DLoader(BaseDataLoader):
             num_frames=num_timesteps,
             num_agents=num_agents,
             frame_rate=frame_rate,
-            file_path=f"sample-{sample_idx}"
+            file_path=f"sample-{sample_idx}",
         )
 
         self.load_episode(episode_metadata, conn=conn)
@@ -1038,6 +1210,8 @@ class Boids2DLoader(BaseDataLoader):
         # Prepare observations DataFrame using vectorized numpy operations (MUCH faster)
         # Total rows = num_timesteps * num_agents
         total_rows = num_timesteps * num_agents
+
+        logger.info(f"Total rows: {total_rows}")
 
         # Create index arrays using numpy broadcasting
         # time_index: [0,0,0,...,1,1,1,...,2,2,2,...] (repeat each timestep num_agents times)
@@ -1052,17 +1226,19 @@ class Boids2DLoader(BaseDataLoader):
         velocities_flat = velocities_np.reshape(-1, 2) * scene_size
 
         # Create DataFrame directly from numpy arrays (100x faster than list of dicts)
-        observations = pd.DataFrame({
-            'time_index': time_indices,
-            'agent_id': agent_ids,
-            'agent_type_id': 'agent',  # Same for all rows
-            'x': positions_flat[:, 0],
-            'y': positions_flat[:, 1],
-            'z': None,  # No z-coordinate for 2D boids
-            'v_x': velocities_flat[:, 0],
-            'v_y': velocities_flat[:, 1],
-            'v_z': None  # No z-velocity for 2D boids
-        })
+        observations = pd.DataFrame(
+            {
+                "time_index": time_indices,
+                "agent_id": agent_ids,
+                "agent_type_id": "agent",  # Same for all rows
+                "x": positions_flat[:, 0],
+                "y": positions_flat[:, 1],
+                "z": None,  # No z-coordinate for 2D boids
+                "v_x": velocities_flat[:, 0],
+                "v_y": velocities_flat[:, 1],
+                "v_z": None,  # No z-velocity for 2D boids
+            }
+        )
 
         self.load_observations_batch(observations, episode_id, conn=conn)
 
@@ -1085,14 +1261,16 @@ class Boids2DLoader(BaseDataLoader):
 
             # Create multi-index for extended properties
             idx = pd.MultiIndex.from_arrays([time_indices, agent_ids])
-            extended_props['distance_to_food'] = pd.Series(distances, index=idx)
+            extended_props["distance_to_food"] = pd.Series(distances, index=idx)
 
             logger.info(f"Computed distance_to_food for {len(distances)} observations")
 
         if extended_props:
             self.load_extended_properties_batch(episode_id, extended_props, conn=conn)
 
-        logger.info(f"Loaded sample {sample_idx}: {num_timesteps} frames, {num_agents} agents")
+        logger.info(
+            f"Loaded sample {sample_idx}: {num_timesteps} frames, {num_agents} agents"
+        )
 
 
 class TrackingCSVLoader(BaseDataLoader):
@@ -1105,7 +1283,9 @@ class TrackingCSVLoader(BaseDataLoader):
       (creates two episodes: one with 3D world coords, one with 2D image coords)
     """
 
-    def _discover_tracking_csvs(self, camera_dir: Path) -> List[Tuple[Path, TrackingCSVFormat]]:
+    def _discover_tracking_csvs(
+        self, camera_dir: Path
+    ) -> List[Tuple[Path, TrackingCSVFormat]]:
         """
         Find all tracking CSVs in camera_dir with their formats.
 
@@ -1139,14 +1319,18 @@ class TrackingCSVLoader(BaseDataLoader):
         Returns:
             DataFrame with track_id, frame, x, y columns
         """
-        return pd.DataFrame({
-            'track_id': df['track_id'],
-            'frame': df['frame'],
-            'x': (df['x1'] + df['x2']) / 2,
-            'y': (df['y1'] + df['y2']) / 2
-        })
+        return pd.DataFrame(
+            {
+                "track_id": df["track_id"],
+                "frame": df["frame"],
+                "x": (df["x1"] + df["x2"]) / 2,
+                "y": (df["y1"] + df["y2"]) / 2,
+            }
+        )
 
-    def _compute_velocities(self, df: pd.DataFrame, frame_rate: float = 30.0, has_z: bool = False) -> pd.DataFrame:
+    def _compute_velocities(
+        self, df: pd.DataFrame, frame_rate: float = 30.0, has_z: bool = False
+    ) -> pd.DataFrame:
         """
         Compute velocities from position data.
 
@@ -1159,38 +1343,40 @@ class TrackingCSVLoader(BaseDataLoader):
             DataFrame with v_x, v_y (and optionally v_z) columns added
         """
         # Sort by track_id and frame for proper diff() calculation
-        df = df.sort_values(['track_id', 'frame']).reset_index(drop=True)
+        df = df.sort_values(["track_id", "frame"]).reset_index(drop=True)
 
         # Compute position and frame differences using groupby (vectorized)
-        df['dx'] = df.groupby('track_id')['x'].diff()
-        df['dy'] = df.groupby('track_id')['y'].diff()
-        df['frame_diff'] = df.groupby('track_id')['frame'].diff()
+        df["dx"] = df.groupby("track_id")["x"].diff()
+        df["dy"] = df.groupby("track_id")["y"].diff()
+        df["frame_diff"] = df.groupby("track_id")["frame"].diff()
 
-        if has_z and 'z' in df.columns:
-            df['dz'] = df.groupby('track_id')['z'].diff()
+        if has_z and "z" in df.columns:
+            df["dz"] = df.groupby("track_id")["z"].diff()
 
         # Compute time delta: dt = frame_diff / frame_rate (seconds)
-        df['dt'] = df['frame_diff'] / frame_rate
+        df["dt"] = df["frame_diff"] / frame_rate
 
         # Compute velocities: v = dx / dt
-        df['v_x'] = df['dx'] / df['dt']
-        df['v_y'] = df['dy'] / df['dt']
-        if has_z and 'z' in df.columns:
-            df['v_z'] = df['dz'] / df['dt']
+        df["v_x"] = df["dx"] / df["dt"]
+        df["v_y"] = df["dy"] / df["dt"]
+        if has_z and "z" in df.columns:
+            df["v_z"] = df["dz"] / df["dt"]
 
         # Set velocity to NaN when there are frame gaps
-        gap_mask = df['frame_diff'] > 1
-        velocity_cols = ['v_x', 'v_y'] + (['v_z'] if has_z and 'z' in df.columns else [])
+        gap_mask = df["frame_diff"] > 1
+        velocity_cols = ["v_x", "v_y"] + (
+            ["v_z"] if has_z and "z" in df.columns else []
+        )
         df.loc[gap_mask, velocity_cols] = np.nan
 
         # For first frame of each track, set velocity to 0.0
-        first_frame_mask = df['frame_diff'].isna()
+        first_frame_mask = df["frame_diff"].isna()
         df.loc[first_frame_mask, velocity_cols] = 0.0
 
         # Drop temporary columns
-        temp_cols = ['dx', 'dy', 'frame_diff', 'dt']
-        if has_z and 'dz' in df.columns:
-            temp_cols.append('dz')
+        temp_cols = ["dx", "dy", "frame_diff", "dt"]
+        if has_z and "dz" in df.columns:
+            temp_cols.append("dz")
         df = df.drop(columns=temp_cols)
 
         return df
@@ -1204,7 +1390,7 @@ class TrackingCSVLoader(BaseDataLoader):
         csv_path: Path,
         has_z: bool = False,
         frame_rate: float = 30.0,
-        conn=None
+        conn=None,
     ):
         """
         Load episode from a normalized DataFrame.
@@ -1225,8 +1411,8 @@ class TrackingCSVLoader(BaseDataLoader):
         df = self._compute_velocities(df, frame_rate=frame_rate, has_z=has_z)
 
         # Extract metadata
-        num_frames = int(df['frame'].max() + 1)
-        num_agents = int(df['track_id'].nunique())
+        num_frames = int(df["frame"].max() + 1)
+        num_agents = int(df["track_id"].nunique())
 
         episode_id = f"episode-{episode_name}-{session_id}"
 
@@ -1237,27 +1423,31 @@ class TrackingCSVLoader(BaseDataLoader):
             num_frames=num_frames,
             num_agents=num_agents,
             frame_rate=frame_rate,
-            file_path=str(csv_path)
+            file_path=str(csv_path),
         )
 
         self.load_episode(episode_metadata, conn=conn)
 
         # Prepare observations DataFrame
-        observations = pd.DataFrame({
-            'time_index': df['frame'],
-            'agent_id': df['track_id'],
-            'agent_type_id': 'agent',
-            'x': df['x'],
-            'y': df['y'],
-            'z': df['z'] if has_z and 'z' in df.columns else None,
-            'v_x': df['v_x'],
-            'v_y': df['v_y'],
-            'v_z': df['v_z'] if has_z and 'v_z' in df.columns else None
-        })
+        observations = pd.DataFrame(
+            {
+                "time_index": df["frame"],
+                "agent_id": df["track_id"],
+                "agent_type_id": "agent",
+                "x": df["x"],
+                "y": df["y"],
+                "z": df["z"] if has_z and "z" in df.columns else None,
+                "v_x": df["v_x"],
+                "v_y": df["v_y"],
+                "v_z": df["v_z"] if has_z and "v_z" in df.columns else None,
+            }
+        )
 
         self.load_observations_batch(observations, episode_id, conn=conn)
 
-        logger.info(f"Loaded episode {episode_name}: {num_frames} frames, {num_agents} tracks, {len(df)} observations")
+        logger.info(
+            f"Loaded episode {episode_name}: {num_frames} frames, {num_agents} tracks, {len(df)} observations"
+        )
 
     def _load_3d_centroid_episodes(
         self,
@@ -1265,7 +1455,7 @@ class TrackingCSVLoader(BaseDataLoader):
         episode_number: int,
         camera_name: str,
         csv_path: Path,
-        conn=None
+        conn=None,
     ) -> int:
         """
         Load 3D centroid CSV as two episodes: 3D world coords and 2D image coords.
@@ -1287,35 +1477,51 @@ class TrackingCSVLoader(BaseDataLoader):
 
         # Episode 1: 3D world coordinates (x, y, z)
         # Filter out rows where 3D triangulation failed (x, y, z are NaN)
-        df_3d_raw = df[df['x'].notna() & df['y'].notna() & df['z'].notna()]
+        df_3d_raw = df[df["x"].notna() & df["y"].notna() & df["z"].notna()]
         if len(df_3d_raw) < len(df):
-            logger.info(f"Filtered {len(df) - len(df_3d_raw)} rows with null 3D coordinates")
+            logger.info(
+                f"Filtered {len(df) - len(df_3d_raw)} rows with null 3D coordinates"
+            )
 
-        df_3d = pd.DataFrame({
-            'track_id': df_3d_raw['track_id'],
-            'frame': df_3d_raw['frame'],
-            'x': df_3d_raw['x'],
-            'y': df_3d_raw['y'],
-            'z': df_3d_raw['z']
-        })
+        df_3d = pd.DataFrame(
+            {
+                "track_id": df_3d_raw["track_id"],
+                "frame": df_3d_raw["frame"],
+                "x": df_3d_raw["x"],
+                "y": df_3d_raw["y"],
+                "z": df_3d_raw["z"],
+            }
+        )
         episode_name_3d = f"{camera_name}_{csv_stem}_3d"
         self._load_episode_from_df(
-            session_id, episode_number, episode_name_3d,
-            df_3d, csv_path, has_z=True, conn=conn
+            session_id,
+            episode_number,
+            episode_name_3d,
+            df_3d,
+            csv_path,
+            has_z=True,
+            conn=conn,
         )
 
         # Episode 2: 2D image coordinates (u, v as x, y)
         # u, v should always be present (2D detection succeeded)
-        df_2d = pd.DataFrame({
-            'track_id': df['track_id'],
-            'frame': df['frame'],
-            'x': df['u'],
-            'y': df['v']
-        })
+        df_2d = pd.DataFrame(
+            {
+                "track_id": df["track_id"],
+                "frame": df["frame"],
+                "x": df["u"],
+                "y": df["v"],
+            }
+        )
         episode_name_2d = f"{camera_name}_{csv_stem}_2d"
         self._load_episode_from_df(
-            session_id, episode_number + 1, episode_name_2d,
-            df_2d, csv_path, has_z=False, conn=conn
+            session_id,
+            episode_number + 1,
+            episode_name_2d,
+            df_2d,
+            csv_path,
+            has_z=False,
+            conn=conn,
         )
 
         return 2  # Number of episodes created
@@ -1338,12 +1544,14 @@ class TrackingCSVLoader(BaseDataLoader):
             raise ValueError(f"No session directories found in {parent_dir}")
 
         logger.info(f"Found {len(session_dirs)} session directories in {parent_dir}")
-        logger.info(f"Loading all sessions in single transaction...")
+        logger.info("Loading all sessions in single transaction...")
 
         # Load all sessions in one transaction for maximum performance
         with self.db.transaction() as conn:
             for idx, session_dir in enumerate(session_dirs, 1):
-                logger.info(f"[{idx}/{len(session_dirs)}] Loading {session_dir.name}...")
+                logger.info(
+                    f"[{idx}/{len(session_dirs)}] Loading {session_dir.name}..."
+                )
                 self._load_session_no_transaction(session_dir, conn)
 
         logger.info(f"Completed loading {len(session_dirs)} sessions")
@@ -1362,7 +1570,7 @@ class TrackingCSVLoader(BaseDataLoader):
         config = {}
         if metadata_path.exists():
             logger.info(f"Loading metadata from: {metadata_path}")
-            with open(metadata_path, 'r') as f:
+            with open(metadata_path, "r") as f:
                 config = yaml.safe_load(f)
 
         # Create session metadata
@@ -1370,23 +1578,27 @@ class TrackingCSVLoader(BaseDataLoader):
         session_metadata = SessionMetadata(
             session_id=session_id,
             session_name=session_dir.name,
-            category_id='tracking_csv',
+            category_id="tracking_csv",
             config=config,
-            metadata={
-                'session_dir': str(session_dir),
-                'loader': 'TrackingCSVLoader'
-            }
+            metadata={"session_dir": str(session_dir), "loader": "TrackingCSVLoader"},
         )
 
         self.load_session(session_metadata, conn=conn)
 
         # Discover all camera directories in aligned_frames/
         aligned_frames = session_dir / "aligned_frames"
-        camera_dirs = sorted([d for d in aligned_frames.iterdir()
-                              if d.is_dir() and not d.name.startswith('.')])
+        camera_dirs = sorted(
+            [
+                d
+                for d in aligned_frames.iterdir()
+                if d.is_dir() and not d.name.startswith(".")
+            ]
+        )
 
         # Discover all CSVs across all camera directories
-        all_csvs: List[Tuple[Path, Path, TrackingCSVFormat]] = []  # (camera_dir, csv_path, format)
+        all_csvs: List[
+            Tuple[Path, Path, TrackingCSVFormat]
+        ] = []  # (camera_dir, csv_path, format)
         for camera_dir in camera_dirs:
             csv_files = self._discover_tracking_csvs(camera_dir)
             for csv_path, csv_format in csv_files:
@@ -1398,18 +1610,23 @@ class TrackingCSVLoader(BaseDataLoader):
 
         # Count potential episodes (CENTROID_3D creates 2 episodes per CSV)
         total_potential = sum(
-            2 if fmt == TrackingCSVFormat.CENTROID_3D else 1
-            for _, _, fmt in all_csvs
+            2 if fmt == TrackingCSVFormat.CENTROID_3D else 1 for _, _, fmt in all_csvs
         )
-        logger.info(f"Found {len(all_csvs)} CSV files, {total_potential} potential episodes")
-        logger.info(f"Loading up to {min(total_potential, self.max_episodes)} episodes...")
+        logger.info(
+            f"Found {len(all_csvs)} CSV files, {total_potential} potential episodes"
+        )
+        logger.info(
+            f"Loading up to {min(total_potential, self.max_episodes)} episodes..."
+        )
 
         episodes_loaded = 0
         episode_number = 0
 
         for camera_dir, csv_path, csv_format in all_csvs:
             if episodes_loaded >= self.max_episodes:
-                logger.info(f"Reached maximum number of episodes ({self.max_episodes}) for session {session_id}, stopping...")
+                logger.info(
+                    f"Reached maximum number of episodes ({self.max_episodes}) for session {session_id}, stopping..."
+                )
                 break
 
             camera_name = camera_dir.name
@@ -1417,7 +1634,9 @@ class TrackingCSVLoader(BaseDataLoader):
             if csv_format == TrackingCSVFormat.CENTROID_3D:
                 # Check if we have room for 2 episodes
                 if episodes_loaded + 2 > self.max_episodes:
-                    logger.info(f"Skipping 3D centroid CSV (would exceed max_episodes): {csv_path.name}")
+                    logger.info(
+                        f"Skipping 3D centroid CSV (would exceed max_episodes): {csv_path.name}"
+                    )
                     continue
                 # Creates 2 episodes: 3D and 2D
                 num_created = self._load_3d_centroid_episodes(
@@ -1429,13 +1648,19 @@ class TrackingCSVLoader(BaseDataLoader):
                 # TRACKS_2D or BBOX_2D: creates 1 episode
                 episode_name = f"{camera_name}_{csv_path.stem}"
                 self.load_episode_csv(
-                    session_id, episode_number, episode_name, csv_path,
-                    csv_format=csv_format, conn=conn
+                    session_id,
+                    episode_number,
+                    episode_name,
+                    csv_path,
+                    csv_format=csv_format,
+                    conn=conn,
                 )
                 episodes_loaded += 1
                 episode_number += 1
 
-        logger.info(f"Completed loading session: {session_id} ({episodes_loaded} episodes from {len(all_csvs)} CSV files)")
+        logger.info(
+            f"Completed loading session: {session_id} ({episodes_loaded} episodes from {len(all_csvs)} CSV files)"
+        )
 
     def load_tracking_session(self, session_dir: Path):
         """
@@ -1464,7 +1689,7 @@ class TrackingCSVLoader(BaseDataLoader):
         episode_name: str,
         csv_path: Path,
         csv_format: Optional[TrackingCSVFormat] = None,
-        conn=None
+        conn=None,
     ):
         """Load a single camera's tracking CSV file (2D/3D tracks or bounding boxes).
 
@@ -1504,8 +1729,13 @@ class TrackingCSVLoader(BaseDataLoader):
 
         # Load using the common helper
         self._load_episode_from_df(
-            session_id, episode_number, episode_name,
-            df, csv_path, has_z=has_z, conn=conn
+            session_id,
+            episode_number,
+            episode_name,
+            df,
+            csv_path,
+            has_z=has_z,
+            conn=conn,
         )
 
 
@@ -1524,16 +1754,13 @@ class GNNRolloutLoader(BaseDataLoader):
             Agent index of food agent, or -1 if none found
         """
         # If 'food' is in the dataset name, food agent is the last agent
-        if 'food' in dataset_name.lower():
+        if "food" in dataset_name.lower():
             return num_agents - 1
 
         return -1  # No food agent
 
     def _create_agent_type_map(
-        self,
-        food_agent_idx: int,
-        num_frames: int,
-        num_agents: int
+        self, food_agent_idx: int, num_frames: int, num_agents: int
     ) -> Dict[Tuple[int, int], str]:
         """
         Create mapping from (time_index, agent_id) to agent_type.
@@ -1551,9 +1778,9 @@ class GNNRolloutLoader(BaseDataLoader):
         for time_idx in range(num_frames):
             for agent_id in range(num_agents):
                 if food_agent_idx >= 0 and agent_id == food_agent_idx:
-                    agent_type_map[(time_idx, agent_id)] = 'food'
+                    agent_type_map[(time_idx, agent_id)] = "food"
                 else:
-                    agent_type_map[(time_idx, agent_id)] = 'agent'
+                    agent_type_map[(time_idx, agent_id)] = "agent"
 
         return agent_type_map
 
@@ -1562,7 +1789,7 @@ class GNNRolloutLoader(BaseDataLoader):
         accelerations: np.ndarray,
         num_frames: int,
         num_agents: int,
-        scene_size: float
+        scene_size: float,
     ) -> Dict[str, pd.Series]:
         """
         Prepare acceleration extended properties.
@@ -1586,17 +1813,17 @@ class GNNRolloutLoader(BaseDataLoader):
         idx = pd.MultiIndex.from_arrays([time_indices, agent_ids])
 
         return {
-            'acceleration_x': pd.Series(accelerations_flat[:, 0], index=idx),
-            'acceleration_y': pd.Series(accelerations_flat[:, 1], index=idx),
+            "acceleration_x": pd.Series(accelerations_flat[:, 0], index=idx),
+            "acceleration_y": pd.Series(accelerations_flat[:, 1], index=idx),
         }
 
     def _prepare_attention_properties(
         self,
         W_frames: List,  # List of (edge_index, edge_weight) tuples
-        traj_idx: int,   # Trajectory index within batch
+        traj_idx: int,  # Trajectory index within batch
         num_frames: int,
         num_agents: int,
-        food_agent_idx: int
+        food_agent_idx: int,
     ) -> Dict[str, pd.Series]:
         """
         Prepare attention weight extended properties.
@@ -1615,9 +1842,9 @@ class GNNRolloutLoader(BaseDataLoader):
         from collab_env.gnn.gnn import debatch_edge_index_weight
 
         # Initialize storage for attention decomposition
-        attn_self_all = []   # [num_frames, num_agents]
-        attn_boid_all = []   # [num_frames, num_agents]
-        attn_food_all = []   # [num_frames, num_agents]
+        attn_self_all = []  # [num_frames, num_agents]
+        attn_boid_all = []  # [num_frames, num_agents]
+        attn_food_all = []  # [num_frames, num_agents]
 
         for frame_idx in range(num_frames):
             edge_index, edge_weight = W_frames[frame_idx]
@@ -1632,7 +1859,9 @@ class GNNRolloutLoader(BaseDataLoader):
 
             # Average across heads if multi-head
             if len(edge_weight.shape) > 1 and edge_weight.shape[1] > 1:
-                edge_weight_avg = edge_weight.mean(dim=1, keepdim=True)  # [num_edges, 1]
+                edge_weight_avg = edge_weight.mean(
+                    dim=1, keepdim=True
+                )  # [num_edges, 1]
             else:
                 edge_weight_avg = edge_weight
 
@@ -1674,9 +1903,9 @@ class GNNRolloutLoader(BaseDataLoader):
             attn_food_all.append(attn_food_frame)
 
         # Convert to [num_frames, num_agents] arrays
-        attn_self_all = np.array(attn_self_all)  # [frames, agents]
-        attn_boid_all = np.array(attn_boid_all)
-        attn_food_all = np.array(attn_food_all)
+        attn_self_arr = np.array(attn_self_all)  # [frames, agents]
+        attn_boid_arr = np.array(attn_boid_all)
+        attn_food_arr = np.array(attn_food_all)
 
         # Flatten and create multi-index
         time_indices = np.repeat(np.arange(num_frames), num_agents)
@@ -1684,16 +1913,16 @@ class GNNRolloutLoader(BaseDataLoader):
         idx = pd.MultiIndex.from_arrays([time_indices, agent_ids])
 
         return {
-            'attn_weight_self': pd.Series(attn_self_all.flatten(), index=idx),
-            'attn_weight_boid': pd.Series(attn_boid_all.flatten(), index=idx),
-            'attn_weight_food': pd.Series(attn_food_all.flatten(), index=idx),
+            "attn_weight_self": pd.Series(attn_self_arr.flatten(), index=idx),
+            "attn_weight_boid": pd.Series(attn_boid_arr.flatten(), index=idx),
+            "attn_weight_food": pd.Series(attn_food_arr.flatten(), index=idx),
         }
 
     def _prepare_loss_observations(
         self,
         loss_values: List[float],  # List of scalars, one per frame
         num_frames: int,
-        scene_size: float
+        scene_size: float,
     ) -> Tuple[pd.DataFrame, Dict[str, pd.Series]]:
         """
         Prepare per-frame loss as 'env' agent observations.
@@ -1719,7 +1948,7 @@ class GNNRolloutLoader(BaseDataLoader):
                 loss_array = np.pad(
                     loss_array,
                     (0, num_frames - len(loss_array)),
-                    constant_values=np.nan
+                    constant_values=np.nan,
                 )
             else:
                 loss_array = loss_array[:num_frames]
@@ -1728,26 +1957,28 @@ class GNNRolloutLoader(BaseDataLoader):
         scene_center = scene_size / 2.0  # 240.0 for default scene_size=480.0
 
         # Create observations with agent_type_id='env', agent_id=-1 (arbitrary, but distinct)
-        observations = pd.DataFrame({
-            'time_index': np.arange(num_frames),
-            'agent_id': -1,  # Use -1 to distinguish from regular agent IDs (0, 1, 2, ...)
-            'agent_type_id': 'env',
-            'x': scene_center,
-            'y': scene_center,
-            'z': None,
-            'v_x': None,  # NULL velocity for env node
-            'v_y': None,
-            'v_z': None
-        })
+        observations = pd.DataFrame(
+            {
+                "time_index": np.arange(num_frames),
+                "agent_id": -1,  # Use -1 to distinguish from regular agent IDs (0, 1, 2, ...)
+                "agent_type_id": "env",
+                "x": scene_center,
+                "y": scene_center,
+                "z": None,
+                "v_x": None,  # NULL velocity for env node
+                "v_y": None,
+                "v_z": None,
+            }
+        )
 
         # Create extended property for loss
-        idx = pd.MultiIndex.from_arrays([
-            np.arange(num_frames),           # time_index
-            np.full(num_frames, -1, dtype=int)  # agent_id=-1
-        ])
-        extended_props = {
-            'loss': pd.Series(loss_array, index=idx)
-        }
+        idx = pd.MultiIndex.from_arrays(
+            [
+                np.arange(num_frames),  # time_index
+                np.full(num_frames, -1, dtype=int),  # agent_id=-1
+            ]
+        )
+        extended_props = {"loss": pd.Series(loss_array, index=idx)}
 
         return observations, extended_props
 
@@ -1759,17 +1990,23 @@ class GNNRolloutLoader(BaseDataLoader):
         positions: np.ndarray,  # [frames, agents, 2]
         accelerations: np.ndarray,  # [frames, agents, 2]
         W_frames: Optional[List] = None,  # List of (edge_index, edge_weight) tuples
-        loss_frames: Optional[List] = None,  # List of scalar loss values (one per frame)
+        loss_frames: Optional[
+            List
+        ] = None,  # List of scalar loss values (one per frame)
         traj_idx: int = 0,  # Trajectory index within batch
-        num_frames: int = None,
-        num_agents: int = None,
-        episode_type: str = 'actual',  # 'actual' or 'predicted'
+        num_frames: Optional[int] = None,
+        num_agents: Optional[int] = None,
+        episode_type: str = "actual",  # 'actual' or 'predicted'
         food_agent_idx: int = -1,
-        actual_food_positions: Optional[np.ndarray] = None,  # [frames, 2] - TRUE food positions from actual episode
-        actual_positions: Optional[np.ndarray] = None,  # [frames, agents, 2] - Actual positions for prediction error
-        metadata: Dict = None,
+        actual_food_positions: Optional[
+            np.ndarray
+        ] = None,  # [frames, 2] - TRUE food positions from actual episode
+        actual_positions: Optional[
+            np.ndarray
+        ] = None,  # [frames, agents, 2] - Actual positions for prediction error
+        metadata: Optional[Dict] = None,
         scene_size: float = 480.0,
-        conn=None
+        conn=None,
     ):
         """Load a single trajectory as an episode with accelerations, attention weights, loss, and prediction error."""
 
@@ -1792,15 +2029,19 @@ class GNNRolloutLoader(BaseDataLoader):
         VALUES (:episode_id, :session_id, :episode_number, :num_frames,
                 :num_agents, :frame_rate, :file_path)
         """
-        self.db.execute(query, {
-            'episode_id': episode_id,
-            'session_id': session_id,
-            'episode_number': episode_number,
-            'num_frames': num_frames,
-            'num_agents': num_agents,
-            'frame_rate': 1.0,
-            'file_path': metadata_dict.get('rollout_file', '')
-        }, conn=conn)
+        self.db.execute(
+            query,
+            {
+                "episode_id": episode_id,
+                "session_id": session_id,
+                "episode_number": episode_number,
+                "num_frames": num_frames,
+                "num_agents": num_agents,
+                "frame_rate": 1.0,
+                "file_path": metadata_dict.get("rollout_file", ""),
+            },
+            conn=conn,
+        )
 
         # 3. Prepare observations with agent types
         positions_scaled = positions * scene_size
@@ -1818,32 +2059,35 @@ class GNNRolloutLoader(BaseDataLoader):
 
         # Map agent types
         agent_type_ids = [
-            agent_type_map.get((t, a), 'agent')
-            for t, a in zip(time_indices, agent_ids)
+            agent_type_map.get((t, a), "agent") for t, a in zip(time_indices, agent_ids)
         ]
 
         # Create observations DataFrame
-        observations = pd.DataFrame({
-            'time_index': time_indices,
-            'agent_id': agent_ids,
-            'agent_type_id': agent_type_ids,
-            'x': positions_flat[:, 0],
-            'y': positions_flat[:, 1],
-            'z': None,
-            'v_x': velocities_flat[:, 0],
-            'v_y': velocities_flat[:, 1],
-            'v_z': None
-        })
+        observations = pd.DataFrame(
+            {
+                "time_index": time_indices,
+                "agent_id": agent_ids,
+                "agent_type_id": agent_type_ids,
+                "x": positions_flat[:, 0],
+                "y": positions_flat[:, 1],
+                "z": None,
+                "v_x": velocities_flat[:, 0],
+                "v_y": velocities_flat[:, 1],
+                "v_z": None,
+            }
+        )
 
         self.load_observations_batch(observations, episode_id, conn=conn)
 
         # 3b. Load env observations for loss (predicted episodes only)
-        if episode_type == 'predicted' and loss_frames is not None:
+        if episode_type == "predicted" and loss_frames is not None:
             env_observations, loss_props = self._prepare_loss_observations(
                 loss_frames, num_frames, scene_size
             )
             self.load_observations_batch(env_observations, episode_id, conn=conn)
-            logger.debug(f"Added {len(loss_props['loss'])} loss observations for env agent")
+            logger.debug(
+                f"Added {len(loss_props['loss'])} loss observations for env agent"
+            )
 
         # 4. Load accelerations as extended properties
         extended_props = self._prepare_acceleration_properties(
@@ -1851,7 +2095,7 @@ class GNNRolloutLoader(BaseDataLoader):
         )
 
         # 4b. Merge loss properties if we loaded env observations
-        if episode_type == 'predicted' and loss_frames is not None:
+        if episode_type == "predicted" and loss_frames is not None:
             extended_props.update(loss_props)
 
         # 5. Load attention weights as extended properties (if available)
@@ -1868,7 +2112,7 @@ class GNNRolloutLoader(BaseDataLoader):
             agent_ids_all = np.tile(np.arange(num_agents), num_frames)
             idx = pd.MultiIndex.from_arrays([time_indices_all, agent_ids_all])
 
-            if episode_type == 'actual':
+            if episode_type == "actual":
                 # ACTUAL EPISODE: Compute distance to actual food position
                 food_positions = positions_scaled[:, food_agent_idx, :]  # [frames, 2]
 
@@ -1880,18 +2124,24 @@ class GNNRolloutLoader(BaseDataLoader):
                         else:
                             boid_x, boid_y = positions_scaled[time_idx, agent_id, :]
                             food_x, food_y = food_positions[time_idx, :]
-                            distance = np.sqrt((boid_x - food_x)**2 + (boid_y - food_y)**2)
+                            distance = np.sqrt(
+                                (boid_x - food_x) ** 2 + (boid_y - food_y) ** 2
+                            )
                             distances.append(distance)
 
-                extended_props['distance_to_food'] = pd.Series(distances, index=idx)
-                logger.debug(f"Computed distance_to_food for actual episode ({len(distances)} observations)")
+                extended_props["distance_to_food"] = pd.Series(distances, index=idx)
+                logger.debug(
+                    f"Computed distance_to_food for actual episode ({len(distances)} observations)"
+                )
 
             else:  # episode_type == 'predicted'
                 # PREDICTED EPISODE: Compute TWO distance metrics
                 # 1. distance_to_food_actual: Distance to TRUE food position (from actual episode)
                 # 2. distance_to_food_predicted: Distance to PREDICTED food position
 
-                predicted_food_positions = positions_scaled[:, food_agent_idx, :]  # [frames, 2]
+                predicted_food_positions = positions_scaled[
+                    :, food_agent_idx, :
+                ]  # [frames, 2]
 
                 distances_to_actual_food = []
                 distances_to_predicted_food = []
@@ -1908,25 +2158,41 @@ class GNNRolloutLoader(BaseDataLoader):
 
                             # Distance to TRUE food (from actual episode)
                             if actual_food_positions is not None:
-                                actual_food_x, actual_food_y = actual_food_positions[time_idx, :]
-                                dist_to_actual = np.sqrt((boid_x - actual_food_x)**2 + (boid_y - actual_food_y)**2)
+                                actual_food_x, actual_food_y = actual_food_positions[
+                                    time_idx, :
+                                ]
+                                dist_to_actual = np.sqrt(
+                                    (boid_x - actual_food_x) ** 2
+                                    + (boid_y - actual_food_y) ** 2
+                                )
                                 distances_to_actual_food.append(dist_to_actual)
                             else:
                                 distances_to_actual_food.append(np.nan)
 
                             # Distance to PREDICTED food
-                            pred_food_x, pred_food_y = predicted_food_positions[time_idx, :]
-                            dist_to_predicted = np.sqrt((boid_x - pred_food_x)**2 + (boid_y - pred_food_y)**2)
+                            pred_food_x, pred_food_y = predicted_food_positions[
+                                time_idx, :
+                            ]
+                            dist_to_predicted = np.sqrt(
+                                (boid_x - pred_food_x) ** 2
+                                + (boid_y - pred_food_y) ** 2
+                            )
                             distances_to_predicted_food.append(dist_to_predicted)
 
-                extended_props['distance_to_food_actual'] = pd.Series(distances_to_actual_food, index=idx)
-                extended_props['distance_to_food_predicted'] = pd.Series(distances_to_predicted_food, index=idx)
+                extended_props["distance_to_food_actual"] = pd.Series(
+                    distances_to_actual_food, index=idx
+                )
+                extended_props["distance_to_food_predicted"] = pd.Series(
+                    distances_to_predicted_food, index=idx
+                )
 
-                logger.debug(f"Computed distance_to_food_actual and distance_to_food_predicted "
-                           f"for predicted episode ({len(distances_to_actual_food)} observations)")
+                logger.debug(
+                    f"Computed distance_to_food_actual and distance_to_food_predicted "
+                    f"for predicted episode ({len(distances_to_actual_food)} observations)"
+                )
 
         # 7. Compute prediction error (predicted episodes only)
-        if episode_type == 'predicted' and actual_positions is not None:
+        if episode_type == "predicted" and actual_positions is not None:
             # actual_positions: [frames, agents, 2] (normalized coordinates)
             # positions: [frames, agents, 2] (predicted, normalized coordinates)
 
@@ -1935,24 +2201,24 @@ class GNNRolloutLoader(BaseDataLoader):
             idx = pd.MultiIndex.from_arrays([time_indices_all, agent_ids_all])
 
             # Compute L2 distance in scene units
-            actual_scaled = actual_positions * scene_size    # [frames, agents, 2]
-            predicted_scaled = positions * scene_size        # [frames, agents, 2]
+            actual_scaled = actual_positions * scene_size  # [frames, agents, 2]
+            predicted_scaled = positions * scene_size  # [frames, agents, 2]
 
             prediction_errors = []
             for time_idx in range(num_frames):
                 for agent_id in range(num_agents):
                     actual_pos = actual_scaled[time_idx, agent_id, :]
                     predicted_pos = predicted_scaled[time_idx, agent_id, :]
-                    error = np.sqrt(np.sum((actual_pos - predicted_pos)**2))
+                    error = np.sqrt(np.sum((actual_pos - predicted_pos) ** 2))
                     prediction_errors.append(error)
 
-            extended_props['prediction_error'] = pd.Series(prediction_errors, index=idx)
-            logger.debug(f"Computed prediction_error for predicted episode ({len(prediction_errors)} observations)")
+            extended_props["prediction_error"] = pd.Series(prediction_errors, index=idx)
+            logger.debug(
+                f"Computed prediction_error for predicted episode ({len(prediction_errors)} observations)"
+            )
 
         if extended_props:
-            self.load_extended_properties_batch(
-                episode_id, extended_props, conn=conn
-            )
+            self.load_extended_properties_batch(episode_id, extended_props, conn=conn)
 
     def _parse_rollout_filename(self, rollout_path: Path) -> Dict[str, Any]:
         """
@@ -1965,20 +2231,22 @@ class GNNRolloutLoader(BaseDataLoader):
         # Extract dataset name (everything before the model parameters)
         # Pattern: {dataset}_{model}_n{noise}_h{heads}_vr{visual_range}_s{seed}_rollout_{frame}
         match = re.match(
-            r'(.+?)_n(\d+(?:\.\d+)?)_h(\d+)_vr(\d+(?:\.\d+)?)_s(\d+)_rollout_(\d+)',
-            filename
+            r"(.+?)_n(\d+(?:\.\d+)?)_h(\d+)_vr(\d+(?:\.\d+)?)_s(\d+)_rollout_(\d+)",
+            filename,
         )
 
         if not match:
-            logger.warning(f"Could not parse rollout filename: {filename}, using defaults")
+            logger.warning(
+                f"Could not parse rollout filename: {filename}, using defaults"
+            )
             return {
-                'dataset': filename,
-                'model_spec': 'unknown',
-                'noise': 0,
-                'heads': 1,
-                'visual_range': 0.1,
-                'seed': 0,
-                'rollout_frame': 5
+                "dataset": filename,
+                "model_spec": "unknown",
+                "noise": 0,
+                "heads": 1,
+                "visual_range": 0.1,
+                "seed": 0,
+                "rollout_frame": 5,
             }
 
         dataset_and_model = match.group(1)
@@ -1990,38 +2258,47 @@ class GNNRolloutLoader(BaseDataLoader):
 
         # Try to separate dataset from model name (heuristic: look for common model names)
         # Common patterns: dataset_modelname or just dataset
-        parts = dataset_and_model.rsplit('_', 1)
-        if len(parts) == 2 and parts[1] in ['vpluspplus', 'vplus', 'basic', 'a', 'b', 'c']:
+        parts = dataset_and_model.rsplit("_", 1)
+        if len(parts) == 2 and parts[1] in [
+            "vpluspplus",
+            "vplus",
+            "basic",
+            "a",
+            "b",
+            "c",
+        ]:
             dataset = parts[0]
             model_name = parts[1]
         else:
             dataset = dataset_and_model
-            model_name = 'base'
+            model_name = "base"
 
         model_spec = f"{model_name}_n{noise}_h{heads}_vr{visual_range}_s{seed}"
 
         return {
-            'dataset': dataset,
-            'model_name': model_name,
-            'model_spec': model_spec,
-            'noise': noise,
-            'heads': heads,
-            'visual_range': visual_range,
-            'seed': seed,
-            'rollout_frame': rollout_frame
+            "dataset": dataset,
+            "model_name": model_name,
+            "model_spec": model_spec,
+            "noise": noise,
+            "heads": heads,
+            "visual_range": visual_range,
+            "seed": seed,
+            "rollout_frame": rollout_frame,
         }
 
     def _load_pickle(self, rollout_path: Path) -> Dict:
         """Load pickle file with CPU device mapping."""
         from collab_env.gnn.plotting_utility import DeviceUnpickler
 
-        with open(rollout_path, 'rb') as f:
+        with open(rollout_path, "rb") as f:
             # Use DeviceUnpickler to safely load CUDA tensors on CPU-only machines
             rollout_data = DeviceUnpickler(f, device="cpu").load()
 
         return rollout_data
 
-    def load_rollout_file(self, rollout_path: Path, scene_size: float = 480.0, conn=None):
+    def load_rollout_file(
+        self, rollout_path: Path, scene_size: float = 480.0, conn=None
+    ):
         """
         Load a single rollout pickle file.
 
@@ -2045,9 +2322,9 @@ class GNNRolloutLoader(BaseDataLoader):
         session_metadata = SessionMetadata(
             session_id=session_id,
             session_name=f"GNN Rollout: {metadata['dataset']}",
-            category_id='boids_2d_rollout',
-            config={**metadata, 'scene_size': scene_size},
-            metadata={'rollout_file': str(rollout_path)}
+            category_id="boids_2d_rollout",
+            config={**metadata, "scene_size": scene_size},
+            metadata={"rollout_file": str(rollout_path)},
         )
 
         # 4. Load in single transaction (or use provided connection)
@@ -2061,16 +2338,28 @@ class GNNRolloutLoader(BaseDataLoader):
             for epoch_id, epoch_data in rollout_data.items():
                 for batch_id, batch_data in epoch_data.items():
                     # Extract numpy arrays
-                    actual = np.array(batch_data['actual'])          # [frames, batch, agents, 2]
-                    predicted = np.array(batch_data['predicted'])    # [frames, batch, agents, 2]
-                    actual_acc = np.array(batch_data['actual_acc'])  # [frames, batch, agents, 2]
-                    predicted_acc = np.array(batch_data['predicted_acc'])  # [frames, batch, agents, 2]
+                    actual = np.array(
+                        batch_data["actual"]
+                    )  # [frames, batch, agents, 2]
+                    predicted = np.array(
+                        batch_data["predicted"]
+                    )  # [frames, batch, agents, 2]
+                    actual_acc = np.array(
+                        batch_data["actual_acc"]
+                    )  # [frames, batch, agents, 2]
+                    predicted_acc = np.array(
+                        batch_data["predicted_acc"]
+                    )  # [frames, batch, agents, 2]
 
                     # Extract attention weights if available
-                    W_frames = batch_data.get('W', None)  # List of (edge_index, edge_weight) tuples
+                    W_frames = batch_data.get(
+                        "W", None
+                    )  # List of (edge_index, edge_weight) tuples
 
                     # Extract loss values if available
-                    loss_frames = batch_data.get('loss', None)  # List of scalar loss values (one per frame)
+                    loss_frames = batch_data.get(
+                        "loss", None
+                    )  # List of scalar loss values (one per frame)
 
                     num_frames = actual.shape[0]
                     batch_size = actual.shape[1]
@@ -2081,27 +2370,41 @@ class GNNRolloutLoader(BaseDataLoader):
                         # Check if we've reached max episodes before loading this trajectory
                         # Each trajectory creates 2 episodes (actual + predicted)
                         if trajectories_loaded >= self.max_episodes:
-                            logger.info(f"Reached max_episodes limit: {trajectories_loaded} >= {self.max_episodes}, stopping...")
+                            logger.info(
+                                f"Reached max_episodes limit: {trajectories_loaded} >= {self.max_episodes}, stopping..."
+                            )
                             break
 
                         # Extract data for this trajectory
-                        actual_traj = actual[:, traj_idx, :, :]          # [frames, agents, 2]
-                        predicted_traj = predicted[:, traj_idx, :, :]    # [frames, agents, 2]
-                        actual_acc_traj = actual_acc[:, traj_idx, :, :]  # [frames, agents, 2]
-                        predicted_acc_traj = predicted_acc[:, traj_idx, :, :]  # [frames, agents, 2]
+                        actual_traj = actual[:, traj_idx, :, :]  # [frames, agents, 2]
+                        predicted_traj = predicted[
+                            :, traj_idx, :, :
+                        ]  # [frames, agents, 2]
+                        actual_acc_traj = actual_acc[
+                            :, traj_idx, :, :
+                        ]  # [frames, agents, 2]
+                        predicted_acc_traj = predicted_acc[
+                            :, traj_idx, :, :
+                        ]  # [frames, agents, 2]
 
                         # Detect food agent (same for actual and predicted)
-                        food_agent_idx = self._detect_food_agent(metadata['dataset'], num_agents)
+                        food_agent_idx = self._detect_food_agent(
+                            metadata["dataset"], num_agents
+                        )
 
                         # Extract actual food positions for use in predicted episode
                         # This is the TRUE food location that should remain stationary
                         actual_food_positions = None
                         if food_agent_idx >= 0:
                             # Scale actual food positions to scene coordinates
-                            actual_food_positions = actual_traj[:, food_agent_idx, :] * scene_size  # [frames, 2]
+                            actual_food_positions = (
+                                actual_traj[:, food_agent_idx, :] * scene_size
+                            )  # [frames, 2]
 
                         # Load ACTUAL episode (no attention weights for ground truth)
-                        episode_id_actual = f"{session_id}-{trajectories_loaded:04d}-actual"
+                        episode_id_actual = (
+                            f"{session_id}-{trajectories_loaded:04d}-actual"
+                        )
                         self._load_trajectory_episode(
                             session_id=session_id,
                             episode_id=episode_id_actual,
@@ -2112,24 +2415,26 @@ class GNNRolloutLoader(BaseDataLoader):
                             traj_idx=traj_idx,
                             num_frames=num_frames,
                             num_agents=num_agents,
-                            episode_type='actual',
+                            episode_type="actual",
                             food_agent_idx=food_agent_idx,
                             actual_food_positions=None,  # Not needed for actual episode
                             metadata={
-                                'source_epoch': int(epoch_id),
-                                'source_batch': int(batch_id),
-                                'trajectory_index': int(traj_idx),
-                                'rollout_file': str(rollout_path)
+                                "source_epoch": int(epoch_id),
+                                "source_batch": int(batch_id),
+                                "trajectory_index": int(traj_idx),
+                                "rollout_file": str(rollout_path),
                             },
                             scene_size=scene_size,
-                            conn=conn
+                            conn=conn,
                         )
 
                         # Load PREDICTED episode (with attention weights from model)
-                        episode_id_predicted = f"{session_id}-{trajectories_loaded:04d}-predicted"
-                        
+                        episode_id_predicted = (
+                            f"{session_id}-{trajectories_loaded:04d}-predicted"
+                        )
+
                         episode_counter += 1
-                        
+
                         self._load_trajectory_episode(
                             session_id=session_id,
                             episode_id=episode_id_predicted,
@@ -2141,31 +2446,33 @@ class GNNRolloutLoader(BaseDataLoader):
                             traj_idx=traj_idx,
                             num_frames=num_frames,
                             num_agents=num_agents,
-                            episode_type='predicted',
+                            episode_type="predicted",
                             food_agent_idx=food_agent_idx,
                             actual_food_positions=actual_food_positions,  # Pass TRUE food positions
                             actual_positions=actual_traj,  # Pass actual positions for prediction error
                             metadata={
-                                'source_epoch': int(epoch_id),
-                                'source_batch': int(batch_id),
-                                'trajectory_index': int(traj_idx),
-                                'model_name': metadata.get('model_name'),
-                                'model_params': {
-                                    'noise': metadata.get('noise'),
-                                    'heads': metadata.get('heads'),
-                                    'visual_range': metadata.get('visual_range'),
-                                    'seed': metadata.get('seed')
+                                "source_epoch": int(epoch_id),
+                                "source_batch": int(batch_id),
+                                "trajectory_index": int(traj_idx),
+                                "model_name": metadata.get("model_name"),
+                                "model_params": {
+                                    "noise": metadata.get("noise"),
+                                    "heads": metadata.get("heads"),
+                                    "visual_range": metadata.get("visual_range"),
+                                    "seed": metadata.get("seed"),
                                 },
-                                'rollout_file': str(rollout_path)
+                                "rollout_file": str(rollout_path),
                             },
                             scene_size=scene_size,
-                            conn=conn
+                            conn=conn,
                         )
-                        
+
                         trajectories_loaded += 1
                         episode_counter += 1
 
-            logger.info(f"Completed loading rollout: {session_id} ({trajectories_loaded} trajectories, {episode_counter} episodes)")
+            logger.info(
+                f"Completed loading rollout: {session_id} ({trajectories_loaded} trajectories, {episode_counter} episodes)"
+            )
 
         # Use provided connection or create new transaction
         if conn is not None:
@@ -2196,7 +2503,9 @@ class GNNRolloutLoader(BaseDataLoader):
         # Load all files in a single transaction
         with self.db.transaction() as conn:
             for idx, rollout_file in enumerate(rollout_files, 1):
-                logger.info(f"[{idx}/{len(rollout_files)}] Loading {rollout_file.name}...")
+                logger.info(
+                    f"[{idx}/{len(rollout_files)}] Loading {rollout_file.name}..."
+                )
                 self.load_rollout_file(rollout_file, scene_size=scene_size, conn=conn)
 
         logger.info(f"Completed loading {len(rollout_files)} rollout files")
@@ -2205,7 +2514,7 @@ class GNNRolloutLoader(BaseDataLoader):
 def main():
     """Command-line interface for data loader."""
     parser = argparse.ArgumentParser(
-        description='Load tracking data into database',
+        description="Load tracking data into database",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -2220,53 +2529,49 @@ Examples:
 
   # Load with specific backend
   python -m collab_env.data.db.db_loader --source boids3d --path simulated_data/hackathon --backend duckdb
-        """
+        """,
     )
 
     parser.add_argument(
-        '--source',
+        "--source",
         required=True,
-        choices=['boids3d', 'boids2d', 'tracking', 'boids2d_rollout'],
-        help='Data source type'
+        choices=["boids3d", "boids2d", "tracking", "boids2d_rollout"],
+        help="Data source type",
     )
-    
+
     parser.add_argument(
-        '--max-episodes-per-session',
+        "--max-episodes-per-session",
         type=int,
         default=None,
-        help='Maximum number of episodes to load per session (default: unlimited)'
+        help="Maximum number of episodes to load per session (default: unlimited)",
     )
 
     parser.add_argument(
-        '--path',
-        required=True,
-        type=Path,
-        help='Path to data directory or file'
+        "--path", required=True, type=Path, help="Path to data directory or file"
     )
 
     parser.add_argument(
-        '--backend',
-        choices=['postgres', 'duckdb'],
-        help='Database backend (overrides DB_BACKEND env var)'
+        "--backend",
+        choices=["postgres", "duckdb"],
+        help="Database backend (overrides DB_BACKEND env var)",
     )
 
     parser.add_argument(
-        '--dbpath',
-        help='DuckDB database path (overrides DUCKDB_PATH env var)'
+        "--dbpath", help="DuckDB database path (overrides DUCKDB_PATH env var)"
     )
 
     parser.add_argument(
-        '--scene-size',
+        "--scene-size",
         type=float,
         default=480.0,
-        help='Scene size for coordinate scaling (default: 480.0, for boids2d_rollout source only)'
+        help="Scene size for coordinate scaling (default: 480.0, for boids2d_rollout source only)",
     )
 
     args = parser.parse_args()
 
     # Handle dbpath via environment variable if specified
     if args.dbpath:
-        os.environ['DUCKDB_PATH'] = str(args.dbpath)
+        os.environ["DUCKDB_PATH"] = str(args.dbpath)
 
     # Load configuration
     config = get_db_config(backend=args.backend)
@@ -2277,12 +2582,18 @@ Examples:
 
     try:
         # Convert None to np.inf for unlimited episodes
-        max_eps = args.max_episodes_per_session if args.max_episodes_per_session is not None else np.inf
-        logger.info(f"max_episodes_per_session argument: {args.max_episodes_per_session}")
+        max_eps = (
+            args.max_episodes_per_session
+            if args.max_episodes_per_session is not None
+            else np.inf
+        )
+        logger.info(
+            f"max_episodes_per_session argument: {args.max_episodes_per_session}"
+        )
         logger.info(f"Effective max_episodes: {max_eps}")
 
         # Load data based on source type
-        if args.source == 'boids3d':
+        if args.source == "boids3d":
             loader = Boids3DLoader(db_conn, max_episodes=max_eps)
 
             # Check if path is a directory with multiple simulations or a single simulation
@@ -2299,11 +2610,11 @@ Examples:
             else:
                 raise ValueError(f"Path must be a directory: {args.path}")
 
-        elif args.source == 'boids2d':
+        elif args.source == "boids2d":
             loader = Boids2DLoader(db_conn, max_episodes=max_eps)
 
             # Check if path is a file or directory
-            if args.path.is_file() and args.path.suffix == '.pt':
+            if args.path.is_file() and args.path.suffix == ".pt":
                 # Single dataset file
                 logger.info("Loading single dataset...")
                 loader.load_dataset(args.path)
@@ -2314,7 +2625,7 @@ Examples:
             else:
                 raise ValueError(f"Path must be a .pt file or directory: {args.path}")
 
-        elif args.source == 'tracking':
+        elif args.source == "tracking":
             loader = TrackingCSVLoader(db_conn, max_episodes=max_eps)
 
             # Check if path is a single session or parent directory
@@ -2331,10 +2642,10 @@ Examples:
             else:
                 raise ValueError(f"Path must be a directory: {args.path}")
 
-        elif args.source == 'boids2d_rollout':
+        elif args.source == "boids2d_rollout":
             loader = GNNRolloutLoader(db_conn, max_episodes=max_eps)
 
-            if args.path.is_file() and args.path.suffix == '.pkl':
+            if args.path.is_file() and args.path.suffix == ".pkl":
                 # Single rollout file
                 logger.info("Loading single rollout file...")
                 loader.load_rollout_file(args.path, scene_size=args.scene_size)
@@ -2354,5 +2665,5 @@ Examples:
         db_conn.close()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

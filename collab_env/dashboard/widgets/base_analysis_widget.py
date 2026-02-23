@@ -56,9 +56,9 @@ class BaseAnalysisWidget(param.Parameterized):
 
     # Metadata (subclasses should override)
     # Note: Using widget_name instead of name to avoid conflict with param.Parameterized.name
-    widget_name: str = ""              # Display name for tab
-    widget_description: str = ""       # Widget description
-    widget_category: str = "general"   # For grouping/filtering
+    widget_name: str = ""  # Display name for tab
+    widget_description: str = ""  # Widget description
+    widget_category: str = "general"  # For grouping/filtering
 
     # Shared context (injected by main GUI)
     context: Optional[AnalysisContext] = param.Parameter(default=None)
@@ -155,14 +155,12 @@ class BaseAnalysisWidget(param.Parameterized):
         self.scope_display = pn.pane.Markdown(
             "**No data loaded**",
             sizing_mode="stretch_width",
-            styles={'background': '#f0f0f0', 'padding': '10px', 'border-radius': '5px'}
+            styles={"background": "#f0f0f0", "padding": "10px", "border-radius": "5px"},
         )
 
         # Load button (standard for all widgets)
         self.load_btn = pn.widgets.Button(
-            name=f"Load {self.widget_name}",
-            button_type="primary",
-            width=200
+            name=f"Load {self.widget_name}", button_type="primary", width=200
         )
         self.load_btn.on_click(self._on_load_click)
 
@@ -290,7 +288,7 @@ class BaseAnalysisWidget(param.Parameterized):
         ...     method=self.correlation_method
         ... )
         """
+        assert self.context is not None
         query_fn = getattr(self.context.query_backend, query_method)
         params = self.context.get_query_params(**extra_params)
         return query_fn(**params)
-
