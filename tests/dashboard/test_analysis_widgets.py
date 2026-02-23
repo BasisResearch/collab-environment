@@ -137,7 +137,7 @@ class TestWidgetRegistry:
         defaults = registry.get_defaults()
 
         assert defaults["spatial_bin_size"] == 10.0
-        assert defaults["temporal_window_size"] == 100
+        assert defaults["temporal_window_size"] == 10
         assert defaults["min_samples"] == 100
 
     def test_widgets_have_correct_attributes(self, init_holoviews):

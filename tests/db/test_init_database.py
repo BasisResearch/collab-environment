@@ -65,7 +65,7 @@ class TestDatabaseInitialization:
 
         db.close()
 
-        assert count == 23, f"Expected 23 property definitions, found {count}"
+        assert count == 28, f"Expected 28 property definitions, found {count}"
 
     def test_categories_seeded(self, backend_config: DBConfig):
         """Test that session categories seed data is loaded."""

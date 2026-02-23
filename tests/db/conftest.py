@@ -221,7 +221,9 @@ def sample_2d_boids_data(tmp_path: Path) -> Path:
 
     # Create dataset with 3 samples
     # Use the actual dataset class from real data
-    dataset = torch.load("simulated_data/boid_food_basic.pt", weights_only=False)
+    dataset = torch.load(
+        "simulated_data/boid_single_species_basic.pt", weights_only=False
+    )
 
     # Create a simple test dataset with just the first 3 samples
     test_samples = [dataset[i] for i in range(3)]

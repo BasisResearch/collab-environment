@@ -99,49 +99,6 @@ def test_rclone_client_integration():
     assert isinstance(buckets, list)
 
 
-@pytest.mark.skip(reason="YML viewer removed from dashboard")
-def test_file_viewer_yml():
-    """Test YML file viewer functionality."""
-    import tempfile
-    import os
-    from collab_env.dashboard.file_viewers import (
-        FileViewerRegistry,
-        TextViewer,
-    )
-
-    # Test registry creation
-    registry = FileViewerRegistry()
-    assert registry is not None
-
-    # Test text viewer assignment for YML
-    text_viewer = registry.get_viewer("test.yml")
-    assert text_viewer is not None
-    assert isinstance(text_viewer, TextViewer)
-
-    # Test text rendering with actual file
-    test_content = "test: value\nother: 123"
-
-    # Create temporary file for testing
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yml", delete=False
-    ) as temp_file:
-        temp_file.write(test_content)
-        temp_file_path = temp_file.name
-
-    try:
-        render_info = text_viewer.render_view(temp_file_path, "test.yml")
-        assert render_info["type"] == "text"
-        assert "content" in render_info
-        assert render_info["content"] == test_content
-        assert render_info["language"] == "yaml"
-    finally:
-        # Clean up temporary file
-        os.unlink(temp_file_path)
-
-    # Test editing capabilities
-    assert text_viewer.can_edit()
-
-
 def test_file_viewer_csv():
     """Test CSV file viewer functionality."""
     import tempfile
