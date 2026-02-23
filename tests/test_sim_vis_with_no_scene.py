@@ -6,7 +6,7 @@ import pyarrow.parquet as pq
 
 # import pyarrow as pa
 from collab_env.data.file_utils import get_project_root, expand_path
-from collab_env.sim.boids.run_boids_simulator import run_simulator
+from collab_env.sim.boids.run_simulator import run_simulator_main
 
 from tests.sim_test_util import remove_run_folder, create_run_folder
 
@@ -40,7 +40,7 @@ def test_sim_files_visualizer_no_scene_mesh():
         # result = os.system(f"python {program_path} -cf {config_file}")
         # assert result == 0
 
-        run_simulator(expand_path(config_file, get_project_root()))
+        run_simulator_main(expand_path(config_file, get_project_root()))
 
         # Test to see that output folder was created
         folder_list = glob(f"{sim_runs_path}/boids_sim_run_3*")

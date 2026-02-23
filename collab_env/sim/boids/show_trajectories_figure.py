@@ -41,7 +41,7 @@ if __name__ == "__main__":
     # Get the config file name if specified on the command line
     #
     parser = argparse.ArgumentParser(
-        prog="run_boids_simulator",
+        prog="show_trajectories_figure.py",
         description="Simulates boids in a 3D environment",
         epilog="---",
     )
