@@ -105,15 +105,14 @@ Before submitting a PR, you should run the CI checks locally to ensure your code
 
 * ``make format-notebooks`` - Formats Jupyter notebooks
 
-  * Runs ``nbqa isort`` to organize imports
-  * Runs ``nbqa black`` to format code cells
+  * Runs ``ruff check --fix`` to auto-fix lint issues
+  * Runs ``ruff format`` to format code cells
 
 * ``make lint-notebooks`` - Checks notebook code quality
 
   * Runs ``nbqa mypy`` for type checking in notebooks
-  * Runs ``nbqa isort --check`` to verify import organization
-  * Runs ``nbqa black --check`` to verify formatting
-  * Runs ``nbqa flake8`` for additional code quality checks
+  * Runs ``ruff check`` for linting
+  * Runs ``ruff format --check`` to verify formatting
 
 * ``make test-notebooks`` - Tests notebook execution
 

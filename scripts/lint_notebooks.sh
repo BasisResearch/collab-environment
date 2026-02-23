@@ -1,6 +1,7 @@
 #!/bin/bash
+set -euxo pipefail
 
-INCLUDED_NOTEBOOKS="docs/"
+SRC="docs/"
 
 # Array of notebooks to exclude
 EXCLUDED_NOTEBOOKS=(
@@ -9,11 +10,14 @@ EXCLUDED_NOTEBOOKS=(
     "docs/gnn/0b-Select_frames_2D.ipynb"
 )
 
-# Build the nbqa-exclude pattern (regex with | separator)
-EXCLUDE_PATTERN=$(printf "|%s" "${EXCLUDED_NOTEBOOKS[@]}")
-EXCLUDE_PATTERN=${EXCLUDE_PATTERN:1}  # Remove the leading '|'
+# Build --exclude flags for ruff and --nbqa-exclude pattern for nbqa
+RUFF_EXCLUDES=""
+NBQA_EXCLUDE_PATTERN=""
+for nb in "${EXCLUDED_NOTEBOOKS[@]}"; do
+    RUFF_EXCLUDES="$RUFF_EXCLUDES --exclude $nb"
+    NBQA_EXCLUDE_PATTERN="${NBQA_EXCLUDE_PATTERN:+$NBQA_EXCLUDE_PATTERN|}$nb"
+done
 
-nbqa mypy $INCLUDED_NOTEBOOKS --nbqa-exclude "$EXCLUDE_PATTERN"
-nbqa isort --check --diff $INCLUDED_NOTEBOOKS --nbqa-exclude "$EXCLUDE_PATTERN"
-nbqa black --check $INCLUDED_NOTEBOOKS --nbqa-exclude "$EXCLUDE_PATTERN"
-nbqa flake8 $INCLUDED_NOTEBOOKS --nbqa-exclude "$EXCLUDE_PATTERN"
+nbqa mypy $SRC --nbqa-exclude "$NBQA_EXCLUDE_PATTERN"
+ruff check $SRC $RUFF_EXCLUDES
+ruff format --check $SRC $RUFF_EXCLUDES
