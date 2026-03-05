@@ -5,6 +5,8 @@ Provides common infrastructure for widget lifecycle, error handling,
 and interaction with the analysis context.
 """
 
+import json
+from html import escape
 from typing import Optional
 import logging
 
@@ -65,6 +67,8 @@ class BaseAnalysisWidget(param.Parameterized):
 
     def __init__(self, **params):
         super().__init__(**params)
+        self._load_total_rows = 0
+        self._load_agents = set()
         self._create_ui()
 
     # ========== Abstract methods (must implement) ==========
@@ -158,6 +162,38 @@ class BaseAnalysisWidget(param.Parameterized):
             styles={"background": "#f0f0f0", "padding": "10px", "border-radius": "5px"},
         )
 
+        # Info button for config/metadata popup
+        self.info_btn = pn.widgets.Button(
+            name="Info", button_type="light", width=70, height=35
+        )
+        self.info_btn.on_click(self._toggle_info_popup)
+
+        # Info popup (hidden by default)
+        self._info_content = pn.pane.HTML("", sizing_mode="stretch_width")
+        self._info_close_btn = pn.widgets.Button(
+            name="Close", button_type="light", width=70
+        )
+        self._info_close_btn.on_click(lambda e: self._hide_info_popup())
+
+        self.info_popup = pn.Column(
+            pn.Row(
+                pn.pane.Markdown("### Session & Episode Info"),
+                self._info_close_btn,
+                sizing_mode="stretch_width",
+            ),
+            self._info_content,
+            visible=False,
+            sizing_mode="stretch_width",
+            styles={
+                "background": "white",
+                "border": "2px solid #2596be",
+                "border-radius": "8px",
+                "padding": "15px",
+                "box-shadow": "0 4px 12px rgba(0, 0, 0, 0.15)",
+                "margin": "10px 0",
+            },
+        )
+
         # Load button (standard for all widgets)
         self.load_btn = pn.widgets.Button(
             name=f"Load {self.widget_name}", button_type="primary", width=200
@@ -177,6 +213,10 @@ class BaseAnalysisWidget(param.Parameterized):
 
         try:
             self.context.report_loading(f"Loading {self.widget_name}...")
+
+            # Reset counters before load (tracked by query_with_context)
+            self._load_total_rows = 0
+            self._load_agents = set()
 
             self.load_data()
 
@@ -217,7 +257,17 @@ class BaseAnalysisWidget(param.Parameterized):
     def _update_scope_display(self):
         """Update the scope display with current session/episode information."""
         if self.context and self.context.scope:
-            scope_str = str(self.context.scope)
+            scope = self.context.scope
+            scope_str = str(scope)
+
+            # Use counts tracked during load_data via query_with_context
+            num_rows = getattr(self, "_load_total_rows", 0)
+            num_agents = len(getattr(self, "_load_agents", set()))
+            if num_rows > 0:
+                scope_str += (
+                    f" | {num_agents} agents, {num_rows:,} data points"
+                )
+
             self.scope_display.object = f"**Current Scope:** {scope_str}"
         else:
             self.scope_display.object = "**No data loaded**"
@@ -227,7 +277,8 @@ class BaseAnalysisWidget(param.Parameterized):
         Return complete tab content (controls + display).
 
         Layout:
-        - Scope display (current session/episode)
+        - Scope display with info button (current session/episode)
+        - Info popup (hidden by default)
         - Load button
         - Custom controls (if any)
         - Display pane
@@ -237,7 +288,13 @@ class BaseAnalysisWidget(param.Parameterized):
         pn.Column
             Complete widget content for tab
         """
-        components = [self.scope_display, self.load_btn]
+        scope_row = pn.Row(
+            self.scope_display,
+            self.info_btn,
+            sizing_mode="stretch_width",
+            align="center",
+        )
+        components = [scope_row, self.info_popup, self.load_btn]
 
         if self.custom_controls:
             components.append(pn.layout.Divider())
@@ -246,6 +303,112 @@ class BaseAnalysisWidget(param.Parameterized):
         components.append(self.display_pane)
 
         return pn.Column(*components, sizing_mode="stretch_both")
+
+    # ========== Info popup methods ==========
+
+    def _toggle_info_popup(self, event=None):
+        """Toggle the config/metadata info popup."""
+        if self.info_popup.visible:
+            self._hide_info_popup()
+        else:
+            self._show_info_popup()
+
+    def _show_info_popup(self):
+        """Show popup with session config and metadata JSONs."""
+        if not self.context or not self.context.scope:
+            return
+
+        scope = self.context.scope
+        config_json = ""
+        metadata_json = ""
+
+        try:
+            if scope.scope_type == ScopeType.EPISODE and scope.episode_id:
+                meta_df = self.context.query_backend.get_episode_metadata(
+                    scope.episode_id
+                )
+                if len(meta_df) > 0:
+                    row = meta_df.iloc[0]
+                    config_data = row.get("config", {})
+                    if isinstance(config_data, str):
+                        config_data = json.loads(config_data)
+                    config_json = json.dumps(config_data, indent=2, default=str)
+
+                    metadata = {
+                        k: row.get(k)
+                        for k in [
+                            "episode_id",
+                            "session_id",
+                            "session_name",
+                            "category_id",
+                            "episode_number",
+                            "num_frames",
+                            "num_agents",
+                            "frame_rate",
+                            "file_path",
+                        ]
+                    }
+                    metadata_json = json.dumps(metadata, indent=2, default=str)
+
+            elif scope.scope_type == ScopeType.SESSION and scope.session_id:
+                sessions_df = self.context.query_backend.get_sessions()
+                session_row = sessions_df[
+                    sessions_df["session_id"] == scope.session_id
+                ]
+                if len(session_row) > 0:
+                    row = session_row.iloc[0]
+                    config_data = row.get("config", {})
+                    if isinstance(config_data, str):
+                        config_data = json.loads(config_data)
+                    config_json = json.dumps(config_data, indent=2, default=str)
+
+                    metadata = {
+                        k: row.get(k)
+                        for k in [
+                            "session_id",
+                            "session_name",
+                            "category_id",
+                            "created_at",
+                        ]
+                    }
+                    metadata_json = json.dumps(metadata, indent=2, default=str)
+
+                # Also include episode summary
+                episodes_df = self.context.query_backend.get_episodes(
+                    scope.session_id
+                )
+                if len(episodes_df) > 0:
+                    episodes_summary = episodes_df[
+                        ["episode_id", "episode_number", "num_frames", "num_agents"]
+                    ].to_dict("records")
+                    base = json.loads(metadata_json) if metadata_json else {}
+                    base["episodes"] = episodes_summary
+                    metadata_json = json.dumps(base, indent=2, default=str)
+
+        except Exception as e:
+            logger.warning(f"Failed to load info: {e}")
+            config_json = config_json or f"Error: {e}"
+            metadata_json = metadata_json or f"Error: {e}"
+
+        pre_style = (
+            "background: #f8f8f8; padding: 10px; border-radius: 4px; "
+            "overflow-x: auto; max-height: 400px; overflow-y: auto; "
+            "font-size: 12px; white-space: pre-wrap; word-break: break-word;"
+        )
+        html = (
+            f"<div>"
+            f"<h4>Config</h4>"
+            f"<pre style='{pre_style}'>{escape(config_json)}</pre>"
+            f"<h4>Metadata</h4>"
+            f"<pre style='{pre_style}'>{escape(metadata_json)}</pre>"
+            f"</div>"
+        )
+        self._info_content.object = html
+        self.info_popup.visible = True
+
+    def _hide_info_popup(self):
+        """Hide the config/metadata info popup."""
+        self.info_popup.visible = False
 
     # ========== Helper methods ==========
 
@@ -291,4 +454,11 @@ class BaseAnalysisWidget(param.Parameterized):
         assert self.context is not None
         query_fn = getattr(self.context.query_backend, query_method)
         params = self.context.get_query_params(**extra_params)
-        return query_fn(**params)
+        result = query_fn(**params)
+
+        # Track loaded data counts
+        self._load_total_rows += len(result)
+        if "agent_id" in result.columns:
+            self._load_agents.update(result["agent_id"].unique())
+
+        return result
