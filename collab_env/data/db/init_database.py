@@ -394,7 +394,9 @@ Examples:
 
     # Get project root and schema directory
     project_root = get_project_root()
-    schema_dir = args.schema_dir or (project_root / "collab_env" / "data" / "db" / "schema")
+    schema_dir = args.schema_dir or (
+        project_root / "collab_env" / "data" / "db" / "schema"
+    )
 
     if not schema_dir.exists():
         logger.error(f"Schema directory not found: {schema_dir}")
