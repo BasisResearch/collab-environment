@@ -764,7 +764,7 @@ Connect Grafana to your broader workflow:
 - **Grafana Documentation**: https://grafana.com/docs/grafana/latest/
 - **PostgreSQL Data Source**: https://grafana.com/docs/grafana/latest/datasources/postgres/
 - **Query Library**: [grafana_queries.md](grafana_queries.md)
-- **Schema Documentation**: [../../../schema/README.md](../../../schema/README.md)
+- **Schema Documentation**: [schema.md](../../data/db/schema.md)
 - **Database Setup**: [README.md](README.md)
 
 ---

@@ -77,7 +77,10 @@ packages = [
 ]
 
 [tool.setuptools.package-data]
-"collab_env.data.db" = ["queries/*.sql", "schema/*.sql"]
+"collab_env.data.db" = [
+    "queries/*.sql", 
+    "schema/*.sql",
+]
 "collab_env.dashboard" = [
     "templates/*.html",
     "static/js/**/*.js",

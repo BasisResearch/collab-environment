@@ -59,7 +59,7 @@ def duckdb_initialized(duckdb_config: DBConfig) -> DBConfig:
 
     # Initialize schema
     project_root = get_project_root()
-    schema_dir = project_root / "schema"
+    schema_dir = project_root / "collab_env" / "data" / "db" / "schema"
     backend.execute_file(schema_dir / "01_core_tables.sql")
     backend.execute_file(schema_dir / "02_extended_properties.sql")
     backend.execute_file(schema_dir / "03_seed_data.sql")
@@ -109,7 +109,7 @@ def postgres_initialized(postgres_config: DBConfig) -> DBConfig:
 
         # Initialize schema
         project_root = get_project_root()
-        schema_dir = project_root / "schema"
+        schema_dir = project_root / "collab_env" / "data" / "db" / "schema"
         backend.execute_file(schema_dir / "01_core_tables.sql")
         backend.execute_file(schema_dir / "02_extended_properties.sql")
         backend.execute_file(schema_dir / "03_seed_data.sql")

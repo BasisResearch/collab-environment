@@ -5,7 +5,7 @@ Unified tracking analytics database supporting PostgreSQL and DuckDB.
 ## Quick Links
 
 **Data Layer:**
-- **[Schema Documentation](../../../schema/README.md)** - Database schema details and SQL files
+- **[Schema Documentation](schema.md)** - Database schema details and SQL files
 - **[Data Formats](data_formats.md)** - Source data documentation
 - **[Cascading Deletes](cascading_deletes.md)** - How to safely delete data with automatic cleanup
 - **[Data Loader Improvements](data_loader_plan.md)** - Planned data loading performance improvements (COPY, optimizations)
@@ -452,7 +452,7 @@ The unified schema supports four data sources:
 - **Unified Categories**: Single categories table for both sessions and extended properties
 - **Unified Interface**: Same schema works for PostgreSQL and DuckDB
 
-For complete schema documentation, see [schema/README.md](../../../schema/README.md).
+For complete schema documentation, see [schema/README.md](schema.md).
 
 ## Environment Entities Support
 
