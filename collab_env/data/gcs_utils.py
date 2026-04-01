@@ -22,32 +22,41 @@ class GCSClient:
     ):
         """
         Args:
-            credentials_path: Path to GCS credentials file. If not provided, will use the default path.
+            credentials_path: Path to GCS credentials file. If not provided, will try
+                the default path, then fall back to Application Default Credentials.
         """
         if credentials_path is None:
-            credentials_path = expand_path(
-                DEFAULT_GCS_CREDENTIALS_PATH, get_project_root()
-            )
-
-        self.credentials_path = credentials_path
-        assert os.path.exists(self.credentials_path), (
-            f"Credentials file {self.credentials_path} does not exist"
-        )
-        logger.info(f"Using credentials from {self.credentials_path}")
-        self.credentials = service_account.Credentials.from_service_account_file(
-            self.credentials_path
-        )
+            default_path = expand_path(DEFAULT_GCS_CREDENTIALS_PATH, get_project_root())
+            if os.path.exists(default_path):
+                credentials_path = default_path
 
         self.project_id = project_id
+        self.credentials_path: Union[str, Path, None]
+
+        if credentials_path and os.path.exists(str(credentials_path)):
+            logger.info(f"Using service account credentials from {credentials_path}")
+            self.credentials_path = credentials_path
+            self.credentials = service_account.Credentials.from_service_account_file(
+                str(credentials_path)
+            )
+            self._gcs = gcsfs.GCSFileSystem(
+                self.project_id, token=str(credentials_path)
+            )
+            self._storage_client = storage.Client(
+                self.project_id, credentials=self.credentials
+            )
+        else:
+            logger.info(
+                "Using Application Default Credentials (no credentials file found)"
+            )
+            self.credentials_path = None
+            self.credentials = None
+            self._gcs = gcsfs.GCSFileSystem(
+                project=self.project_id, token="google_default"
+            )
+            self._storage_client = storage.Client(project=self.project_id)
+
         logger.info(f"Using project {self.project_id}")
-
-        self._gcs = gcsfs.GCSFileSystem(
-            self.project_id, token=str(self.credentials_path)
-        )
-        self._storage_client = storage.Client(
-            self.project_id, credentials=self.credentials
-        )
-
         self.is_initialized = True
 
     @property
@@ -275,7 +284,9 @@ class GCSClient:
         local_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
         if local_path_obj.exists() and not overwrite:
-            logger.info(f"File {local_path_obj} already exists and overwrite is False. Skipping download.")
+            logger.info(
+                f"File {local_path_obj} already exists and overwrite is False. Skipping download."
+            )
             return
 
         logger.info(f"Downloading file {gcs_path} to {local_path_obj}")

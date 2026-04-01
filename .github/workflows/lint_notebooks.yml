@@ -19,23 +19,31 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: pip cache
+      - name: UV cache
         uses: actions/cache@v4
         with:
-          path: ~/.cache/pip
-          key: pip-${{ hashFiles('**/pyproject.toml') }}
+          path: ~/.cache/uv
+          key: uv-${{ hashFiles('**/pyproject.toml') }}
           restore-keys: |
-            pip-      
+            uv-      
 
       - name: Setup Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
 
+      - name: Install UV (faster package installer)
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Install CPU-only PyTorch (save disk space in CI)
+        run: |
+          uv pip install --system torch==2.3.1 torchvision --index-url https://download.pytorch.org/whl/cpu
+
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install .[dev]
+          uv pip install --system -e .[dev]
 
       - name: Lint
         run: ./scripts/lint_notebooks.sh

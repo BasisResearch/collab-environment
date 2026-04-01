@@ -75,6 +75,8 @@ def load_rollout(
     ablate=False,
     rollout_starting_frame=5,
     old_format=False,
+    self_loops=False,
+    use_relative_positions=False,
 ):
     save_name_postfix = f"n{noise}_h{head}_vr{visual_range}_s{seed}"
     file_name = f"{data_name}_{model_name}_{save_name_postfix}"
@@ -88,7 +90,7 @@ def load_rollout(
     if old_format:
         rollout_path = expand_path(
             # f"trained_models/{file_name}_rollout{rollout_starting_frame}.pkl",
-            f"trained_models/runpod/{data_name}/rollouts/{file_name}_rollout{rollout_starting_frame}.pkl",
+            f"trained_models/runpod/{data_name}/rollouts/{file_name}_rollout{rollout_starting_frame}{'_selfloops' if self_loops else ''}{'_rp' if use_relative_positions else ''}.pkl",
             get_project_root(),
         )
         rollout_path2 = rollout_path
@@ -96,13 +98,13 @@ def load_rollout(
     else:
         rollout_path = expand_path(
             # f"trained_models/{file_name}_rollout{rollout_starting_frame}.pkl",
-            f"trained_models/runpod/{data_name}/rollouts/{file_name}_rollout_{rollout_starting_frame}_frames_300.pkl",
+            f"trained_models/runpod/{data_name}/rollouts/{file_name}_rollout_{rollout_starting_frame}_frames_300{'_selfloops' if self_loops else ''}{'_rp' if use_relative_positions else ''}.pkl",
             get_project_root(),
         )
 
         rollout_path2 = expand_path(
             # f"trained_models/{file_name}_rollout{rollout_starting_frame}.pkl",
-            f"trained_models/runpod/{data_name}/rollouts/{file_name}_rollout_{rollout_starting_frame}.pkl",
+            f"trained_models/runpod/{data_name}/rollouts/{file_name}_rollout{rollout_starting_frame}{'_selfloops' if self_loops else ''}{'_rp' if use_relative_positions else ''}.pkl",
             get_project_root(),
         )
 

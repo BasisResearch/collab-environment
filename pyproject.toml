@@ -17,6 +17,7 @@ classifiers = [
 dependencies = [
   "torch>=2.1,<2.4",
   "torchvision",
+  "torchinfo",
   "pyro-ppl",
   "numpy<2",
   "pandas",
@@ -97,10 +98,7 @@ dev = [
   "mypy-extensions==1.1.0",
   "ruff",
   "nbval",
-  "nbqa",
-  "black",
-  "isort",
-  "flake8>=6.0",
+  "nbqa==1.9.1",
   "types-requests",
   "types-PyYAML",
 ]
@@ -108,16 +106,6 @@ dev = [
 [build-system]
 requires = ["setuptools<70.0"]
 build-backend = "setuptools.build_meta"
-
-[tool.flake8]
-max-line-length = 120
-extend-ignore = ["E203", "E501"]
-exclude = [".venv"]
-
-[tool.nbqa.addopts]
-flake8 = [
-    "--extend-ignore=E203,E501"
-]
 
 [tool.mypy]
 ignore_missing_imports = true
@@ -128,6 +116,3 @@ exclude = "build"
 addopts = "--doctest-modules"
 testpaths = ["./tests"]
 
-[tool.isort]
-profile = "black"
-skip_gitignore = true

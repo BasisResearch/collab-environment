@@ -61,11 +61,11 @@ export class ApiClient {
                 camera_params_path: cameraParamsPath
             })
         });
-        
+
         if (!response.ok) throw new Error('Failed to add mesh');
         return response.json();
     }
-    
+
     async clearAll() {
         const response = await fetch(`${this.baseUrl}/api/clear`, {
             method: 'POST'

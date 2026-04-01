@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}Dual-Video Synchronized Viewer{% endblock %}
+
+{% block styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dual_video_viewer.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="dual-video-viewer-container">
+    <div class="dual-video-viewer-header">
+        <h1>🎬 Dual-Video Synchronized Viewer</h1>
+        <div class="header-controls">
+            <div class="data-selectors">
+                <select id="video1Select" class="video-selector">
+                    <option value="">Select video 1...</option>
+                </select>
+                <select id="video2Select" class="video-selector">
+                    <option value="">Select video 2...</option>
+                </select>
+                <button id="refreshBtn" class="btn">🔄 Refresh</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="dual-video-viewer-content" id="dualVideoContent" style="display: none;">
+        <div class="viewers-grid">
+            <!-- Video 1 Panel -->
+            <div class="viewer-panel" id="video1Panel">
+                <div class="panel-header">
+                    <h3>📹 Video 1</h3>
+                    <div class="panel-controls">
+                        <span id="video1Status" class="status-text">Loading...</span>
+                    </div>
+                </div>
+                <div class="video-container">
+                    <video id="video1Player" class="video-player"></video>
+                    <canvas id="overlay1Canvas" class="overlay-canvas"></canvas>
+                </div>
+                <div class="overlay-controls">
+                    <h4>Overlay Options:</h4>
+                    <div class="checkbox-group">
+                        <label><input type="checkbox" id="showIds1" checked> Track IDs</label>
+                        <label><input type="checkbox" id="showTrails1"> Trails</label>
+                        <label><input type="checkbox" id="showDebug1"> Debug</label>
+                    </div>
+                    <label class="opacity-control">
+                        Opacity: <input type="range" id="opacity1Slider" min="0" max="1" step="0.1" value="0.8">
+                        <span id="opacity1Value">0.8</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Video 2 Panel -->
+            <div class="viewer-panel" id="video2Panel">
+                <div class="panel-header">
+                    <h3>📹 Video 2</h3>
+                    <div class="panel-controls">
+                        <span id="video2Status" class="status-text">Loading...</span>
+                    </div>
+                </div>
+                <div class="video-container">
+                    <video id="video2Player" class="video-player"></video>
+                    <canvas id="overlay2Canvas" class="overlay-canvas"></canvas>
+                </div>
+                <div class="overlay-controls">
+                    <h4>Overlay Options:</h4>
+                    <div class="checkbox-group">
+                        <label><input type="checkbox" id="showIds2" checked> Track IDs</label>
+                        <label><input type="checkbox" id="showTrails2"> Trails</label>
+                        <label><input type="checkbox" id="showDebug2"> Debug</label>
+                    </div>
+                    <label class="opacity-control">
+                        Opacity: <input type="range" id="opacity2Slider" min="0" max="1" step="0.1" value="0.8">
+                        <span id="opacity2Value">0.8</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Synchronized Playback Controls -->
+        <div class="sync-controls-panel">
+            <div class="control-group">
+                <label class="control-label">Playback Controls:</label>
+                <div class="playback-controls">
+                    <button id="playPauseBtn" class="btn">▶️ Play</button>
+                    <button id="stepBackBtn" class="btn">◀ Step Back</button>
+                    <button id="stepForwardBtn" class="btn">Step Forward ▶</button>
+                    <button id="resetBtn" class="btn">⏮️ Reset</button>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label class="control-label">Timeline:</label>
+                <input type="range" id="timeSlider" class="time-slider" min="0" max="100" value="0" step="0.01">
+                <span id="timeDisplay" class="time-display">00:00 / 00:00</span>
+            </div>
+
+            <div class="control-group">
+                <label class="control-label">Playback Speed:</label>
+                <div class="speed-control">
+                    <button class="speed-btn" data-speed="0.25">0.25x</button>
+                    <button class="speed-btn" data-speed="0.5">0.5x</button>
+                    <button class="speed-btn active" data-speed="1">1x</button>
+                    <button class="speed-btn" data-speed="1.5">1.5x</button>
+                    <button class="speed-btn" data-speed="2">2x</button>
+                    <span id="speedDisplay" class="speed-display">1.0x</span>
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label class="control-label">Frame Info:</label>
+                <span id="frameDisplay" class="frame-display">Frame: 0 / 0 (FPS: --)</span>
+            </div>
+        </div>
+    </div>
+
+    <div id="statusMessage" class="status" style="display: none;"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module">
+import { DualVideoViewer } from '{{ url_for('static', filename='js/viewers/dual_video_viewer.js') }}';
+
+// Initialize dual-video viewer when page loads
+document.addEventListener('DOMContentLoaded', () => {
+    const viewer = new DualVideoViewer();
+
+    // Make viewer available globally for debugging
+    window.dualVideoViewer = viewer;
+});
+</script>
+{% endblock %}

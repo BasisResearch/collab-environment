@@ -38,26 +38,15 @@ This needs to be done much more efficiently.
 """
 
 
-if __name__ == "__main__":
-    logger.debug("main started")
-    #
-    # Get the config file name if specified on the command line
-    #
-    parser = argparse.ArgumentParser(
-        prog="run_boids_simulator",
-        description="Simulates boids in a 3D environment",
-        epilog="---",
-    )
-    parser.add_argument("-cf", "--config_file")
-    args = parser.parse_args()
-    if args.config_file:
-        config_filename = expand_path(args.config_file, get_project_root())
-    else:
-        config_filename = expand_path(
-            "collab_env/sim/boids/config.yaml", get_project_root()
-        )
-
-    config = yaml.safe_load(open(config_filename))
+def show_trajectories(
+    config_file=None,
+    trajectory_file_name=None,
+    trajectory_directory_name=None,
+    show_visualizer=None,
+    num_frames=None,
+    scale_positions=0,
+):
+    config = yaml.safe_load(open(config_file))
 
     if config["visuals"]["show_visualizer"]:
         render_mode = "human"
@@ -67,9 +56,8 @@ if __name__ == "__main__":
     # -- 080225 9:15AM
     # Create the output folder
     """
-    # -- 080425 1:49PM
-    # Using the time in the folder name seems to be causing a problem for the pytest runs. Furthermore, we could have
-    # multiple runs happening at the same time, so maybe try using the process and thread ids to distinguish.  
+    TOC -- 101725 2:50PM
+    Need to create a new folder with the current start time so we don't overwrite the outputs of the simulator. 
     """
     new_folder_name = f"{config['simulator']['run_main_folder']}/{config['simulator']['run_sub_folder_prefix']}-started-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
@@ -108,8 +96,24 @@ if __name__ == "__main__":
     # in case there are still hardcoded values in the code -- which should be removed
     # at some point.
     copied_config_file_path = expand_path("config.yaml", new_run_folder)
-    shutil.copy(config_filename, copied_config_file_path)
+    shutil.copy(config_file, copied_config_file_path)
 
+    if trajectory_file_name is not None:
+        config["files"]["trajectory_file"] = trajectory_file_name
+    if trajectory_directory_name:
+        config["files"]["trajectory_folder"] = trajectory_directory_name
+    if show_visualizer is not None:
+        config["visuals"]["show_visualizer"] = show_visualizer
+    if num_frames is not None:
+        config["simulator"]["trajectory_frame_limit"] = num_frames
+    config["simulator"]["show_trajectories"] = True
+
+    if config["visuals"]["show_visualizer"]:
+        render_mode = "human"
+    else:
+        render_mode = ""
+
+    # print('config \n', config)
     target_creation_time = config["simulator"]["target_creation_time"]
     """ 
     -- 080825 7:15PM
@@ -207,9 +211,49 @@ if __name__ == "__main__":
             TODO: Change this to read only the columns we need. 
             """
             df = pq.read_pandas(trajectory_path).to_pandas()
+
             frame_limit = config["simulator"]["trajectory_frame_limit"]
             plot_trajectories(
-                df, env, frame_limit=(None if frame_limit == 0 else frame_limit)
+                df,
+                env,
+                scale_positions=scale_positions,
+                frame_limit=(None if frame_limit == 0 else frame_limit),
             )
 
     logger.info("trajectories complete")
+    print("trajectories complete")
+
+    return new_run_folder
+
+
+if __name__ == "__main__":
+    logger.debug("main started")
+    #
+    # Get the config file name if specified on the command line
+    #
+    parser = argparse.ArgumentParser(
+        prog="show_trajectories_all",
+        description="Display simulator trajectories in a 3D environment",
+        epilog="---",
+    )
+    parser.add_argument("-cf", "--config_file")
+    parser.add_argument("-tf", "--trajectory_file")
+    parser.add_argument("-td", "--trajectory_directory")
+    parser.add_argument("-v", "--show_visualizer", action="store_true")
+    parser.add_argument("-sp", "--scale_positions", type=int, default=0)
+
+    args = parser.parse_args()
+    if args.config_file:
+        config_file = expand_path(args.config_file, get_project_root())
+    else:
+        config_file = expand_path(
+            "collab_env/sim/boids/config.yaml", get_project_root()
+        )
+
+    run_folder = show_trajectories(
+        config_file=config_file,
+        trajectory_file_name=args.trajectory_file,
+        trajectory_directory_name=args.trajectory_directory,
+        show_visualizer=args.show_visualizer,
+        scale_positions=args.scale_positions,
+    )

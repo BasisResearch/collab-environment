@@ -2,10 +2,11 @@ import torch
 import torch.nn.functional as functional
 import numpy as np
 import pickle
+import gc
 import matplotlib.pyplot as plt
+from contextlib import nullcontext
 from collab_env.gnn.utility import handle_discrete_data, v_function_2_vminushalf
 
-# import gc  # Commented out - not used when gc.collect() is disabled
 from collab_env.gnn.gnn_definition import GNN, Lazy
 from collab_env.data.file_utils import expand_path, get_project_root
 from loguru import logger
@@ -25,14 +26,19 @@ def build_single_graph_edges(positions, visual_range):
 
     # Compute pairwise distances
     dist = torch.cdist(positions, positions, p=2)  # [N, N]
+    relative_positions = positions.unsqueeze(1) - positions.unsqueeze(0)
 
     # Apply visual range filter and remove self-loops
     threshold = visual_range
-    adj = (dist < threshold).to(torch.bool)
+    mask = dist < threshold
+
+    adj = mask.to(torch.bool)
     adj.fill_diagonal_(False)  # remove self-loops
     edge_index = adj.nonzero(as_tuple=False).T  # [2, E]
 
-    return edge_index
+    i, j = mask.nonzero(as_tuple=True)
+    relative_positions = relative_positions[i, j]
+    return edge_index, relative_positions
 
 
 def build_pyg_batch(
@@ -43,6 +49,7 @@ def build_pyg_batch(
     species_dim,
     visual_range,
     node_feature_function,
+    use_relative_positions=False,
 ):
     """
     Build PyTorch Geometric batch from individual graphs.
@@ -58,7 +65,9 @@ def build_pyg_batch(
     for b in range(B):
         # Build edge index for this single graph
         positions = past_p[b, -1]  # [N, D] - use latest frame
-        edge_index = build_single_graph_edges(positions, visual_range)
+        edge_index, relative_positions = build_single_graph_edges(
+            positions, visual_range
+        )
 
         # Get node features for this graph
         node_features = node_feature_function(
@@ -71,7 +80,15 @@ def build_pyg_batch(
 
         # Create edge attributes (weights) - uniform weights for all edges
         num_edges = edge_index.shape[1]
-        edge_attr = torch.ones(num_edges, 1, device=edge_index.device)
+
+        """
+        TOC -- 111225 1:34PM 
+        Need to pass the edge attr as the relative position when we move to that. 
+        """
+        if use_relative_positions:
+            edge_attr = relative_positions
+        else:
+            edge_attr = torch.ones(num_edges, 1, device=edge_index.device)
 
         # Create Data object
         data = Data(
@@ -332,6 +349,12 @@ def run_gnn_frame_pyg(model, pyg_batch, v_minushalf, delta_t, device=None):
     prediction_integration = model.prediction_integration
 
     # Forward pass - PyG handles batching automatically!
+    """
+    TOC -- 111225 1:32 PM 
+    Need to change the attribute to be relative positions here when we move to that.
+    Actually, that should be part of the build batch process -- not sure we need the 
+    squeeze though.  
+    """
     pred, W = model(pyg_batch.x, pyg_batch.edge_index, pyg_batch.edge_attr.squeeze(-1))
 
     pred = pred.to(device)
@@ -391,6 +414,7 @@ def run_gnn(
     rollout_everyother=-1,
     ablate_boid_interaction=False,
     collect_debug=True,
+    use_relative_positions=False,
 ):
     """
     This functions calls run_gnn_frame()
@@ -517,7 +541,14 @@ def run_gnn(
 
         # build PyG batch - much simpler!
         pyg_batch = build_pyg_batch(
-            past_p, past_v, past_a, species_idx, species_dim, visual_range, node_feature
+            past_p,
+            past_v,
+            past_a,
+            species_idx,
+            species_dim,
+            visual_range,
+            node_feature,
+            use_relative_positions=use_relative_positions,
         )
 
         if ablate_boid_interaction:
@@ -578,20 +609,34 @@ def run_gnn(
             debug_result["actual"].append(target_pos.detach().cpu().numpy())
             # if training:
             debug_result["loss"].append(loss.detach().cpu().numpy())
-            debug_result["W"].append(W)
+            # Move W tensors to CPU to prevent GPU memory accumulation
+            if W is not None:
+                W_cpu = tuple(
+                    w.detach().cpu() if isinstance(w, torch.Tensor) else w for w in W
+                )
+                debug_result["W"].append(W_cpu)
+            else:
+                debug_result["W"].append(None)
             debug_result["predicted_acc"].append(pred_acc_.detach().cpu().numpy())
             debug_result["actual_acc"].append(target_acc.detach().cpu().numpy())
 
-        # del pred_pos_
-        # del pred_vel_
-        # del pred_acc_
+        # Clean up temporary tensors to free memory
+        del pred_pos_
+        if pred_vel is not None:
+            del pred_vel_
+        if pred_acc is not None:
+            del pred_acc_
 
-    # del pos
-    # del vel
-    # del acc
-    # del vminushalf
-    # del v_function
-    # gc.collect()
+    # Clean up large tensors after processing all frames
+    del pos
+    del vel
+    del acc
+    del vminushalf
+    if v_function is not None:
+        del v_function
+    gc.collect()
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
 
     return batch_loss, debug_result, model
 
@@ -617,6 +662,7 @@ def train_rules_gnn(
     val_dataloader=None,
     early_stopping_patience=10,
     min_delta=1e-6,
+    use_relative_positions=False,
 ):
     if train_logger is None:
         train_logger = logger
@@ -644,6 +690,9 @@ def train_rules_gnn(
         train_logger.debug("rolling out...")
         full_frames = True
 
+    # Use no_grad context for inference/rollout mode to prevent memory accumulation
+    inference_context = torch.no_grad() if not training else nullcontext()
+
     for ep in range(epochs):
         torch.cuda.empty_cache()
 
@@ -654,34 +703,40 @@ def train_rules_gnn(
 
         train_losses_by_batch = []  # train loss this epoch
         num_batches = len(dataloader)
-        for batch_idx, (position, species_idx) in enumerate(dataloader):
-            # Only log every 10th batch to reduce noise
-            if batch_idx % 10 == 0 or batch_idx == num_batches - 1:
-                train_logger.debug(
-                    f"Epoch {ep + 1}/{epochs} | Processing batch {batch_idx + 1}/{len(dataloader)}"
+        with inference_context:
+            for batch_idx, (position, species_idx) in enumerate(dataloader):
+                # Only log every 10th batch to reduce noise
+                if batch_idx % 10 == 0 or batch_idx == num_batches - 1:
+                    train_logger.debug(
+                        f"Epoch {ep + 1}/{epochs} | Processing batch {batch_idx + 1}/{len(dataloader)}"
+                    )
+
+                S, Frame, N, _ = position.shape
+
+                (loss, debug_result_all[ep][batch_idx], model) = run_gnn(
+                    model,
+                    position,
+                    species_idx,
+                    species_dim,
+                    visual_range=visual_range,
+                    sigma=sigma,
+                    device=device,
+                    training=training,
+                    lr=lr,
+                    full_frames=full_frames,
+                    rollout=rollout,
+                    total_rollout=total_rollout,
+                    rollout_everyother=rollout_everyother,
+                    ablate_boid_interaction=ablate_boid_interaction,
+                    collect_debug=collect_debug,
+                    use_relative_positions=use_relative_positions,
                 )
 
-            S, Frame, N, _ = position.shape
+                train_losses_by_batch.append(loss)
 
-            (loss, debug_result_all[ep][batch_idx], model) = run_gnn(
-                model,
-                position,
-                species_idx,
-                species_dim,
-                visual_range=visual_range,
-                sigma=sigma,
-                device=device,
-                training=training,
-                lr=lr,
-                full_frames=full_frames,
-                rollout=rollout,
-                total_rollout=total_rollout,
-                rollout_everyother=rollout_everyother,
-                ablate_boid_interaction=ablate_boid_interaction,
-                collect_debug=collect_debug,
-            )
-
-            train_losses_by_batch.append(loss)
+                # Clear CUDA cache after each batch in inference mode to prevent fragmentation
+                if not training and device.type == "cuda":
+                    torch.cuda.empty_cache()
 
         train_losses.append(train_losses_by_batch)
         epoch_train_loss = np.mean(train_losses[-1])
@@ -712,6 +767,7 @@ def train_rules_gnn(
                         rollout_everyother=rollout_everyother,
                         ablate_boid_interaction=ablate_boid_interaction,
                         collect_debug=False,
+                        use_relative_positions=use_relative_positions,
                     )
                     val_losses_by_batch.append(val_loss)
 
@@ -806,7 +862,7 @@ def get_input_adjcency_from_debug_batch(
             for file in range(S):
                 W_out[file_num + file] = []
                 for f in range(starting_frame, ending_frame):
-                    edge_index_input = build_single_graph_edges(
+                    edge_index_input, relative_positions = build_single_graph_edges(
                         position[file, f, :, :], visual_range=visual_range
                     )
                     W_input_frame = normalize_by_col(
@@ -879,7 +935,7 @@ def get_output_adjcency_from_debug_batch(
                 pos = debug_result[epoch_num][batch_ind]["actual"][frame]
                 pos = torch.tensor(pos)
                 for file_ind in range(pos.shape[0]):
-                    edge_index_input = build_single_graph_edges(
+                    edge_index_input, relative_positions = build_single_graph_edges(
                         pos[file_ind], visual_range=visual_range
                     )
                     W_input_frame = normalize_by_col(

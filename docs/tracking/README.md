@@ -1,4 +1,6 @@
-# Tracking scripts usage guide
+# Tracking Scripts Usage Guide
+
+See the main [README](../../README.rst) for environment setup instructions.
 
 As part of the `full_pipeline.ipynb` notebook, there are 2 key steps: preprocessing (explained here), and inference. If you plan on using already processed data, skip the alignment stage. 
 

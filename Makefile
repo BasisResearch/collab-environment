@@ -1,4 +1,6 @@
-lint: FORCE
+.PHONY: lint lint-notebooks format format-notebooks test test-notebooks
+
+lint:
 	./scripts/lint.sh
 
 lint-notebooks:
@@ -10,10 +12,8 @@ format:
 format-notebooks:
 	./scripts/clean_notebooks.sh
 
-test: lint FORCE
+test: lint
 	./scripts/test.sh
 
-test-notebooks: lint FORCE
+test-notebooks: lint-notebooks
 	./scripts/test_notebooks.sh
-
-FORCE:
