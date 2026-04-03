@@ -85,7 +85,7 @@ Environment variables will be used as defaults. Command-line arguments override 
 
 Optional - install PostgreSQL server:
 ```bash
-docker run -v ./data/pgdata:/pgdata -e PGDATA=/pgdata \
+docker run -v timescaledb_data:/var/lib/postgresql/data \
     -d --name timescaledb -p 127.0.0.1:5432:5432 -e POSTGRES_PASSWORD=password timescale/timescaledb:latest-pg17
 ```
 
