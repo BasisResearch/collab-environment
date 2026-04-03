@@ -19,7 +19,7 @@ import holoviews as hv
 from bokeh.palettes import Category20_20
 
 from collab_env.data.file_utils import get_project_root
-from .base_analysis_widget import BaseAnalysisWidget
+from .base_analysis_widget import BaseAnalysisWidget, Dimensionality
 from .query_scope import ScopeType
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
         self.play_button = None
 
         # Data dimensionality (detected from loaded data)
-        self.is_3d = True  # Default to 3D, will be updated based on data
+        self.dimensionality = Dimensionality.THREE_D  # Updated on data load
 
         # Spatial bounds and color map (set during load_data)
         self.x_range: tuple[float, float] = (0.0, 1.0)
@@ -167,18 +167,11 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
         )
 
     def _detect_dimensionality(self):
-        """Detect if loaded data is 2D or 3D based on z-coordinate variance."""
+        """Detect if loaded data is 1D, 2D, or 3D based on coordinate variance."""
         if self.tracks_df is None or len(self.tracks_df) == 0:
-            self.is_3d = True
+            self.dimensionality = Dimensionality.THREE_D
             return
-
-        # Check if z column exists
-        if "z" not in self.tracks_df.columns:
-            self.is_3d = False
-            return
-
-        # If any z values exist (not all NULL), treat as 3D
-        self.is_3d = not self.tracks_df["z"].isna().all()
+        self.dimensionality = self.detect_dimensionality(self.tracks_df)
 
     def load_data(self) -> None:
         """Load data for animation and heatmap panels.
@@ -200,14 +193,14 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
                 raise ValueError("No track data found for selected episode")
 
             # Validate required columns exist and have valid data
-            required_cols = ["time_index", "agent_id", "x", "y"]
+            required_cols = ["time_index", "agent_id", "x"]
             for col in required_cols:
                 if col not in self.tracks_df.columns:
                     raise ValueError(f"Missing required column '{col}' in track data")
                 if self.tracks_df[col].isna().all():
                     raise ValueError(f"Column '{col}' contains only NULL values")
 
-            # Detect if data is 2D or 3D
+            # Detect if data is 1D, 2D, or 3D
             self._detect_dimensionality()
 
             # Compute and store fixed spatial bounds for consistent axis limits
@@ -215,11 +208,14 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
                 float(self.tracks_df["x"].min()),
                 float(self.tracks_df["x"].max()),
             )
-            self.y_range = (
-                float(self.tracks_df["y"].min()),
-                float(self.tracks_df["y"].max()),
-            )
-            if self.is_3d:
+            if self.dimensionality >= Dimensionality.TWO_D:
+                self.y_range = (
+                    float(self.tracks_df["y"].min()),
+                    float(self.tracks_df["y"].max()),
+                )
+            else:
+                self.y_range = (-0.5, 0.5)
+            if self.dimensionality == Dimensionality.THREE_D:
                 self.z_range = (
                     float(self.tracks_df["z"].min()),
                     float(self.tracks_df["z"].max()),
@@ -237,10 +233,20 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
             logger.info(
                 f"Loaded {len(self.tracks_df)} track observations for {self.tracks_df['agent_id'].nunique()} agents"
             )
-            logger.info(f"Data dimensionality: {'3D' if self.is_3d else '2D'}")
+            dim_label = {1: "1D", 2: "2D", 3: "3D"}[self.dimensionality]
+            logger.info(f"Data dimensionality: {dim_label}")
             logger.info(
-                f"Spatial bounds - X: {self.x_range}, Y: {self.y_range}"
-                + (f", Z: {self.z_range}" if self.is_3d else "")
+                f"Spatial bounds - X: {self.x_range}"
+                + (
+                    f", Y: {self.y_range}"
+                    if self.dimensionality >= Dimensionality.TWO_D
+                    else ""
+                )
+                + (
+                    f", Z: {self.z_range}"
+                    if self.dimensionality == Dimensionality.THREE_D
+                    else ""
+                )
             )
 
             # Update time slider bounds based on data
@@ -280,8 +286,10 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
             if len(heatmap_df) == 0:
                 raise ValueError("No heatmap data found for selected session")
 
-            # If any z values exist (not all NULL), treat as 3D
-            self.is_3d = heatmap_df["z_bin"].notna().any()
+            # Detect dimensionality from heatmap bin variance
+            self.dimensionality = self.detect_dimensionality(
+                heatmap_df.rename(columns={"x_bin": "x", "y_bin": "y", "z_bin": "z"})
+            )
 
             # Compute spatial bounds from heatmap bins
             bin_size = self.context.spatial_bin_size
@@ -289,12 +297,15 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
                 float(heatmap_df["x_bin"].min()),
                 float(heatmap_df["x_bin"].max() + bin_size),
             )
-            self.y_range = (
-                float(heatmap_df["y_bin"].min()),
-                float(heatmap_df["y_bin"].max() + bin_size),
-            )
+            if self.dimensionality >= Dimensionality.TWO_D:
+                self.y_range = (
+                    float(heatmap_df["y_bin"].min()),
+                    float(heatmap_df["y_bin"].max() + bin_size),
+                )
+            else:
+                self.y_range = (-0.5, 0.5)
 
-            if self.is_3d:
+            if self.dimensionality == Dimensionality.THREE_D:
                 self.z_range = (
                     float(heatmap_df["z_bin"].min()),
                     float(heatmap_df["z_bin"].max() + bin_size),
@@ -302,9 +313,8 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
             else:
                 self.z_range = None
 
-            logger.info(
-                f"Detected {'3D' if self.is_3d else '2D'} data for session heatmap"
-            )
+            dim_label = {1: "1D", 2: "2D", 3: "3D"}[self.dimensionality]
+            logger.info(f"Detected {dim_label} data for session heatmap")
 
             # Convert placeholder panes to proper visualization panes
             self._init_visualization_panes()
@@ -360,7 +370,8 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
                 if self.z_range
                 else None,
             },
-            "is_3d": bool(self.is_3d),
+            "is_3d": self.dimensionality == Dimensionality.THREE_D,
+            "dimensionality": int(self.dimensionality),
             "agent_colors": agent_colors_serializable,
             "time_range": [
                 int(self.tracks_df["time_index"].min()),
@@ -402,7 +413,7 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
         # Current positions (at current_time)
         current_df = window_df[window_df["time_index"] == self.current_time]
 
-        if self.is_3d:
+        if self.dimensionality == Dimensionality.THREE_D:
             # 3D visualization
             if len(current_df) > 0:
                 # For 3D Plotly plots, map agent IDs to actual color hex values
@@ -552,9 +563,25 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
 
         # Calculate bin centers from bin lower bounds
         df["x_center"] = df["x_bin"] + (bin_size / 2)
-        df["y_center"] = df["y_bin"] + (bin_size / 2)
 
-        if self.is_3d:
+        if self.dimensionality == Dimensionality.ONE_D:
+            # 1D density histogram — aggregate over y/z bins
+            density_1d = df.groupby("x_center", as_index=False)["density"].sum()
+
+            viz = hv.Bars(
+                density_1d,
+                kdims="x_center",
+                vdims="density",
+            ).opts(
+                color="steelblue",
+                colorbar=False,
+                title=f"1D Spatial Density (bin={bin_size})",
+                xlabel="X Position",
+                ylabel="Density",
+                xlim=self.x_range,
+            )
+        elif self.dimensionality == Dimensionality.THREE_D:
+            df["y_center"] = df["y_bin"] + (bin_size / 2)
             df["z_center"] = df["z_bin"] + (bin_size / 2)
 
             # 3D scatter plot with density (PLOTLY)
@@ -566,8 +593,6 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
                 cmap=self.color_scale,
                 size=5,
                 alpha=0.6,
-                # width=450,
-                # height=450,
                 colorbar=True,
                 title=f"Spatial Density (bin={bin_size})",
                 xlim=self.x_range,
@@ -575,6 +600,7 @@ class BasicDataViewerWidget(BaseAnalysisWidget):
                 zlim=self.z_range,
             )
         else:
+            df["y_center"] = df["y_bin"] + (bin_size / 2)
             # 2D heatmap using Image (PLOTLY for consistency)
             # Create a proper 2D grid from the binned data
             x_unique = sorted(df["x_center"].unique())

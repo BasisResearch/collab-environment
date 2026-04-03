@@ -6,10 +6,12 @@ and interaction with the analysis context.
 """
 
 import json
+from enum import IntEnum
 from html import escape
 from typing import Optional
 import logging
 
+import numpy as np
 import param
 import panel as pn
 import pandas as pd
@@ -18,6 +20,17 @@ from .analysis_context import AnalysisContext
 from .query_scope import ScopeType
 
 logger = logging.getLogger(__name__)
+
+# Threshold for detecting constant columns (near-zero variance)
+_CONSTANT_STD_THRESHOLD = 1e-10
+
+
+class Dimensionality(IntEnum):
+    """Spatial dimensionality of loaded movement data."""
+
+    ONE_D = 1
+    TWO_D = 2
+    THREE_D = 3
 
 
 class BaseAnalysisWidget(param.Parameterized):
@@ -264,9 +277,7 @@ class BaseAnalysisWidget(param.Parameterized):
             num_rows = getattr(self, "_load_total_rows", 0)
             num_agents = len(getattr(self, "_load_agents", set()))
             if num_rows > 0:
-                scope_str += (
-                    f" | {num_agents} agents, {num_rows:,} data points"
-                )
+                scope_str += f" | {num_agents} agents, {num_rows:,} data points"
 
             self.scope_display.object = f"**Current Scope:** {scope_str}"
         else:
@@ -352,9 +363,7 @@ class BaseAnalysisWidget(param.Parameterized):
 
             elif scope.scope_type == ScopeType.SESSION and scope.session_id:
                 sessions_df = self.context.query_backend.get_sessions()
-                session_row = sessions_df[
-                    sessions_df["session_id"] == scope.session_id
-                ]
+                session_row = sessions_df[sessions_df["session_id"] == scope.session_id]
                 if len(session_row) > 0:
                     row = session_row.iloc[0]
                     config_data = row.get("config", {})
@@ -374,9 +383,7 @@ class BaseAnalysisWidget(param.Parameterized):
                     metadata_json = json.dumps(metadata, indent=2, default=str)
 
                 # Also include episode summary
-                episodes_df = self.context.query_backend.get_episodes(
-                    scope.session_id
-                )
+                episodes_df = self.context.query_backend.get_episodes(scope.session_id)
                 if len(episodes_df) > 0:
                     episodes_summary = episodes_df[
                         ["episode_id", "episode_number", "num_frames", "num_agents"]
@@ -411,6 +418,30 @@ class BaseAnalysisWidget(param.Parameterized):
         self.info_popup.visible = False
 
     # ========== Helper methods ==========
+
+    @staticmethod
+    def detect_dimensionality(df: pd.DataFrame) -> Dimensionality:
+        """Detect spatial dimensionality from a DataFrame with x, y, z columns.
+
+        Detection logic:
+        - 1D: y column missing, all NULL, or constant (near-zero std)
+        - 2D: y varies; z column missing, all NULL, or constant
+        - 3D: both y and z vary
+        """
+
+        def _has_variance(col_name: str) -> bool:
+            if col_name not in df.columns:
+                return False
+            series = pd.to_numeric(df[col_name], errors="coerce")
+            if series.isna().all():
+                return False
+            return float(np.nanstd(series.values)) > _CONSTANT_STD_THRESHOLD
+
+        if not _has_variance("y"):
+            return Dimensionality.ONE_D
+        if not _has_variance("z"):
+            return Dimensionality.TWO_D
+        return Dimensionality.THREE_D
 
     def query_with_context(self, query_method: str, **extra_params) -> pd.DataFrame:
         """

@@ -13,7 +13,7 @@ SELECT
     v_x,
     v_y,
     v_z,
-    sqrt(v_x*v_x + v_y*v_y + COALESCE(v_z*v_z, 0)) as speed
+    sqrt(COALESCE(v_x*v_x, 0) + COALESCE(v_y*v_y, 0) + COALESCE(v_z*v_z, 0)) as speed
 FROM observations
 WHERE episode_id = :episode_id
   AND (:start_time IS NULL OR time_index >= :start_time)

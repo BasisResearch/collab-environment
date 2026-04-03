@@ -101,12 +101,16 @@ class CorrelationWidget(BaseAnalysisWidget):
                 "No correlation data found. Try adjusting time range or agent type."
             )
 
-        # Calculate average correlation magnitude across all dimensions
-        df["avg_correlation"] = (
-            df[["v_x_correlation", "v_y_correlation", "v_z_correlation"]]
-            .abs()
-            .mean(axis=1)
-        )
+        # Calculate average correlation magnitude across available dimensions
+        corr_cols = []
+        for col in ["v_x_correlation", "v_y_correlation", "v_z_correlation"]:
+            if col in df.columns and df[col].notna().any():
+                corr_cols.append(col)
+
+        if not corr_cols:
+            raise ValueError("No valid velocity correlation data found")
+
+        df["avg_correlation"] = df[corr_cols].abs().mean(axis=1)
 
         # Filter by minimum correlation threshold
         df_filtered = df[df["avg_correlation"] >= self.min_correlation]
@@ -124,15 +128,11 @@ class CorrelationWidget(BaseAnalysisWidget):
 
         # Create 3D scatter plot where each point represents an agent pair
         # Use agent_i and agent_j as spatial coordinates, correlation as z-axis and color
+        vdims = [c for c in corr_cols] + ["n_samples"]
         scatter = hv.Scatter3D(
             df_filtered,
             kdims=["agent_i", "agent_j", "avg_correlation"],
-            vdims=[
-                "v_x_correlation",
-                "v_y_correlation",
-                "v_z_correlation",
-                "n_samples",
-            ],
+            vdims=vdims,
         ).opts(
             color="avg_correlation",
             cmap=self.color_map,  # Widget-specific parameter

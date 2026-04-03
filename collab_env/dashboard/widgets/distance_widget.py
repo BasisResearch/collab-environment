@@ -187,7 +187,11 @@ class DistanceStatsWidget(BaseAnalysisWidget):
             agents = df_t["agent_id"].values
             # Handle None/NaN values in all position components
             x = self._to_numeric_array(df_t["x"])
-            y = self._to_numeric_array(df_t["y"])
+            y = (
+                self._to_numeric_array(df_t["y"])
+                if "y" in df_t.columns
+                else np.zeros(len(df_t))
+            )
             z = (
                 self._to_numeric_array(df_t["z"])
                 if "z" in df_t.columns

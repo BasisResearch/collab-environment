@@ -405,11 +405,16 @@ class VelocityStatsWidget(BaseAnalysisWidget):
 
             # Compute velocity magnitudes (handle 2D data where v_z might be None/NaN or missing)
             v_x = self._to_numeric_array(df_t["v_x"])
-            v_y = self._to_numeric_array(df_t["v_y"])
-            if "v_z" in df_t.columns:
-                v_z_vals = self._to_numeric_array(df_t["v_z"])
-            else:
-                v_z_vals = np.zeros(len(df_t))
+            v_y = (
+                self._to_numeric_array(df_t["v_y"])
+                if "v_y" in df_t.columns and not df_t["v_y"].isna().all()
+                else np.zeros(len(df_t))
+            )
+            v_z_vals = (
+                self._to_numeric_array(df_t["v_z"])
+                if "v_z" in df_t.columns
+                else np.zeros(len(df_t))
+            )
             v_mag = np.sqrt(v_x**2 + v_y**2 + v_z_vals**2)
 
             # Normalize velocities (avoid division by zero)
@@ -453,7 +458,11 @@ class VelocityStatsWidget(BaseAnalysisWidget):
             agents = df_t["agent_id"].values
             # Handle None/NaN values in all velocity components
             v_x = self._to_numeric_array(df_t["v_x"])
-            v_y = self._to_numeric_array(df_t["v_y"])
+            v_y = (
+                self._to_numeric_array(df_t["v_y"])
+                if "v_y" in df_t.columns and not df_t["v_y"].isna().all()
+                else np.zeros(len(df_t))
+            )
             v_z = (
                 self._to_numeric_array(df_t["v_z"])
                 if "v_z" in df_t.columns
