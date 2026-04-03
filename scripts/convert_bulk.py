@@ -4,29 +4,18 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from rich import print
 import os
 
-root = get_project_root() / "data" / "fieldwork_curated" / "todo"
+INPUT_ROOT = get_project_root() / "fieldwork-data"
 AUTO = False
 
 if AUTO:
-    dates = [f for f in os.listdir(root) if os.path.isdir(root / f)]
+    dates = [f for f in os.listdir(INPUT_ROOT) if os.path.isdir(INPUT_ROOT / f)]
 else:
     dates = [
-        '2024_05_27-session_0006',
-        '2024_05_27-session_0001',
-        '2024_05_27-session_0007',
-        # '2023_11_05-session_0003',
-        # '2023_11_05-session_0002',
-        #'2024_02_06-session_0001',
-        #'2024_06_01-session_0003',
-        #'2024_06_01-session_0002',
-        '2024_05_27-session_0002',
-        '2024_05_27-session_0005',
-        #'2024_05_19-session_0001',
-        '2024_05_27-session_0004',
-        '2024_05_27-session_0003'
+        "260330",
     ]
 
-thermal_folders = ["thermal_1", "thermal_2"]
+OUTPUT_ROOT = get_project_root() / "data" / "processed"
+thermal_folders = ["FLIR1", "FLIR3"]
 MAX_LENGTH = 20  # in minutes
 
 MAX_WORKERS = 20
@@ -43,14 +32,14 @@ def run_all_conversions():
     with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = []
         for date in dates:
-            date_folder = root / date
-            vmin, vmax = choose_vmin_vmax(date_folder, "thermal")
+            date_folder = INPUT_ROOT / date
+            vmin, vmax = choose_vmin_vmax(date_folder, "FLIR")
             vmax = min(30, vmax) if vmax is not None else 30
             print(f"{date_folder}: vmin={vmin}, vmax={vmax}")
             
             for folder in thermal_folders:
                 input_dir = date_folder / folder
-                output_dir = input_dir # date_folder / "thermal_mp4" / folder
+                output_dir = OUTPUT_ROOT / date / folder
                 # output_dir.mkdir(parents=True, exist_ok=True)
                                 
                 for file in input_dir.glob("*.csq"):
