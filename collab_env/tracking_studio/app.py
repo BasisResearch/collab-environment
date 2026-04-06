@@ -264,15 +264,23 @@ async def index():
                             _rf_project_options = []
 
                         _saved_rf_project = prefs.get("rf_project_id", "")
-                        if _saved_rf_project and _saved_rf_project not in _rf_project_options:
-                            _rf_project_options = [_saved_rf_project, *_rf_project_options]
+                        if (
+                            _saved_rf_project
+                            and _saved_rf_project not in _rf_project_options
+                        ):
+                            _rf_project_options = [
+                                _saved_rf_project,
+                                *_rf_project_options,
+                            ]
 
-                        rf_project_input = ui.select(
-                            label="Project ID",
-                            options=_rf_project_options,
-                            value=_saved_rf_project or None,
-                        ).classes("w-full").tooltip(
-                            "Pick a project from your Roboflow workspace"
+                        rf_project_input = (
+                            ui.select(
+                                label="Project ID",
+                                options=_rf_project_options,
+                                value=_saved_rf_project or None,
+                            )
+                            .classes("w-full")
+                            .tooltip("Pick a project from your Roboflow workspace")
                         )
 
                         # Store raw version data for detail dialog

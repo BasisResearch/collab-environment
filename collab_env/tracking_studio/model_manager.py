@@ -384,9 +384,11 @@ class ModelManager:
                 )
                 ws.raise_for_status()
                 data = ws.json()
-                projects = data.get("workspace", {}).get("projects") or data.get(
-                    "projects"
-                ) or []
+                projects = (
+                    data.get("workspace", {}).get("projects")
+                    or data.get("projects")
+                    or []
+                )
                 logger.info(
                     f"Roboflow workspace '{workspace}': {len(projects)} projects"
                 )
@@ -408,7 +410,9 @@ class ModelManager:
             )
             return project_ids
         except requests.exceptions.HTTPError as e:
-            error_msg = f"Failed to list Roboflow projects: HTTP {e.response.status_code}"
+            error_msg = (
+                f"Failed to list Roboflow projects: HTTP {e.response.status_code}"
+            )
             logger.error(error_msg)
             raise ValueError(error_msg) from e
         except Exception as e:
