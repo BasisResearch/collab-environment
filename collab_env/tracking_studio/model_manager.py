@@ -328,6 +328,94 @@ class ModelManager:
             logger.error(error_msg)
             raise ValueError(error_msg) from e
 
+    def list_roboflow_projects(self) -> List[str]:
+        """
+        Query Roboflow API for all projects in the workspace tied to the API key.
+
+        Returns:
+            List of project IDs in "workspace/project" format, sorted alphabetically.
+        """
+        import requests
+
+        if not self.roboflow_api_key:
+            raise ValueError("ROBOFLOW_API_KEY not set")
+
+        try:
+            # Root endpoint with API key returns workspace info (may include
+            # workspace name and/or a nested workspace object with projects).
+            root = requests.get(
+                "https://api.roboflow.com/",
+                params={"api_key": self.roboflow_api_key},
+                timeout=10,
+            )
+            root.raise_for_status()
+            root_data = root.json()
+            logger.debug(f"Roboflow root response keys: {list(root_data.keys())}")
+
+            # Collect candidate workspace names from various possible shapes
+            workspace_names: List[str] = []
+            ws_field = root_data.get("workspace")
+            if isinstance(ws_field, str):
+                workspace_names.append(ws_field)
+            elif isinstance(ws_field, dict):
+                name = ws_field.get("url") or ws_field.get("name")
+                if name:
+                    workspace_names.append(name)
+            for w in root_data.get("workspaces", []) or []:
+                if isinstance(w, str):
+                    workspace_names.append(w)
+                elif isinstance(w, dict):
+                    name = w.get("url") or w.get("name")
+                    if name:
+                        workspace_names.append(name)
+
+            if not workspace_names:
+                raise ValueError(
+                    f"Could not resolve any workspace from API key. "
+                    f"Root response: {root_data}"
+                )
+
+            project_ids: List[str] = []
+            for workspace in workspace_names:
+                ws = requests.get(
+                    f"https://api.roboflow.com/{workspace}",
+                    params={"api_key": self.roboflow_api_key},
+                    timeout=10,
+                )
+                ws.raise_for_status()
+                data = ws.json()
+                projects = data.get("workspace", {}).get("projects") or data.get(
+                    "projects"
+                ) or []
+                logger.info(
+                    f"Roboflow workspace '{workspace}': {len(projects)} projects"
+                )
+                for p in projects:
+                    if isinstance(p, str):
+                        pid = p
+                    else:
+                        pid = p.get("id") or p.get("url") or p.get("name") or ""
+                    if not pid:
+                        continue
+                    if "/" not in pid:
+                        pid = f"{workspace}/{pid}"
+                    project_ids.append(pid)
+
+            project_ids = sorted(set(project_ids))
+            logger.info(
+                f"Found {len(project_ids)} total Roboflow projects across "
+                f"{len(workspace_names)} workspace(s)"
+            )
+            return project_ids
+        except requests.exceptions.HTTPError as e:
+            error_msg = f"Failed to list Roboflow projects: HTTP {e.response.status_code}"
+            logger.error(error_msg)
+            raise ValueError(error_msg) from e
+        except Exception as e:
+            error_msg = f"Failed to list Roboflow projects: {str(e)}"
+            logger.error(error_msg)
+            raise ValueError(error_msg) from e
+
     def list_roboflow_project_models(self, project_id: str) -> List[dict]:
         """
         Query Roboflow API for available model versions in a project.

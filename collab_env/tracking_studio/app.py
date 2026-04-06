@@ -256,11 +256,24 @@ async def index():
                         prefs.get("model_source", "Roboflow") == "Roboflow"
                     )
                     with rf_container:
-                        rf_project_input = ui.input(
+                        # Populate project dropdown from Roboflow workspace
+                        try:
+                            _rf_project_options = model_manager.list_roboflow_projects()
+                        except Exception as _err:
+                            logger.warning(f"Could not list Roboflow projects: {_err}")
+                            _rf_project_options = []
+
+                        _saved_rf_project = prefs.get("rf_project_id", "")
+                        if _saved_rf_project and _saved_rf_project not in _rf_project_options:
+                            _rf_project_options = [_saved_rf_project, *_rf_project_options]
+
+                        rf_project_input = ui.select(
                             label="Project ID",
-                            placeholder="workspace/project",
-                            value=prefs.get("rf_project_id", ""),
-                        ).classes("w-full")
+                            options=_rf_project_options,
+                            value=_saved_rf_project or None,
+                        ).classes("w-full").tooltip(
+                            "Pick a project from your Roboflow workspace"
+                        )
 
                         # Store raw version data for detail dialog
                         _rf_versions_raw = {}
@@ -272,7 +285,6 @@ async def index():
                                 ui.notify("Please enter project ID", type="warning")
                                 return
                             try:
-                                rf_list_btn.disable()
                                 rf_version_select.options = {}
                                 rf_version_select.value = None
                                 rf_version_select.disable()
@@ -307,8 +319,6 @@ async def index():
                             except Exception as error:
                                 logger.error(f"Failed to list models: {error}")
                                 ui.notify(f"Error: {error}", type="negative")
-                            finally:
-                                rf_list_btn.enable()
 
                         def show_version_detail():
                             """Show full JSON for the selected version in a dialog"""
@@ -334,20 +344,20 @@ async def index():
                                 )
                             dlg.open()
 
-                        with ui.row().classes("w-full gap-2 items-center"):
-                            rf_list_btn = ui.button(
-                                "List Models", on_click=list_rf_models
-                            ).props("size=sm color=primary")
+                        with ui.row().classes("w-full gap-2 items-center no-wrap"):
+                            rf_version_select = ui.select(
+                                label="Version",
+                                options=[],
+                            ).classes("flex-grow")
+                            rf_version_select.disable()
                             rf_detail_btn = ui.button(
                                 "Details", on_click=show_version_detail
                             ).props("size=sm flat")
                             rf_detail_btn.visible = False
 
-                        rf_version_select = ui.select(
-                            label="Version",
-                            options=[],
-                        ).classes("w-full")
-                        rf_version_select.disable()
+                        rf_project_input.on(
+                            "update:model-value", lambda _e: list_rf_models()
+                        )
 
                     # Custom model upload
                     custom_container = ui.column().classes("w-full mt-2")
