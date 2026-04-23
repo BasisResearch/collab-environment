@@ -294,11 +294,20 @@ def plot_thermal(frame):
     plt.show()
 
 
-def csq_to_avi(f_name_csq, vmin, vmax, max_mins=None, output_path=None):
+def csq_to_avi(
+    f_name_csq,
+    vmin,
+    vmax,
+    max_mins=None,
+    output_path=None,
+    show_progress: bool = True,
+    verbose: bool = True,
+):
     if vmax <= vmin:
         raise ValueError("vmax must be greater than vmin")
 
-    print(f"Working on {f_name_csq}")
+    if verbose:
+        print(f"Working on {f_name_csq}")
 
     reader = CSQReader(f_name_csq)
     try:
@@ -343,7 +352,7 @@ def csq_to_avi(f_name_csq, vmin, vmax, max_mins=None, output_path=None):
 
         reader.index = f_start
         frames_to_write = []
-        for frame_index in tqdm(range(f_start, f_end)):
+        for frame_index in tqdm(range(f_start, f_end), disable=not show_progress):
             try:
                 frame = reader.next_frame()
             except Exception as e:
@@ -364,7 +373,8 @@ def csq_to_avi(f_name_csq, vmin, vmax, max_mins=None, output_path=None):
         out.release()
 
         end_time = time.time()
-        print(f"Converted {output_path} in {end_time - start_time} seconds")
+        if verbose:
+            print(f"Converted {output_path} in {end_time - start_time} seconds")
     finally:
         reader.close()
 
