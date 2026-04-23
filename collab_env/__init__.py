@@ -9,7 +9,6 @@ This package provides tools for:
 
 # Import all subpackages to make them available
 from . import alignment
-from . import dashboard
 from . import data
 from . import gnn
 from . import sim

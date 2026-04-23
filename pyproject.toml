@@ -50,8 +50,6 @@ dependencies = [
   "trame-vuetify",
   "lpips",
   "scikit-image",
-  "panel",
-  "param",
   "rich",
   "pyarrow",
   "starbars",
@@ -64,7 +62,6 @@ dependencies = [
 [tool.setuptools]                         # NEW
 packages = [
     "collab_env.alignment",
-    "collab_env.dashboard", 
     "collab_env.data",
     "collab_env.gnn",
     "collab_env.sim",

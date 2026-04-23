@@ -78,32 +78,9 @@ Setup
       # For Linux (RHEL/CentOS/Fedora) 
       sudo yum install perl-Image-ExifTool
 
-* Install ffmpeg (Required for Dashboard Video Conversion)
+* Install rclone (Required for GNN data access)
 
-  The dashboard's video conversion feature requires ffmpeg to convert videos to browser-compatible H.264 format:
-
-   .. code:: sh
-
-      # For MacOS
-      brew install ffmpeg
-
-      # For Linux (Ubuntu/Debian)
-      sudo apt-get install ffmpeg
-
-      # For Linux (RHEL/CentOS/Fedora)
-      sudo dnf install ffmpeg
-
-      # For Windows
-      # Download from https://ffmpeg.org/download.html
-      # Or using Chocolatey: choco install ffmpeg
-
-      # Verify installation
-      ffmpeg -version
-
-
-* Install rclone (Required for Dashboard and GNN data access)
-
-  rclone is used to access Google Cloud Storage buckets for the dashboard and GNN training data:
+  rclone is used to access Google Cloud Storage buckets for GNN training data:
 
    .. code:: sh
 
@@ -137,7 +114,6 @@ Documentation
 
 Detailed documentation for specific modules:
 
-* `Dashboard <docs/dashboard/README.md>`_ - Web-based data browser for GCS buckets
 * `GNN Training <docs/gnn/GNNReadMe.md>`_ - Graph Neural Network training and rollouts
 * `Simulation <docs/sim/README.md>`_ - Boids simulation and output format
 * `Tracking <docs/tracking/README.md>`_ - Animal tracking and thermal video processing
