@@ -117,5 +117,6 @@ Detailed documentation for specific modules:
 * `GNN Training <docs/gnn/GNNReadMe.md>`_ - Graph Neural Network training and rollouts
 * `Simulation <docs/sim/README.md>`_ - Boids simulation and output format
 * `Tracking <docs/tracking/README.md>`_ - Animal tracking and thermal video processing
+* `Tracking Studio <docs/tracking/tracking_web_gui.md>`_ - Interactive web GUI for video object detection and tracking
 
 For contributing guidelines, see `CONTRIBUTING.md <CONTRIBUTING.md>`_.

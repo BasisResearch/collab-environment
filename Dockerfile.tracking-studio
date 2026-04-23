@@ -1,0 +1,48 @@
+FROM python:3.10-slim
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast dependency resolution
+RUN pip install uv
+
+WORKDIR /workspace
+
+# Install CPU-only PyTorch first (prevents ultralytics pulling 900MB CUDA version)
+RUN uv pip install --system --no-cache \
+    torch torchvision --index-url https://download.pytorch.org/whl/cpu
+
+# Install Python dependencies (Roboflow models load via .pt download, no inference SDK needed)
+COPY pyproject.toml .
+RUN uv pip install --system --no-cache \
+    nicegui \
+    ultralytics \
+    supervision \
+    google-cloud-storage \
+    gcsfs \
+    opencv-python-headless \
+    pandas \
+    numpy \
+    loguru
+
+# Copy application code
+COPY collab_env/ collab_env/
+COPY scripts/ scripts/
+
+# Create model cache and tmp directories
+RUN mkdir -p /workspace/models
+RUN mkdir -p /tmp/videos /tmp/outputs /tmp/uploads
+
+ENV PORT=8080
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/workspace
+ENV NICEGUI_RELOAD=false
+
+CMD ["python", "scripts/tracking/run_tracking_studio.py"]

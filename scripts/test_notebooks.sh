@@ -11,6 +11,7 @@ EXCLUDED_NOTEBOOKS=(
     "docs/alignment/align.ipynb"
     "docs/alignment/reprojection.ipynb"
     "docs/tracking/full_pipeline.ipynb"
+    "docs/gnn/gnn3D/sample.ipynb"
 )
 
 # Notebooks requiring GCS credentials - excluded when SKIP_GCS_TESTS is set
