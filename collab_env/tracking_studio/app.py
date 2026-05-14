@@ -630,14 +630,14 @@ async def index():
 
                         ui.separator().props("vertical")
 
-                        bulk_convert_btn = ui.button("Bulk Convert").props(
+                        process_export_btn = ui.button("Process & Export").props(
                             "color=primary icon=file_download"
                         )
-                        bulk_convert_btn.tooltip(
-                            "Process full video and download CSV "
+                        process_export_btn.tooltip(
+                            "Process the full video and download the CSV "
                             "(detect_csv for detection-only, _bboxes.csv for tracking)"
                         )
-                        bulk_convert_btn.disable()
+                        process_export_btn.disable()
 
                         ui.separator().props("vertical")
 
@@ -922,10 +922,10 @@ async def index():
                     video_prefs["video_name"] = video_select.value or ""
                 save_preferences(video_prefs)
 
-                # Enable Start/Bulk Convert buttons if model is also loaded
+                # Enable Start/Process & Export buttons if model is also loaded
                 if state["model_loaded"]:
                     start_btn.enable()
-                    bulk_convert_btn.enable()
+                    process_export_btn.enable()
 
         except Exception as e:
             logger.error(f"Failed to load video: {e}", exc_info=True)
@@ -1013,10 +1013,10 @@ async def index():
                     model_prefs["rf_version"] = rf_version_select.value
                 save_preferences(model_prefs)
 
-                # Enable Start/Bulk Convert buttons if video is also loaded
+                # Enable Start/Process & Export buttons if video is also loaded
                 if state["video_loaded"]:
                     start_btn.enable()
-                    bulk_convert_btn.enable()
+                    process_export_btn.enable()
 
         except Exception as e:
             logger.error(f"Failed to load model: {e}", exc_info=True)
@@ -1060,7 +1060,7 @@ async def index():
             save_csv: If True, write CSV in detect_csv or _bboxes.csv format
                 and auto-download it once processing completes.
             force_start_frame: If set, start from this frame instead of the
-                current slider position. Used by Bulk Convert.
+                current slider position. Used by Process & Export.
         """
         if not state.get("video_loaded") or not state.get("model_loaded"):
             ui.notify("Please load video and model first", type="warning")
@@ -1079,7 +1079,7 @@ async def index():
             start_frame = int(time_slider.value) if time_slider.value else 0
         state["current_frame"] = start_frame
         start_btn.disable()
-        bulk_convert_btn.disable()
+        process_export_btn.disable()
         pause_btn.text = "Pause"
         pause_btn.props("icon=pause")
         pause_btn.enable()
@@ -1090,7 +1090,7 @@ async def index():
 
         try:
             # Show mode in progress label
-            mode_prefix = "Bulk converting" if save_csv else "Starting"
+            mode_prefix = "Processing" if save_csv else "Starting"
             if detection_only_checkbox.value:
                 status_indicator.text = f"{mode_prefix} detection..."
             else:
@@ -1224,7 +1224,7 @@ async def index():
 
             results_container.classes(remove="hidden")
 
-            # Trigger CSV download for Bulk Convert
+            # Trigger CSV download for Process & Export
             if save_csv and results.get("output_csv"):
                 video_stem = Path(state["video_path"]).stem
                 suffix = (
@@ -1259,7 +1259,7 @@ async def index():
             state["pause_event"] = None
             state["skip_frames_event"] = None
             start_btn.enable()
-            bulk_convert_btn.enable()
+            process_export_btn.enable()
             pause_btn.text = "Pause"
             pause_btn.props("icon=pause")
             pause_btn.disable()
@@ -1267,7 +1267,7 @@ async def index():
             params_card.style(remove="opacity: 0.5; pointer-events: none;")
 
     async def upload_to_gcs():
-        """Upload the most-recent bulk-convert CSV to GCS next to the original video.
+        """Upload the most-recent processed CSV to GCS next to the original video.
 
         Confirms before overwriting an existing object.
         """
@@ -1315,7 +1315,7 @@ async def index():
         """Live preview playback from current slider position (no CSV)."""
         await _run_processing(save_csv=False)
 
-    async def bulk_convert():
+    async def process_and_export():
         """Process the full video and download the resulting CSV.
 
         Output format depends on the Detection-only toggle: detect_csv format
@@ -1329,7 +1329,7 @@ async def index():
     start_btn.on_click(start_tracking)
     pause_btn.on_click(lambda: pause_tracking())
     stop_btn.on_click(lambda: stop_tracking())
-    bulk_convert_btn.on_click(bulk_convert)
+    process_export_btn.on_click(process_and_export)
     upload_btn.on_click(upload_to_gcs)
 
 
