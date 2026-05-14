@@ -145,6 +145,35 @@ class GCSVideoBrowser:
             logger.error(f"Failed to list videos in {bucket}/{prefix}: {e}")
             return []
 
+    def exists(self, gcs_path: str) -> bool:
+        """Check whether a GCS object exists.
+
+        Args:
+            gcs_path: Full GCS path (e.g., "bucket/path/file.csv" or "gs://...")
+        """
+        if gcs_path.startswith("gs://"):
+            gcs_path = gcs_path[5:]
+        try:
+            return bool(self.gcs.gcs.exists(gcs_path))
+        except Exception as e:
+            logger.warning(f"exists() check failed for {gcs_path}: {e}")
+            return False
+
+    def upload_file(self, local_path: str, gcs_path: str) -> str:
+        """Upload a local file to GCS.
+
+        Args:
+            local_path: Local source path
+            gcs_path: Destination GCS path (e.g., "bucket/path/file.csv")
+
+        Returns:
+            The destination GCS path.
+        """
+        if gcs_path.startswith("gs://"):
+            gcs_path = gcs_path[5:]
+        self.gcs.upload_file(local_path, gcs_path)
+        return gcs_path
+
     def download_video(self, gcs_path: str, local_path: str) -> str:
         """
         Download video from GCS to local path.

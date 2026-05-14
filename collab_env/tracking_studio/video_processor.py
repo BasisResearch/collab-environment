@@ -5,6 +5,7 @@ Core tracking pipeline with ByteTrack.
 """
 
 import asyncio
+import json
 import threading
 import cv2
 import supervision as sv
@@ -32,6 +33,7 @@ class VideoTracker:
         stop_event: Optional[threading.Event] = None,
         pause_event: Optional[threading.Event] = None,
         skip_frames_event: Optional[Dict] = None,
+        save_csv: bool = True,
     ):
         """
         Initialize video tracker.
@@ -46,6 +48,7 @@ class VideoTracker:
             stop_event: Threading event to signal hard stop
             pause_event: Threading event to signal pause/resume
             skip_frames_event: Dict with skip_amount for forward seeking
+            save_csv: If True, write detection/tracking results to CSV at end
         """
         self.model = model
         self.confidence = confidence
@@ -55,6 +58,7 @@ class VideoTracker:
         self.stop_event = stop_event or threading.Event()
         self.pause_event = pause_event or threading.Event()
         self.skip_frames_event = skip_frames_event or {"skip_amount": 0}
+        self.save_csv = save_csv
         self._pending_update: Optional[Future[None]] = None
 
         # Store tracker config for use with model.track()
@@ -144,7 +148,7 @@ class VideoTracker:
             start_frame: Frame index to start processing from (0-based)
 
         Returns:
-            Dict with tracking_csv path and stats
+            Dict with output_csv path (or None if save_csv=False) and stats
         """
         logger.info(f"Processing video in background thread: {video_path}")
 
@@ -159,8 +163,9 @@ class VideoTracker:
 
         logger.info(f"Video info: {total_frames} frames, {fps} fps, {width}x{height}")
 
-        detections_list = []
-        tracking_list = []
+        detection_frames = []  # one entry per processed frame (detect_csv format)
+        tracking_list = []  # one entry per tracked detection (_bboxes.csv format)
+        total_detection_count = 0
 
         frame_idx = start_frame
         if start_frame > 0:
@@ -251,24 +256,47 @@ class VideoTracker:
                 detections = sv.Detections.empty()
                 tracked_detections = sv.Detections.empty()
 
-            # 2. Save detections
-            if detections.confidence is None or detections.class_id is None:
-                frame_idx += 1
-                continue
-            for i, (bbox, conf, class_id) in enumerate(
-                zip(detections.xyxy, detections.confidence, detections.class_id)
-            ):
-                detections_list.append(
+            # 2. Save per-frame detections in detect_csv format (one row per frame)
+            if self.detection_only:
+                pred_list = []
+                if (
+                    detections.confidence is not None
+                    and detections.class_id is not None
+                ):
+                    for bbox, conf, class_id in zip(
+                        detections.xyxy, detections.confidence, detections.class_id
+                    ):
+                        x1, y1, x2, y2 = bbox
+                        bw = float(abs(x2 - x1))
+                        bh = float(abs(y2 - y1))
+                        cx = float((x1 + x2) / 2)
+                        cy = float((y1 + y2) / 2)
+                        pred_list.append(
+                            {
+                                "width": bw,
+                                "height": bh,
+                                "x": cx,
+                                "y": cy,
+                                "confidence": float(conf),
+                                "class_id": int(class_id),
+                                "class": str(int(class_id)),
+                                "detection_id": None,
+                                "parent_id": None,
+                            }
+                        )
+                detection_frames.append(
                     {
-                        "frame": frame_idx,
-                        "x1": bbox[0],
-                        "y1": bbox[1],
-                        "x2": bbox[2],
-                        "y2": bbox[3],
-                        "confidence": conf,
-                        "class": class_id,
+                        "count_objects": len(pred_list),
+                        "output_image": "<deducted_image>",
+                        "predictions": json.dumps(
+                            {
+                                "image": {"width": width, "height": height},
+                                "predictions": pred_list,
+                            }
+                        ),
                     }
                 )
+                total_detection_count += len(pred_list)
 
             # 3. Save tracking data (with track IDs if tracking is enabled)
             if (
@@ -304,6 +332,7 @@ class VideoTracker:
                             "class": int(class_id),
                         }
                     )
+                total_detection_count += len(tracked_detections)
 
             # 4. Send frame + detections to UI for display
             is_last = frame_idx >= total_frames - 1
@@ -341,56 +370,50 @@ class VideoTracker:
         )
         logger.info(
             f"Processing complete: {total_frames} frames, "
-            f"{len(detections_list)} detections, "
+            f"{total_detection_count} detections, "
             f"{unique_tracks} unique tracks"
         )
 
-        output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
+        output_csv: Optional[Path] = None
+        if self.save_csv:
+            output_path = Path(output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
 
-        if self.detection_only:
-            # Save detections CSV (no track IDs)
-            output_csv = output_path / "detections.csv"
-            if len(detections_list) > 0:
-                det_df = pd.DataFrame(detections_list)
-                det_df = det_df[
-                    ["frame", "x1", "y1", "x2", "y2", "confidence", "class"]
-                ]
-                det_df.to_csv(output_csv, index=False)
+            if self.detection_only:
+                # detect_csv format: one row per frame with predictions JSON
+                output_csv = output_path / "detections.csv"
+                det_cols = ["count_objects", "output_image", "predictions"]
+                if len(detection_frames) > 0:
+                    det_df = pd.DataFrame(detection_frames)[det_cols]
+                    det_df.to_csv(output_csv, index=False)
+                else:
+                    pd.DataFrame(columns=det_cols).to_csv(output_csv, index=False)
+                logger.info(f"Saved detect_csv to {output_csv}")
             else:
-                pd.DataFrame(
-                    columns=["frame", "x1", "y1", "x2", "y2", "confidence", "class"]
-                ).to_csv(output_csv, index=False)
-            logger.info(f"Saved detections CSV to {output_csv}")
-        else:
-            # Save tracking CSV (with track IDs)
-            output_csv = output_path / "tracking.csv"
-            if len(tracking_list) > 0:
-                tracking_df = pd.DataFrame(tracking_list)
-                tracking_df = tracking_df[
-                    ["track_id", "frame", "x1", "y1", "x2", "y2", "confidence", "class"]
+                # _bboxes.csv format: one row per tracked detection
+                output_csv = output_path / "tracked_bboxes.csv"
+                bbox_cols = [
+                    "track_id",
+                    "frame",
+                    "x1",
+                    "y1",
+                    "x2",
+                    "y2",
+                    "confidence",
+                    "class",
                 ]
-                tracking_df.to_csv(output_csv, index=False)
-            else:
-                pd.DataFrame(
-                    columns=[
-                        "track_id",
-                        "frame",
-                        "x1",
-                        "y1",
-                        "x2",
-                        "y2",
-                        "confidence",
-                        "class",
-                    ]
-                ).to_csv(output_csv, index=False)
-            logger.info(f"Saved tracking CSV to {output_csv}")
+                if len(tracking_list) > 0:
+                    tracking_df = pd.DataFrame(tracking_list)[bbox_cols]
+                    tracking_df.to_csv(output_csv, index=False)
+                else:
+                    pd.DataFrame(columns=bbox_cols).to_csv(output_csv, index=False)
+                logger.info(f"Saved tracked_bboxes.csv to {output_csv}")
 
         return {
-            "tracking_csv": str(output_csv),
+            "output_csv": str(output_csv) if output_csv else None,
             "stats": {
                 "total_frames": total_frames,
-                "total_detections": len(detections_list),
+                "total_detections": total_detection_count,
                 "unique_tracks": unique_tracks,
                 "fps": fps,
             },
@@ -411,7 +434,7 @@ class VideoTracker:
             start_frame: Frame index to start processing from (0-based)
 
         Returns:
-            Dict with tracking_csv path and stats
+            Dict with output_csv path (or None if save_csv=False) and stats
         """
         # Get current event loop for scheduling UI updates from background thread
         loop = asyncio.get_running_loop()
