@@ -771,9 +771,7 @@ async def index():
                 upload_btn = ui.button("Upload").props(
                     "color=primary icon=cloud_upload size=sm"
                 )
-                upload_btn.tooltip(
-                    "Upload the CSV to GCS next to the original video"
-                )
+                upload_btn.tooltip("Upload the CSV to GCS next to the original video")
                 upload_btn.visible = False
 
     # Event handlers
@@ -1228,9 +1226,7 @@ async def index():
             if save_csv and results.get("output_csv"):
                 video_stem = Path(state["video_path"]).stem
                 suffix = (
-                    "detections.csv"
-                    if detection_only_checkbox.value
-                    else "bboxes.csv"
+                    "detections.csv" if detection_only_checkbox.value else "bboxes.csv"
                 )
                 download_name = f"{video_stem}_{suffix}"
                 ui.download(results["output_csv"], filename=download_name)
@@ -1290,9 +1286,9 @@ async def index():
                     ui.button("Cancel", on_click=lambda: dlg.submit(False)).props(
                         "flat"
                     )
-                    ui.button(
-                        "Overwrite", on_click=lambda: dlg.submit(True)
-                    ).props("color=negative")
+                    ui.button("Overwrite", on_click=lambda: dlg.submit(True)).props(
+                        "color=negative"
+                    )
             confirmed = await dlg
             if not confirmed:
                 ui.notify("Upload canceled", type="info")
