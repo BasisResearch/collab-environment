@@ -8,7 +8,7 @@ Single-page interactive app for video tracking with:
 - CSV output download
 """
 
-from nicegui import ui
+from nicegui import ui, run
 import asyncio
 from pathlib import Path
 from typing import Optional
@@ -144,30 +144,53 @@ async def index():
                         "flex-grow"
                     )
 
-                    async def update_folders(e):
-                        """Update folder list when bucket changes"""
-                        try:
-                            bucket = bucket_select.value
-                            if bucket:
-                                folders = gcs_browser.list_folders(bucket, "")
-                                folder_select.options = [""] + folders
-                                folder_select.value = ""
-                                folder_select.update()
-                                await update_video_list(None)
-                        except Exception as error:
-                            logger.error(f"Failed to list folders: {error}")
+                    # Spinner shown while GCS listings run (off the event loop)
+                    gcs_spinner = ui.spinner(size="md").classes("ml-1")
+                    gcs_spinner.visible = False
 
                     async def update_video_list(e):
                         """Update video list when bucket or folder changes"""
+                        bucket = bucket_select.value
+                        folder = folder_select.value or ""
+                        if not bucket:
+                            return
+                        # Run the (potentially slow) GCS listing in a worker
+                        # thread so the event loop stays responsive.
+                        gcs_spinner.visible = True
+                        video_select.disable()
                         try:
-                            bucket = bucket_select.value
-                            folder = folder_select.value or ""
-                            if bucket:
-                                videos = gcs_browser.list_videos(bucket, folder)
-                                video_select.options = [v["rel_path"] for v in videos]
-                                video_select.update()
+                            videos = await run.io_bound(
+                                gcs_browser.list_videos, bucket, folder
+                            )
+                            video_select.options = [v["rel_path"] for v in videos]
+                            video_select.value = None
+                            video_select.update()
                         except Exception as error:
                             logger.error(f"Failed to list videos: {error}")
+                        finally:
+                            video_select.enable()
+                            gcs_spinner.visible = False
+
+                    async def update_folders(e):
+                        """Update folder list when bucket changes"""
+                        bucket = bucket_select.value
+                        if not bucket:
+                            return
+                        gcs_spinner.visible = True
+                        folder_select.disable()
+                        try:
+                            folders = await run.io_bound(
+                                gcs_browser.list_folders, bucket, ""
+                            )
+                            folder_select.options = [""] + folders
+                            folder_select.value = ""
+                            folder_select.update()
+                        except Exception as error:
+                            logger.error(f"Failed to list folders: {error}")
+                        finally:
+                            folder_select.enable()
+                            gcs_spinner.visible = False
+                        await update_video_list(None)
 
                     def enable_load_video_btn(e=None):
                         """Enable Load Video button when a GCS video is selected"""
