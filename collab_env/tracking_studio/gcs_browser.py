@@ -57,29 +57,23 @@ class GCSVideoBrowser:
             if prefix and not prefix.endswith("/"):
                 prefix = prefix + "/"
 
-            # Get all objects recursively to find folder-like structures
-            pattern = f"{bucket}/{prefix}**" if prefix else f"{bucket}/**"
-            all_paths = self.gcs.glob(pattern)
+            # Use a single delimited listing of immediate children. This returns
+            # only the first-level entries (folders show up as "directory"),
+            # instead of recursively walking the whole bucket and extracting
+            # prefixes client-side (which is O(all objects) and very slow on
+            # large buckets).
+            path = f"{bucket}/{prefix}".rstrip("/")
+            entries = self.gcs.gcs.ls(path, detail=True)
 
-            # Extract unique immediate subdirectories
             unique_folders = set()
-            for path in all_paths:
-                # Remove bucket prefix
-                rel_path = path.replace(f"{bucket}/", "")
+            for entry in entries:
+                if entry.get("type") != "directory":
+                    continue
+                folder = entry["name"].rstrip("/").split("/")[-1]
+                if folder:  # Skip empty strings
+                    unique_folders.add(folder)
 
-                # Remove the current prefix if any
-                if prefix:
-                    if not rel_path.startswith(prefix):
-                        continue
-                    rel_path = rel_path[len(prefix) :]
-
-                # Get first directory component after prefix
-                if "/" in rel_path:
-                    folder = rel_path.split("/")[0]
-                    if folder:  # Skip empty strings
-                        unique_folders.add(folder)
-
-            folder_list = sorted(list(unique_folders))
+            folder_list = sorted(unique_folders)
             logger.info(
                 f"Found {len(folder_list)} folder prefixes in {bucket}/{prefix}"
             )
@@ -101,34 +95,28 @@ class GCSVideoBrowser:
             List of dicts with video metadata: {name, path, rel_path}
         """
         try:
-            # Build pattern for video files - ensure prefix ends with / if not empty
+            # Ensure prefix ends with / if not empty
             if prefix and not prefix.endswith("/"):
                 prefix = prefix + "/"
 
-            # Search for multiple video formats
-            video_extensions = ["*.mp4", "*.mov", "*.avi", "*.MP4", "*.MOV", "*.AVI"]
-            all_files = []
-
-            for ext in video_extensions:
-                pattern = (
-                    f"{bucket}/{prefix}**/{ext}" if prefix else f"{bucket}/**/{ext}"
-                )
-                files = self.gcs.glob(pattern)
-                all_files.extend(files)
+            # Do a single recursive listing and filter by extension client-side.
+            # Previously this ran one full recursive glob per extension (6x),
+            # each of which walked the entire bucket subtree -> 6 full listings
+            # per call, the cause of the long hang on large buckets.
+            video_extensions = (".mp4", ".mov", ".avi")
+            path = f"{bucket}/{prefix}".rstrip("/")
+            all_files = self.gcs.gcs.find(path)
 
             videos = []
-            seen_paths = set()  # Avoid duplicates from case-insensitive extensions
-
             for file_path in all_files:
-                if file_path in seen_paths:
+                if not file_path.lower().endswith(video_extensions):
                     continue
-                seen_paths.add(file_path)
 
                 # Extract filename
                 filename = file_path.split("/")[-1]
 
                 # Get relative path from bucket
-                rel_path = file_path.replace(f"{bucket}/", "")
+                rel_path = file_path.replace(f"{bucket}/", "", 1)
 
                 videos.append(
                     {
@@ -144,6 +132,35 @@ class GCSVideoBrowser:
         except Exception as e:
             logger.error(f"Failed to list videos in {bucket}/{prefix}: {e}")
             return []
+
+    def exists(self, gcs_path: str) -> bool:
+        """Check whether a GCS object exists.
+
+        Args:
+            gcs_path: Full GCS path (e.g., "bucket/path/file.csv" or "gs://...")
+        """
+        if gcs_path.startswith("gs://"):
+            gcs_path = gcs_path[5:]
+        try:
+            return bool(self.gcs.gcs.exists(gcs_path))
+        except Exception as e:
+            logger.warning(f"exists() check failed for {gcs_path}: {e}")
+            return False
+
+    def upload_file(self, local_path: str, gcs_path: str) -> str:
+        """Upload a local file to GCS.
+
+        Args:
+            local_path: Local source path
+            gcs_path: Destination GCS path (e.g., "bucket/path/file.csv")
+
+        Returns:
+            The destination GCS path.
+        """
+        if gcs_path.startswith("gs://"):
+            gcs_path = gcs_path[5:]
+        self.gcs.upload_file(local_path, gcs_path)
+        return gcs_path
 
     def download_video(self, gcs_path: str, local_path: str) -> str:
         """

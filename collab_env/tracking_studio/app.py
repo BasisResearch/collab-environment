@@ -8,7 +8,7 @@ Single-page interactive app for video tracking with:
 - CSV output download
 """
 
-from nicegui import ui
+from nicegui import ui, run
 import asyncio
 from pathlib import Path
 from typing import Optional
@@ -103,6 +103,7 @@ async def index():
         "pause_event": None,  # Pause/resume
         "skip_frames_event": None,  # Skip forward signal
         "video_path": None,  # Path to current video being processed
+        "gcs_video_path": None,  # Original GCS path "bucket/path/video.mp4" (None if locally uploaded)
         "video_loaded": False,  # Video is loaded and ready for playback
         "model_loaded": False,  # Model is loaded and ready for tracking
         "loaded_model": None,  # Reference to loaded model object
@@ -143,30 +144,53 @@ async def index():
                         "flex-grow"
                     )
 
-                    async def update_folders(e):
-                        """Update folder list when bucket changes"""
-                        try:
-                            bucket = bucket_select.value
-                            if bucket:
-                                folders = gcs_browser.list_folders(bucket, "")
-                                folder_select.options = [""] + folders
-                                folder_select.value = ""
-                                folder_select.update()
-                                await update_video_list(None)
-                        except Exception as error:
-                            logger.error(f"Failed to list folders: {error}")
+                    # Spinner shown while GCS listings run (off the event loop)
+                    gcs_spinner = ui.spinner(size="md").classes("ml-1")
+                    gcs_spinner.visible = False
 
                     async def update_video_list(e):
                         """Update video list when bucket or folder changes"""
+                        bucket = bucket_select.value
+                        folder = folder_select.value or ""
+                        if not bucket:
+                            return
+                        # Run the (potentially slow) GCS listing in a worker
+                        # thread so the event loop stays responsive.
+                        gcs_spinner.visible = True
+                        video_select.disable()
                         try:
-                            bucket = bucket_select.value
-                            folder = folder_select.value or ""
-                            if bucket:
-                                videos = gcs_browser.list_videos(bucket, folder)
-                                video_select.options = [v["rel_path"] for v in videos]
-                                video_select.update()
+                            videos = await run.io_bound(
+                                gcs_browser.list_videos, bucket, folder
+                            )
+                            video_select.options = [v["rel_path"] for v in videos]
+                            video_select.value = None
+                            video_select.update()
                         except Exception as error:
                             logger.error(f"Failed to list videos: {error}")
+                        finally:
+                            video_select.enable()
+                            gcs_spinner.visible = False
+
+                    async def update_folders(e):
+                        """Update folder list when bucket changes"""
+                        bucket = bucket_select.value
+                        if not bucket:
+                            return
+                        gcs_spinner.visible = True
+                        folder_select.disable()
+                        try:
+                            folders = await run.io_bound(
+                                gcs_browser.list_folders, bucket, ""
+                            )
+                            folder_select.options = [""] + folders
+                            folder_select.value = ""
+                            folder_select.update()
+                        except Exception as error:
+                            logger.error(f"Failed to list folders: {error}")
+                        finally:
+                            folder_select.enable()
+                            gcs_spinner.visible = False
+                        await update_video_list(None)
 
                     def enable_load_video_btn(e=None):
                         """Enable Load Video button when a GCS video is selected"""
@@ -629,6 +653,17 @@ async def index():
 
                         ui.separator().props("vertical")
 
+                        process_export_btn = ui.button("Process & Export").props(
+                            "color=primary icon=file_download"
+                        )
+                        process_export_btn.tooltip(
+                            "Process the full video and download the CSV "
+                            "(detect_csv for detection-only, _bboxes.csv for tracking)"
+                        )
+                        process_export_btn.disable()
+
+                        ui.separator().props("vertical")
+
                         status_indicator = ui.label("Ready").classes(
                             "text-xs flex-grow"
                         )
@@ -756,9 +791,11 @@ async def index():
             with ui.row().classes("w-full items-center gap-3"):
                 ui.label("✅ Results").classes("text-sm font-semibold")
                 stats_label = ui.label().classes("text-sm flex-grow")
-                download_track_btn = ui.button("Download CSV").props(
-                    "color=primary icon=download size=sm"
+                upload_btn = ui.button("Upload").props(
+                    "color=primary icon=cloud_upload size=sm"
                 )
+                upload_btn.tooltip("Upload the CSV to GCS next to the original video")
+                upload_btn.visible = False
 
     # Event handlers
     def reset_tracker_state():
@@ -799,10 +836,14 @@ async def index():
                     await asyncio.to_thread(
                         gcs_browser.download_video, gcs_path, str(local_video)
                     )
+                    state["gcs_video_path"] = gcs_path
                 else:
                     raise ValueError(
                         "No video selected. Please select a video from the dropdowns."
                     )
+            else:
+                # Locally uploaded video — no GCS source
+                state["gcs_video_path"] = None
 
             # Ensure browser-compatible H.264 MP4
             if await asyncio.to_thread(needs_conversion, local_video):
@@ -902,9 +943,10 @@ async def index():
                     video_prefs["video_name"] = video_select.value or ""
                 save_preferences(video_prefs)
 
-                # Enable Start button if model is also loaded
+                # Enable Start/Process & Export buttons if model is also loaded
                 if state["model_loaded"]:
                     start_btn.enable()
+                    process_export_btn.enable()
 
         except Exception as e:
             logger.error(f"Failed to load video: {e}", exc_info=True)
@@ -992,9 +1034,10 @@ async def index():
                     model_prefs["rf_version"] = rf_version_select.value
                 save_preferences(model_prefs)
 
-                # Enable Start button if video is also loaded
+                # Enable Start/Process & Export buttons if video is also loaded
                 if state["video_loaded"]:
                     start_btn.enable()
+                    process_export_btn.enable()
 
         except Exception as e:
             logger.error(f"Failed to load model: {e}", exc_info=True)
@@ -1031,8 +1074,15 @@ async def index():
             status_indicator.text = "Stopping..."
             ui.notify("Stopping tracking...", type="negative")
 
-    async def start_tracking():
-        """Start tracking on already-loaded video with already-loaded model"""
+    async def _run_processing(save_csv: bool, force_start_frame: Optional[int] = None):
+        """Run detection/tracking on the loaded video+model.
+
+        Args:
+            save_csv: If True, write CSV in detect_csv or _bboxes.csv format
+                and auto-download it once processing completes.
+            force_start_frame: If set, start from this frame instead of the
+                current slider position. Used by Process & Export.
+        """
         if not state.get("video_loaded") or not state.get("model_loaded"):
             ui.notify("Please load video and model first", type="warning")
             return
@@ -1042,24 +1092,31 @@ async def index():
         state["stop_event"] = threading.Event()  # Hard stop
         state["pause_event"] = threading.Event()  # Pause (starts clear = not paused)
         state["skip_frames_event"] = {"skip_amount": 0}  # Skip forward
-        # Resume from current slider position (preserved after stop)
-        start_frame = int(time_slider.value) if time_slider.value else 0
+        # Resume from current slider position (preserved after stop) unless overridden
+        if force_start_frame is not None:
+            start_frame = force_start_frame
+            time_slider.set_value(start_frame)
+        else:
+            start_frame = int(time_slider.value) if time_slider.value else 0
         state["current_frame"] = start_frame
         start_btn.disable()
+        process_export_btn.disable()
         pause_btn.text = "Pause"
         pause_btn.props("icon=pause")
         pause_btn.enable()
         stop_btn.enable()
         params_card.style("opacity: 0.5; pointer-events: none;")
         results_container.classes(add="hidden")
+        upload_btn.visible = False
 
         try:
             # Show mode in progress label
+            mode_prefix = "Processing" if save_csv else "Starting"
             if detection_only_checkbox.value:
-                status_indicator.text = "Starting detection..."
+                status_indicator.text = f"{mode_prefix} detection..."
             else:
                 tracker_type = state.get("tracker_type", "Unknown")
-                status_indicator.text = f"Starting tracking ({tracker_type})..."
+                status_indicator.text = f"{mode_prefix} tracking ({tracker_type})..."
 
             # Use already-loaded video and model from state
             local_video = state["video_path"]
@@ -1161,6 +1218,7 @@ async def index():
                 stop_event=state["stop_event"],
                 pause_event=state["pause_event"],
                 skip_frames_event=state["skip_frames_event"],
+                save_csv=save_csv,
             )
 
             output_dir = f"/tmp/outputs/{session_id}"
@@ -1185,10 +1243,29 @@ async def index():
                     f"{results['stats']['unique_tracks']} unique tracks"
                 )
 
-            # Setup download button (only tracking CSV)
-            download_track_btn.on_click(lambda: ui.download(results["tracking_csv"]))
-
             results_container.classes(remove="hidden")
+
+            # Trigger CSV download for Process & Export
+            if save_csv and results.get("output_csv"):
+                video_stem = Path(state["video_path"]).stem
+                suffix = (
+                    "detections.csv" if detection_only_checkbox.value else "bboxes.csv"
+                )
+                download_name = f"{video_stem}_{suffix}"
+                ui.download(results["output_csv"], filename=download_name)
+                ui.notify(f"Downloading {download_name}", type="positive")
+
+                # Surface Upload button only for GCS-sourced videos
+                gcs_src = state.get("gcs_video_path")
+                if gcs_src and gcs_browser:
+                    folder = gcs_src.rsplit("/", 1)[0] if "/" in gcs_src else gcs_src
+                    target_gcs_path = f"{folder}/{download_name}"
+                    state["output_csv"] = results["output_csv"]
+                    state["output_gcs_path"] = target_gcs_path
+                    upload_btn.tooltip(f"Upload to gs://{target_gcs_path}")
+                    upload_btn.visible = True
+                else:
+                    upload_btn.visible = False
 
         except Exception as e:
             logger.error(f"Tracking failed: {e}", exc_info=True)
@@ -1201,11 +1278,69 @@ async def index():
             state["pause_event"] = None
             state["skip_frames_event"] = None
             start_btn.enable()
+            process_export_btn.enable()
             pause_btn.text = "Pause"
             pause_btn.props("icon=pause")
             pause_btn.disable()
             stop_btn.disable()
             params_card.style(remove="opacity: 0.5; pointer-events: none;")
+
+    async def upload_to_gcs():
+        """Upload the most-recent processed CSV to GCS next to the original video.
+
+        Confirms before overwriting an existing object.
+        """
+        csv_path = state.get("output_csv")
+        gcs_target = state.get("output_gcs_path")
+        if not csv_path or not gcs_target or not gcs_browser:
+            ui.notify("No CSV available to upload", type="warning")
+            return
+
+        # Confirm overwrite if destination already exists
+        exists = await asyncio.to_thread(gcs_browser.exists, gcs_target)
+        if exists:
+            with ui.dialog() as dlg, ui.card():
+                ui.label("File already exists at:").classes("text-sm")
+                ui.label(f"gs://{gcs_target}").classes(
+                    "text-xs font-mono text-gray-600"
+                )
+                ui.label("Overwrite?").classes("text-sm font-semibold mt-2")
+                with ui.row().classes("gap-2"):
+                    ui.button("Cancel", on_click=lambda: dlg.submit(False)).props(
+                        "flat"
+                    )
+                    ui.button("Overwrite", on_click=lambda: dlg.submit(True)).props(
+                        "color=negative"
+                    )
+            confirmed = await dlg
+            if not confirmed:
+                ui.notify("Upload canceled", type="info")
+                return
+
+        upload_btn.disable()
+        upload_btn.text = "Uploading..."
+        try:
+            await asyncio.to_thread(gcs_browser.upload_file, csv_path, gcs_target)
+            ui.notify(f"Uploaded to gs://{gcs_target}", type="positive")
+            status_indicator.text = f"Uploaded to gs://{gcs_target}"
+        except Exception as e:
+            logger.error(f"Upload failed: {e}", exc_info=True)
+            ui.notify(f"Upload failed: {e}", type="negative")
+        finally:
+            upload_btn.text = "Upload"
+            upload_btn.enable()
+
+    async def start_tracking():
+        """Live preview playback from current slider position (no CSV)."""
+        await _run_processing(save_csv=False)
+
+    async def process_and_export():
+        """Process the full video and download the resulting CSV.
+
+        Output format depends on the Detection-only toggle: detect_csv format
+        for detection-only, _bboxes.csv format for tracked bboxes.
+        """
+        await _run_processing(save_csv=True, force_start_frame=0)
 
     # Wire up buttons to event handlers (after functions are defined)
     load_video_btn.on_click(lambda: load_video())
@@ -1213,6 +1348,8 @@ async def index():
     start_btn.on_click(start_tracking)
     pause_btn.on_click(lambda: pause_tracking())
     stop_btn.on_click(lambda: stop_tracking())
+    process_export_btn.on_click(process_and_export)
+    upload_btn.on_click(upload_to_gcs)
 
 
 # Run the NiceGUI app directly (no function wrapper for reload compatibility)

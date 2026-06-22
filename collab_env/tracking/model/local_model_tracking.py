@@ -75,8 +75,9 @@ def track_objects(csv_path: Path) -> dict:
         match_thresh = 0.8
         fuse_score = True
 
-    # Initialize ByteTracker
-    tracker = BYTETracker(ByteTrackerArgs(), frame_rate=30)
+    # Initialize ByteTracker (frame_rate kwarg removed in ultralytics 8.4.50+;
+    # 30 was the previous default and is still the effective value)
+    tracker = BYTETracker(ByteTrackerArgs())
     track_history: dict[str, list[tuple[int, tuple[int, int]]]] = {}
 
     # Perform tracking
