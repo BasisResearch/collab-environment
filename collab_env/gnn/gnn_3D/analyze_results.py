@@ -384,7 +384,7 @@ def rollout(
         simulator_config (dict): configuration dictionary for the simulator
         agent_config (dict): configuration dictionary for the rollout agent
         rollout_path (Path): path to the rollout output folder
-        predictions_are_velocities (bool): if True, the agent positions are velocities
+        predictions_are_velocities (bool): if True, the agent predictions are velocities
     This function displays the predicted trajectories of the agents. It needs to be given the simulator config and the
     agent config so that the environment and agents can be constructed and the simulator can be run.
     """

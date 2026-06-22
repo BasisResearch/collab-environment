@@ -65,7 +65,7 @@ def train_epoch(
             unit="episode",
             bar_format=bar_format,
             desc=f"{'train' if train else 'val'}",
-            leave=True,
+            leave=False,
         )
 
         # create lists for results, there will be one entry for each episode
