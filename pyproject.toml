@@ -30,7 +30,12 @@ dependencies = [
   "matplotlib",
   "seaborn",
   "plotly",
-  "ultralytics",
+  # Exact pin: ByteTrack semantics drift within 8.4.x (8.4.14 vs 8.4.79 give
+  # different tracks on identical detections, and the STrack.result det-idx
+  # column became subset-relative mid-8.4.x), and video_processor.py depends
+  # on those internals. Keep in lockstep with collab-data's rat-sensor
+  # pipeline so all tracking tools produce identical results.
+  "ultralytics==8.4.79",
   "dotenv",
   "jupyterlab", 
   "ipywidgets",

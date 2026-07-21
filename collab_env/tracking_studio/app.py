@@ -474,7 +474,7 @@ async def index():
                     with ui.column().classes("w-full gap-1"):
                         conf_label = ui.label("Confidence: 0.50").classes("text-xs")
                         conf_slider = (
-                            ui.slider(min=0.1, max=0.9, step=0.05, value=0.5)
+                            ui.slider(min=0.01, max=0.99, step=0.01, value=0.5)
                             .classes("w-full")
                             .tooltip("Detection confidence threshold")
                         )
@@ -595,6 +595,26 @@ async def index():
                             ),
                         )
 
+                    # Upscale factor (inference resolution, not a ByteTrack param)
+                    with ui.row().classes("w-full items-center gap-2 mt-1"):
+                        upscale_label = ui.label("Upscale: off").classes("text-xs")
+                        upscale_slider = ui.slider(
+                            min=1.0, max=4.0, step=0.5, value=1.0
+                        ).style("width: 100px")
+                        upscale_slider.tooltip(
+                            "Upscale frames before detection (multiplier on native "
+                            "video resolution; helps small objects, slows inference; "
+                            "YOLO models only)"
+                        )
+                        upscale_slider.on(
+                            "update:model-value",
+                            lambda e: upscale_label.set_text(
+                                "Upscale: off"
+                                if float(e.args) == 1.0
+                                else f"Upscale: {float(e.args):.1f}x"
+                            ),
+                        )
+
                     # GUI refresh rate (display updates, not a ByteTrack param)
                     with ui.row().classes("w-full items-center gap-2 mt-1"):
                         display_update_label = ui.label("Display: every frame").classes(
@@ -658,7 +678,8 @@ async def index():
                         )
                         process_export_btn.tooltip(
                             "Process the full video and download the CSV "
-                            "(detect_csv for detection-only, _bboxes.csv for tracking)"
+                            "(_raw_bboxes.csv for detection-only; _bboxes.csv "
+                            "plus the _raw_bboxes.csv superset for tracking)"
                         )
                         process_export_btn.disable()
 
@@ -1078,8 +1099,9 @@ async def index():
         """Run detection/tracking on the loaded video+model.
 
         Args:
-            save_csv: If True, write CSV in detect_csv or _bboxes.csv format
-                and auto-download it once processing completes.
+            save_csv: If True, write bbox-per-row CSVs (raw_bboxes.csv, plus
+                tracked_bboxes.csv when tracking) and auto-download them once
+                processing completes.
             force_start_frame: If set, start from this frame instead of the
                 current slider position. Used by Process & Export.
         """
@@ -1199,6 +1221,7 @@ async def index():
                 "confidence": conf_slider.value,
                 "detection_only": detection_only_checkbox.value,
                 "display_interval": display_interval,
+                "upscale": float(upscale_slider.value),
                 **tracker_config,
             }
             logger.info(f"Tracking params: {active_params}")
@@ -1213,6 +1236,7 @@ async def index():
                 tracker_config=tracker_config,
                 confidence=conf_slider.value,
                 detection_only=detection_only_checkbox.value,
+                upscale=float(upscale_slider.value),
                 display_interval=display_interval,
                 frame_callback=frame_callback,
                 stop_event=state["stop_event"],
@@ -1239,7 +1263,8 @@ async def index():
             else:
                 stats_label.text = (
                     f"Processed {results['stats']['total_frames']} frames | "
-                    f"{results['stats']['total_detections']} detections | "
+                    f"{results['stats']['total_detections']} tracked / "
+                    f"{results['stats'].get('total_raw_detections', 0)} raw detections | "
                     f"{results['stats']['unique_tracks']} unique tracks"
                 )
 
@@ -1249,10 +1274,15 @@ async def index():
             if save_csv and results.get("output_csv"):
                 video_stem = Path(state["video_path"]).stem
                 suffix = (
-                    "detections.csv" if detection_only_checkbox.value else "bboxes.csv"
+                    "raw_bboxes.csv" if detection_only_checkbox.value else "bboxes.csv"
                 )
                 download_name = f"{video_stem}_{suffix}"
                 ui.download(results["output_csv"], filename=download_name)
+                # Tracking runs also produce the raw superset (track_id -1 =
+                # suppressed by the tracker) for dashboard comparison.
+                raw_csv = results.get("output_raw_csv")
+                if not detection_only_checkbox.value and raw_csv:
+                    ui.download(raw_csv, filename=f"{video_stem}_raw_bboxes.csv")
                 ui.notify(f"Downloading {download_name}", type="positive")
 
                 # Surface Upload button only for GCS-sourced videos
@@ -1337,8 +1367,10 @@ async def index():
     async def process_and_export():
         """Process the full video and download the resulting CSV.
 
-        Output format depends on the Detection-only toggle: detect_csv format
-        for detection-only, _bboxes.csv format for tracked bboxes.
+        Output depends on the Detection-only toggle: _raw_bboxes.csv only for
+        detection-only; _bboxes.csv (tracked) plus the _raw_bboxes.csv
+        superset for tracking. Both use the rat-sensor pipeline's
+        track_id/frame/x1/y1/x2/y2/class/confidence column order.
         """
         await _run_processing(save_csv=True, force_start_frame=0)
 
